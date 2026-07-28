@@ -1,0 +1,2121 @@
+.app-shell {
+  width: min(1640px, 100%);
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+}
+
+.topbar,
+.panel,
+.landing-visual,
+.modal-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.topbar {
+  border-radius: 28px;
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  position: sticky;
+  top: 16px;
+  z-index: 5;
+  margin-bottom: 18px;
+}
+
+.brand-mark,
+.ghost-button,
+.primary-button,
+.icon-button,
+.detail-button,
+.history-item,
+.close-button,
+.unlock-button {
+  border: 0;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #f8fafc;
+  background: transparent;
+  text-align: left;
+}
+
+.brand-mark small {
+  display: block;
+  color: #cbd5e1;
+}
+
+.brand-orb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #c084fc, #22d3ee);
+  box-shadow: 0 0 30px rgba(34, 211, 238, 0.5);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.brand-mark:hover .brand-orb {
+  transform: scale(1.3) rotate(35deg);
+}
+
+.topbar-actions,
+.user-pill,
+.landing-actions,
+.analytics-hero-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.ghost-button,
+.primary-button,
+.icon-button,
+.detail-button {
+  border-radius: 999px;
+  padding: 12px 18px;
+}
+
+.ghost-button,
+.icon-button,
+.detail-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.icon-only-button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  flex-shrink: 0;
+}
+
+.icon-only-button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+}
+
+.primary-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #c084fc, #22d3ee);
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 12px 36px rgba(34, 211, 238, 0.25);
+}
+
+.primary-button:hover {
+  box-shadow: 0 16px 44px rgba(34, 211, 238, 0.4);
+}
+
+/* A light sweep across the button on hover — a small "shine" instead of a
+   flat color change, so the primary CTA feels alive without moving the page. */
+.primary-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  transform: skewX(-20deg);
+  transition: left 550ms ease;
+}
+
+.primary-button:hover::after {
+  left: 130%;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-button span:first-child {
+  font-size: 1.1rem;
+}
+
+.user-pill {
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.user-pill span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(192, 132, 252, 0.2);
+  font-weight: 700;
+}
+
+.warning-banner,
+.error-banner {
+  width: 100%;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+}
+
+.warning-banner {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+}
+
+.save-prompt {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.16), rgba(34, 211, 238, 0.1));
+  border: 1px solid rgba(192, 132, 252, 0.28);
+}
+
+.save-prompt-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e9d5ff;
+}
+
+.save-prompt-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.save-prompt-copy strong {
+  color: #f8fafc;
+  font-size: 0.98rem;
+}
+
+.save-prompt-copy p {
+  color: #cbd5e1;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.landing-layout,
+.analytics-main,
+.analytics-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.landing-layout {
+  position: relative;
+}
+
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.landing-copy,
+.landing-visual,
+.analytics-hero {
+  border-radius: 32px;
+  padding: 34px;
+}
+
+.landing-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 560px;
+  background:
+    radial-gradient(circle at top left, rgba(192, 132, 252, 0.28), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.2), transparent 30%),
+    rgba(2, 6, 23, 0.55);
+}
+
+.landing-visual {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  min-height: 560px;
+}
+
+.phone-mockup {
+  width: min(360px, 85%);
+  aspect-ratio: 9 / 18;
+  border-radius: 36px;
+  padding: 12px;
+  background: linear-gradient(180deg, #1e293b, #020617);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 30px 120px rgba(0, 0, 0, 0.35);
+  animation: float 6s ease-in-out infinite;
+  perspective: 800px;
+}
+
+.phone-screen {
+  height: 100%;
+  border-radius: 28px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top, rgba(192, 132, 252, 0.24), transparent 28%),
+    linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(3, 7, 18, 0.98));
+  display: grid;
+  gap: 14px;
+  align-content: center;
+  position: relative;
+  overflow: hidden;
+  /* Tilt is applied inline (follows the cursor via JS); the transition here
+     only smooths the snap back to neutral on mouse-leave. */
+  transition: transform 320ms ease;
+  transform-style: preserve-3d;
+}
+
+.mockup-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.1));
+  animation: pulseGlow 3.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Floating chips — small emoji badges orbiting the phone mockup at their  */
+/* own pace, purely decorative (aria-hidden), for extra ambient movement.  */
+/* ---------------------------------------------------------------------- */
+
+.floating-chip {
+  position: absolute;
+  font-size: 1.7rem;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
+  animation: chipFloat 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.chip-1 {
+  top: 6%;
+  left: 4%;
+  animation-duration: 6.5s;
+}
+
+.chip-2 {
+  top: 58%;
+  right: 2%;
+  animation-duration: 7.5s;
+  animation-delay: 0.6s;
+}
+
+.chip-3 {
+  bottom: 8%;
+  left: 10%;
+  animation-duration: 5.8s;
+  animation-delay: 1.3s;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ambient background blobs — slow-drifting blurred color washes behind    */
+/* the landing page, for depth without competing with the foreground text. */
+/* ---------------------------------------------------------------------- */
+
+.ambient-blobs {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.32;
+  will-change: transform;
+}
+
+.blob-a {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle, #c084fc, transparent 70%);
+  animation: driftA 22s ease-in-out infinite;
+}
+
+.blob-b {
+  width: 380px;
+  height: 380px;
+  top: 260px;
+  right: -140px;
+  background: radial-gradient(circle, #22d3ee, transparent 70%);
+  animation: driftB 26s ease-in-out infinite;
+}
+
+.blob-c {
+  width: 320px;
+  height: 320px;
+  top: 640px;
+  left: 30%;
+  background: radial-gradient(circle, #f472b6, transparent 70%);
+  animation: driftC 30s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Marquee — an auto-scrolling feature ticker between the hero and the     */
+/* rest of the page; pauses on hover so it never fights with a click.     */
+/* ---------------------------------------------------------------------- */
+
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  padding: 6px 0;
+}
+
+.marquee-track {
+  display: flex;
+  gap: 32px;
+  width: max-content;
+  animation: marqueeScroll 30s linear infinite;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+.marquee-item {
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-mockup,
+  .mockup-glow,
+  .floating-chip,
+  .ambient-blob,
+  .marquee-track {
+    animation: none;
+  }
+}
+
+.mockup-stat,
+.why-card,
+.stat-card,
+.history-item {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mockup-stat {
+  padding: 18px;
+  display: grid;
+  gap: 6px;
+  color: #f8fafc;
+  position: relative;
+  z-index: 1;
+}
+
+.mockup-stat strong {
+  font-size: 1.6rem;
+  display: block;
+}
+
+.mockup-stat span {
+  color: #cbd5e1;
+  font-size: 0.82rem;
+}
+
+.stat-b {
+  transform: translateX(28px);
+}
+
+.stat-c {
+  transform: translateX(-16px);
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: #c084fc;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(2.6rem, 5vw, 5rem);
+  line-height: 0.97;
+}
+
+.gradient-text {
+  background: linear-gradient(120deg, #c084fc, #22d3ee, #f472b6, #c084fc);
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientShift 8s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gradient-text {
+    animation: none;
+  }
+}
+
+h2 {
+  font-size: 1.45rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+.lead,
+.panel-copy {
+  color: #d4d4d8;
+  line-height: 1.65;
+}
+
+.lead {
+  max-width: 740px;
+  margin-top: 12px;
+}
+
+.landing-actions {
+  margin-top: 26px;
+}
+
+.trust-strip {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trust-strip li {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  transition: transform 200ms ease, background 200ms ease, border-color 200ms ease;
+}
+
+.trust-strip li:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(192, 132, 252, 0.3);
+}
+
+.panel {
+  border-radius: 28px;
+  padding: 24px;
+}
+
+.landing-info {
+  display: grid;
+  gap: 18px;
+}
+
+.why-heading {
+  color: #f1f5f9;
+}
+
+.why-grid,
+.summary-stats,
+.modal-columns {
+  display: grid;
+  gap: 14px;
+}
+
+.why-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.why-card {
+  padding: 18px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.why-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.why-card h4 {
+  color: #f8fafc;
+  font-size: 0.98rem;
+  margin-bottom: 4px;
+}
+
+.why-card p {
+  color: #cbd5e1;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.why-icon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.24), rgba(34, 211, 238, 0.18));
+  flex: 0 0 auto;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.why-card:hover .why-icon {
+  transform: scale(1.15) rotate(-8deg);
+}
+
+/* ---------------------------------------------------------------------- */
+/* How-it-works — a short numbered walkthrough so the landing page reads   */
+/* as a full product pitch instead of jumping straight from copy to demo. */
+/* ---------------------------------------------------------------------- */
+
+.steps-section {
+  display: grid;
+  gap: 18px;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.step-card {
+  position: relative;
+  padding: 20px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 200ms ease, border-color 200ms ease, background 200ms ease;
+}
+
+.step-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(192, 132, 252, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c084fc, #22d3ee);
+  color: #0f172a;
+  font-weight: 800;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-size: 0.86rem;
+}
+
+.step-card:hover .step-number {
+  transform: scale(1.15) rotate(8deg);
+}
+
+.step-card h4 {
+  color: #f8fafc;
+  font-size: 0.96rem;
+}
+
+.step-card p {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.examples-section {
+  display: grid;
+  gap: 16px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Landing example cards — a small "Ejemplo/Example" ribbon makes it clear */
+/* the data is fabricated, so nobody mistakes it for a real analysis.     */
+/* ---------------------------------------------------------------------- */
+
+.demo-card-wrapper {
+  position: relative;
+}
+
+.demo-tag {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  z-index: 2;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #c084fc, #22d3ee);
+  color: #0f172a;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+}
+
+.upload-strip,
+.analytics-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+}
+
+.upload-strip-hint {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 0.84rem;
+}
+
+.analytics-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  /* The sidebar's own content (account panel + a height-capped history list) is
+     much shorter than the metrics column — without this, grid's default stretch
+     would still size the sidebar's box to match, just leaving dead empty space
+     under it instead of letting the column end where its content ends. */
+  align-items: start;
+  gap: 18px;
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.summary-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.stat-card {
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.stat-card span {
+  color: #cbd5e1;
+}
+
+.participant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.participant-chip {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* VIP badge — a real circle (fixed equal width/height), never stretched   */
+/* by text: the status word lives in a separate label beside it.          */
+/* ---------------------------------------------------------------------- */
+
+.vip-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vip-badge.is-compact {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vip-badge-circle {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.vip-badge.is-compact .vip-badge-circle {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+}
+
+.vip-badge-circle.is-active {
+  background: linear-gradient(135deg, #34d399, #22d3ee);
+  color: #022c22;
+  box-shadow: 0 10px 26px rgba(52, 211, 153, 0.32);
+}
+
+.vip-badge-circle.is-locked {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.vip-badge-circle:hover {
+  transform: scale(1.08);
+}
+
+.vip-badge-circle.is-locked .lock-shackle {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.vip-badge-circle.is-locked:hover .lock-shackle {
+  transform: translateY(-2px) rotate(-22deg);
+}
+
+.vip-badge-label {
+  font-weight: 700;
+  color: #f1f5f9;
+  font-size: 0.92rem;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Metric grid — flexbox with flex-basis so an incomplete last row grows  */
+/* to fill the row instead of leaving empty space on the right.          */
+/* ---------------------------------------------------------------------- */
+
+.metric-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Rows are chunked in JS to at most 3 cards each, so — unlike a CSS grid, where
+   an incomplete last row leaves empty tracks — every row here is its own flex
+   container: fewer cards in a row just share it evenly. Leftover space is
+   always consumed, never left blank. */
+.metric-row {
+  display: flex;
+  gap: 16px;
+}
+
+.metric-list-item {
+  flex: 1 1 0;
+  /* A backstop, not a target — with 3 cards per row this rarely binds; it only
+     keeps a lone card in a partial last row from stretching absurdly wide. */
+  max-width: 560px;
+  display: flex;
+}
+
+/* The analytics dashboard's own cards animate in on mount (it's an active
+   workspace, always near the top of the page) — landing-page demo cards use
+   `.reveal-child` instead, gated by scroll position, so the two must not both
+   apply to the same element (a finished `animation …both` would otherwise
+   pin opacity/transform and cancel the scroll-triggered transition). */
+.metric-list-item:not(.reveal-child) {
+  animation: riseIn 0.5s ease both;
+}
+
+.metric-card {
+  width: 100%;
+  height: 460px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.metric-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.metric-card-head h3 {
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.metric-tier-dot {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.metric-tier-dot.is-unlocked {
+  background: linear-gradient(135deg, #facc15, #f59e0b);
+  color: #3f2d03;
+}
+
+.metric-tier-dot.is-locked {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.metric-description {
+  color: #cbd5e1;
+  line-height: 1.5;
+  font-size: 0.92rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.metric-basic {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.metric-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-stat strong {
+  font-size: 1.9rem;
+  line-height: 1.15;
+  color: #f8fafc;
+}
+
+.metric-stat.is-large strong {
+  font-size: 2.6rem;
+}
+
+.metric-stat span {
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
+.metric-note {
+  color: #e2e8f0;
+  font-size: 0.84rem;
+  font-style: italic;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 12px;
+  border-radius: 12px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.metric-chart {
+  margin-top: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detail-button {
+  width: fit-content;
+  margin-top: auto;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Locked panel — skeleton placeholders (no real data ever rendered here) */
+/* blurred and covered by a CTA overlay. Used on cards and in the modal.  */
+/* ---------------------------------------------------------------------- */
+
+.locked-panel {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  min-height: 130px;
+  flex: 1;
+  display: flex;
+}
+
+.locked-panel.is-tall {
+  min-height: 220px;
+}
+
+.locked-skeleton {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  width: 100%;
+  filter: blur(6px);
+  user-select: none;
+  pointer-events: none;
+}
+
+.skeleton-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08) 25%,
+    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0.08) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+.locked-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 14px;
+  background: rgba(8, 11, 22, 0.46);
+}
+
+.locked-overlay p {
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  max-width: 260px;
+}
+
+.locked-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fbbf24;
+  transition: background 200ms ease, transform 200ms ease;
+}
+
+.locked-icon svg {
+  overflow: visible;
+}
+
+.lock-shackle {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Hovering anywhere on a locked card pops the shackle open a bit — a small,
+   playful hint that this is meant to be unlocked. */
+.locked-panel:hover .locked-icon {
+  background: rgba(251, 191, 36, 0.2);
+  transform: scale(1.06);
+}
+
+.locked-panel:hover .lock-shackle {
+  transform: translateY(-3px) rotate(-22deg);
+}
+
+.unlock-button {
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #c084fc, #22d3ee);
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.82rem;
+  animation: unlockPulse 2.6s ease-in-out infinite;
+}
+
+.unlock-button:hover {
+  animation-play-state: paused;
+  box-shadow: 0 0 0 6px rgba(192, 132, 252, 0.18);
+}
+
+.account-panel,
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Capped to ~1.2x a single item's height (one full item + a peek of the next)
+     so a long saved-chats history never pushes the page tall — it scrolls in
+     place instead. Item renders at 134px tall, so 1.2x ≈ 161px. */
+  max-height: 161px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(192, 132, 252, 0.4) transparent;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: rgba(192, 132, 252, 0.4);
+  border-radius: 999px;
+}
+
+.history-item {
+  text-align: left;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  color: #f8fafc;
+}
+
+.history-item span,
+.history-item em,
+.account-panel p {
+  color: #cbd5e1;
+}
+
+.inline-cta {
+  display: grid;
+  gap: 12px;
+}
+
+.account-name {
+  font-size: 1.12rem;
+  color: #f8fafc !important;
+  font-weight: 700;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Footer — present on every screen, not just the landing page, so the app */
+/* never just stops mid-scroll without a privacy reminder and a sign-off. */
+/* ---------------------------------------------------------------------- */
+
+.app-footer {
+  margin-top: 28px;
+  padding: 22px 4px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.footer-brand {
+  pointer-events: none;
+}
+
+.footer-privacy {
+  max-width: 560px;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.footer-meta {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 30;
+  overflow-y: auto;
+}
+
+.modal-card {
+  width: min(860px, 100%);
+  border-radius: 28px;
+  padding: 24px;
+  position: relative;
+  animation: modalIn 0.22s ease;
+}
+
+.auth-modal {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.metric-modal {
+  display: grid;
+  gap: 18px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+.close-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.modal-description {
+  margin-top: -6px;
+}
+
+.modal-basic {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.modal-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-chart {
+  padding: 22px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-chart > * {
+  width: 100%;
+}
+
+.series-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.series-item {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 180ms ease;
+}
+
+.series-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.series-item h4 {
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  margin-bottom: 10px;
+}
+
+.breakdown-section h4,
+.paginated-section h4 {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detail-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.paginated-section .detail-list li.is-new,
+.message-group.is-new {
+  animation: flashNew 1s ease;
+}
+
+.show-more-button {
+  width: 100%;
+  text-align: center;
+  font-weight: 600;
+}
+
+.word-search-input {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f8fafc;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  width: 100%;
+  max-width: 320px;
+}
+
+.modal-columns {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Scroll reveal — driven by useInView (IntersectionObserver) toggling     */
+/* `.is-visible`, not by an animation that fires blindly on mount. A       */
+/* section below the fold now actually animates when the visitor reaches  */
+/* it, instead of finishing its animation off-screen before anyone sees   */
+/* it. `.reveal-child` staggers a grid's cards via inline transition-delay */
+/* while sharing the parent's `.is-visible` toggle.                       */
+/* ---------------------------------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-child {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-child.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-child {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.ghost-button:hover,
+.primary-button:hover,
+.icon-button:hover,
+.detail-button:hover,
+.history-item:hover,
+.close-button:hover,
+.unlock-button:hover,
+.brand-mark:hover {
+  transform: translateY(-1px);
+}
+
+.tier-purple {
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.24);
+}
+
+.tier-pink {
+  box-shadow: inset 0 0 0 1px rgba(244, 114, 182, 0.24);
+}
+
+.tier-orange {
+  box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.24);
+}
+
+.tier-blue {
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.24);
+}
+
+.tier-cyan {
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.24);
+}
+
+.tier-lime {
+  box-shadow: inset 0 0 0 1px rgba(163, 230, 53, 0.24);
+}
+
+.tier-gold {
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.24);
+}
+
+.tier-rose {
+  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, 0.24);
+}
+
+.tier-indigo {
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.24);
+}
+
+.tier-mint {
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.24);
+}
+
+.tier-slate {
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.24);
+}
+
+.tier-red {
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.24);
+}
+
+.tier-green {
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.24);
+}
+
+.tier-yellow {
+  box-shadow: inset 0 0 0 1px rgba(253, 224, 71, 0.24);
+}
+
+.tier-teal {
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.24);
+}
+
+.tier-violet {
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.24);
+}
+
+.tier-magenta {
+  box-shadow: inset 0 0 0 1px rgba(232, 121, 249, 0.24);
+}
+
+.tier-sky {
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.24);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Chart primitives                                                       */
+/* ---------------------------------------------------------------------- */
+
+.chart-bar-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.chart-bar-ranking.is-compact {
+  gap: 6px;
+}
+
+.chart-bar-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 128px) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+/* Clamped to 2 lines instead of a single truncated one — category labels like
+   "Lost control of the keyboard" or "Amenazas de ruptura" need the room a
+   single-line ellipsis in a ~90px column would just cut down to nothing. */
+.chart-bar-label {
+  color: #cbd5e1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.25;
+}
+
+.chart-bar-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.chart-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chart-bar-value {
+  color: #f8fafc;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-donut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  justify-content: center;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+}
+
+.chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chart-hour-heatmap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-hour-cells {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.chart-hour-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #22d3ee;
+}
+
+.chart-hour-marks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.66rem;
+  color: #64748b;
+}
+
+.chart-year-heatmap {
+  display: grid;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: 11px;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.chart-year-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.chart-radar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-radar-labels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: 6px 10px;
+  font-size: 0.74rem;
+  color: #cbd5e1;
+  text-align: center;
+  width: 100%;
+}
+
+.chart-radar-labels strong {
+  display: block;
+  color: #f8fafc;
+}
+
+.chart-calendar-streak {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chart-streak-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-streak-range {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+}
+
+.chart-streak-range strong {
+  font-size: 1.15rem;
+  color: #f8fafc;
+}
+
+.chart-streak-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+}
+
+.chart-streak-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #a3e635;
+}
+
+.chart-streak-overflow {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.chart-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.chart-timeline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 160px;
+}
+
+.chart-timeline-bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-width: 3px;
+}
+
+.chart-timeline-fill {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #22d3ee, #6366f1);
+  min-height: 3px;
+}
+
+.chart-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.64rem;
+  color: #64748b;
+}
+
+.chart-word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+  justify-content: center;
+  padding: 10px;
+}
+
+.chart-word-cloud.is-compact {
+  max-height: 130px;
+  overflow: hidden;
+}
+
+.chart-word-cloud-item {
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chart-month-heatmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.chart-month-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 46px;
+}
+
+.chart-month-swatch {
+  width: 100%;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.chart-month-label {
+  font-size: 0.62rem;
+  color: #94a3b8;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Message groups — collapsible headings with WhatsApp-style chat bubbles. */
+/* Collapsed by default so the list reads as a scannable index; expanding  */
+/* one reveals the real exchange (context message, the moment, context).  */
+/* ---------------------------------------------------------------------- */
+
+.message-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-group {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.message-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  color: #f1f5f9;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-group-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.group-triangle {
+  flex-shrink: 0;
+  color: #94a3b8;
+  transition: transform 160ms ease;
+}
+
+.group-triangle.is-expanded {
+  transform: rotate(180deg);
+  color: #c084fc;
+}
+
+.message-group-bubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 14px 14px;
+}
+
+.chat-bubble {
+  border-radius: 14px;
+  padding: 8px 12px;
+  max-width: 92%;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-bubble.is-context {
+  opacity: 0.62;
+}
+
+.chat-bubble.is-highlight {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.22), rgba(34, 211, 238, 0.14));
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+/* A synthetic "N messages skipped" marker, not a real message — deliberately
+   plain (no bubble shape) so it never looks like it belongs to the chat. */
+.chat-bubble-divider {
+  text-align: center;
+  font-size: 0.74rem;
+  color: #94a3b8;
+  padding: 2px 0;
+  letter-spacing: 0.02em;
+}
+
+.chat-bubble-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+
+.chat-bubble-sender {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #c084fc;
+}
+
+.chat-bubble.is-context .chat-bubble-sender {
+  color: #94a3b8;
+}
+
+.chat-bubble-time {
+  font-size: 0.66rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.chat-bubble-text {
+  color: #e2e8f0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulseGlow {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes unlockPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(192, 132, 252, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(192, 132, 252, 0);
+  }
+}
+
+@keyframes flashNew {
+  0% {
+    background: rgba(192, 132, 252, 0.28);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes chipFloat {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(4deg);
+  }
+}
+
+@keyframes driftA {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(60px, 40px);
+  }
+}
+
+@keyframes driftB {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-50px, 60px);
+  }
+}
+
+@keyframes driftC {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, -30px) scale(1.08);
+  }
+}
+
+@keyframes marqueeScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes gradientShift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@media (max-width: 1120px) {
+  .landing-hero,
+  .analytics-layout,
+  .upload-strip,
+  .analytics-hero {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .why-grid,
+  .modal-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .steps-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 14px 10px 32px;
+  }
+
+  .landing-copy,
+  .landing-visual,
+  .analytics-hero {
+    padding: 20px;
+  }
+
+  .topbar-actions,
+  .landing-actions,
+  .analytics-hero-actions {
+    flex-wrap: wrap;
+  }
+
+  /* Keep the topbar a single slim row on mobile instead of wrapping into a
+     tall, cluttered block: drop the tagline, shrink the brand mark, and
+     tighten every button/pill that lives inside it. */
+  .topbar {
+    padding: 8px 12px;
+    border-radius: 18px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .brand-mark {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .brand-mark small {
+    display: none;
+  }
+
+  .brand-mark strong {
+    font-size: 0.88rem;
+    white-space: nowrap;
+  }
+
+  .brand-orb {
+    width: 12px;
+    height: 12px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .topbar .ghost-button,
+  .topbar .icon-button {
+    padding: 6px 11px;
+    font-size: 0.76rem;
+  }
+
+  .topbar .icon-only-button {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+
+  .user-pill {
+    padding: 4px;
+    gap: 6px;
+  }
+
+  .user-pill span {
+    width: 26px;
+    height: 26px;
+    font-size: 0.78rem;
+  }
+
+  .summary-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-mockup {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  /* On a narrow phone screen the ±28px horizontal offset that makes the stat
+     cards feel dynamic on desktop pushes them right up against — or past —
+     the mockup's own clipped edges. Keep them stacked flush on mobile. */
+  .stat-b,
+  .stat-c {
+    transform: none;
+  }
+
+  .steps-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-row {
+    flex-direction: column;
+  }
+
+  .save-prompt {
+    flex-wrap: wrap;
+  }
+
+  .metric-list-item {
+    max-width: none;
+  }
+
+  .chart-bar-row {
+    grid-template-columns: minmax(60px, 108px) 1fr auto;
+  }
+}
