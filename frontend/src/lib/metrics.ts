@@ -192,15 +192,17 @@ const cutesySpamPattern = buildRepeatedEmojiPattern(
   3,
 )
 
-// Tasteful, non-explicit heuristic list for "El Tono Picante" — a configurable dictionary,
+// Heuristic list for "El Tono Picante" — a configurable dictionary,
 // not a claim of accuracy. Easy to extend without touching the scoring logic.
 const flirtyWords = [
-  'caliente', 'calentura', 'fuego', 'picante', 'sexy', 'sexi', 'seductor', 'seductora', 'tentador',
+  'caliente', 'calentura', 'sexy', 'sexi', 'seductor', 'seductora', 'tentador',
   'tentadora', 'provocador', 'provocadora', 'provocando', 'ardiente', 'sensual', 'morbo', 'pasion',
   'apasionado', 'apasionada', 'travieso', 'traviesa', 'gemir', 'gemidos', 'erotico', 'erotica',
-  'desnudo', 'desnuda', 'desnudarte', 'desnudarme', 'me calientas', 'me prendes', 'me pones caliente',
+  'desnudo', 'desnuda', 'desnudarte', 'desnudarme', 'me calentas', 'me prendes', 'caliente',
   'ganas de vos', 'ganas de ti', 'fantasia', 'fantasias', 'hot', 'turned on', 'sexting', 'flirty',
-  'naughty', 'teasing',
+  'naughty', 'teasing', 'pene', 'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong', 'shaft', 
+  'culo', 'orto', 'nalgas', 'pompis', 'ass', 'butt', 'botty', 'teta', 'tetas', 'pecho', 'pechos', 'boob', 'boobs', 'tit', 'tits', 'breast',
+  'breasts', 'knockers', 'jugs', 'vagina', 'concha', 'coño', 'sexo', 'pussy', 'cunt', 'snatch', 'twat', 'beaver', 'muff', 'puta', 'slut'
 ]
 const flirtyPattern = toBoundaryPattern(flirtyWords)
 const flirtyWordPatterns = flirtyWords.map((word) => ({
