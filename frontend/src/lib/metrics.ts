@@ -1,4 +1,5 @@
 import type {
+  AiCardState,
   AnalysisBundle,
   BarDatum,
   CalendarDay,
@@ -94,7 +95,7 @@ const combiningMarksPattern = new RegExp(`[${String.fromCharCode(0x0300)}-${Stri
 // Strips accents (á→a, ñ→n, ...) and lowercases, so every dictionary below only needs
 // one unaccented spelling per word/phrase instead of every accented variant a phone's
 // autocorrect might produce.
-function normalizeForMatch(text: string): string {
+export function normalizeForMatch(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(combiningMarksPattern, '')
 }
 
@@ -134,7 +135,11 @@ const redFlagCategories: RedFlagCategory[] = [
       'me estas mintiendo', 'me estas ignorando', 'me ignoras', 'con quien estas', 'con quien andas',
       'con quien hablabas', 'quien es el', 'quien es ese', 'quien es esa', 'revisa tu celular',
       'revisa tu telefono', 'muestrame tu celular', 'me dejaste en visto', 'me dejas en visto',
-      'me tienes en visto', 'me tenes en visto',
+      'me tienes en visto', 'me tenes en visto', 'que escondes', 'que escondés', 'estas escondiendo algo',
+      'estás escondiendo algo', 'no podes hablar con', 'no puedes hablar con', 'prohibido hablarle',
+      'who is he', 'who is she', 'who were you with', "you're always with him", "you're always with her",
+      'check your phone', 'let me see your phone', "you're hiding something", 'borra esa conversacion',
+      'borra esa conversación', 'con quien chateas', 'con quien chateás',
     ]),
   },
   {
@@ -143,8 +148,10 @@ const redFlagCategories: RedFlagCategory[] = [
     labelEn: 'Guilt-tripping',
     pattern: toBoundaryPattern([
       'siempre haces lo mismo', 'siempre lo mismo', 'nunca me escuchas', 'nunca estas', 'es tu culpa',
-      'todo es tu culpa', 'your fault', 'no te importa nada', "you don't care about me",
+      'todo es tu culpa', 'por tu culpa', 'your fault', 'no te importa nada', "you don't care about me",
       'me tienes abandonada', 'me tienes abandonado', 'me tenes abandonada', 'me tenes abandonado',
+      'eres el problema', 'sos el problema', 'arruinas todo', 'arruinás todo', 'nunca haces nada bien',
+      "you never do anything right", "you ruin everything", 'siempre arruinas todo',
     ]),
   },
   {
@@ -154,7 +161,15 @@ const redFlagCategories: RedFlagCategory[] = [
     pattern: toBoundaryPattern([
       'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica', 'asqueroso',
       'asquerosa', 'das asco', 'me das asco', 'te odio', 'i hate you', 'sos un desastre',
-      'eres un desastre', "you're pathetic", "you're an idiot",
+      'eres un desastre', "you're pathetic", "you're an idiot", 'sos una basura', 'eres una basura',
+      'sos basura', 'eres basura', 'sos un fracasado', 'eres un fracasado', 'sos una fracasada',
+      'eres una fracasada', 'no servis para nada', 'no sirves para nada', 'sos una vergüenza',
+      'eres una vergüenza', 'sos un perdedor', 'eres un perdedor', 'sos ridiculo', 'sos ridicula',
+      'eres ridiculo', 'eres ridicula', 'no vales nada', 'no valés nada', 'sos un desgraciado',
+      'eres un desgraciado', 'callate la boca', 'cállate la boca', "you're trash", "you're garbage",
+      "you're worthless", "you're a loser", 'shut up', 'screw you', "you're disgusting",
+      'you make me sick', "you're a joke", "you're useless", "you're stupid", 'sos un inutil',
+      'eres un inutil',
     ]),
   },
   {
@@ -165,6 +180,8 @@ const redFlagCategories: RedFlagCategory[] = [
       'terminamos', 'se acabo', 'quiero terminar', 'quiero cortar', 'ya no te quiero', 'ya no te amo',
       'no te amo mas', 'romper contigo', 'no quiero verte mas', 'no quiero saber nada de ti',
       'no quiero saber nada de vos', 'breaking up with you', "we're done", "i'm done with you",
+      'hasta aca llegamos', 'hasta acá llegamos', 'chau para siempre', 'this is over', 'i want out',
+      'quiero salir de esto', 'no doy mas con esto', 'no doy más con esto',
     ]),
   },
 ]
@@ -192,23 +209,88 @@ const cutesySpamPattern = buildRepeatedEmojiPattern(
   3,
 )
 
-// Heuristic list for "El Tono Picante" — a configurable dictionary,
-// not a claim of accuracy. Easy to extend without touching the scoring logic.
-const flirtyWords = [
+// Heuristic dictionary for "El Tono Picante" — not a claim of accuracy, just candidate
+// bait; the AI pass (see applyAiVerdicts) is what actually decides which candidates are
+// real. Split into two tiers so the *display* — which examples and which words in the
+// "most used" list get shown first — can favor the explicit, attention-grabbing tier
+// over vaguer everyday-language hits ("hot", "sexy") once both have already cleared the
+// AI's judgment. Tiering never affects which candidates get sent or accepted; it only
+// changes what surfaces first among messages already confirmed genuinely spicy.
+const flirtyExplicitWords = [
+  'pene', 'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong', 'shaft',
+  'culo', 'orto', 'nalgas', 'pompis', 'ass', 'butt', 'botty', 'teta', 'tetas', 'pecho', 'pechos',
+  'boob', 'boobs', 'tit', 'tits', 'breast', 'breasts', 'knockers', 'jugs', 'vagina', 'concha',
+  'coño', 'sexo', 'pussy', 'cunt', 'snatch', 'twat', 'beaver', 'muff', 'puta', 'slut', 'gemir',
+  'gemidos', 'erotico', 'erotica', 'desnudo', 'desnuda', 'desnudarte', 'desnudarme', 'sumisa', 'sumiso',
+  'dominante', 'follar', 'coger', 'penetrar', 'penetracion',
+]
+const flirtyEverydayWords = [
   'caliente', 'calentura', 'sexy', 'sexi', 'seductor', 'seductora', 'tentador',
   'tentadora', 'provocador', 'provocadora', 'provocando', 'ardiente', 'sensual', 'morbo', 'pasion',
-  'apasionado', 'apasionada', 'travieso', 'traviesa', 'gemir', 'gemidos', 'erotico', 'erotica',
-  'desnudo', 'desnuda', 'desnudarte', 'desnudarme', 'me calentas', 'me prendes', 'caliente',
+  'apasionado', 'apasionada', 'travieso', 'traviesa', 'me calentas', 'me prendes',
   'ganas de vos', 'ganas de ti', 'fantasia', 'fantasias', 'hot', 'turned on', 'sexting', 'flirty',
-  'naughty', 'teasing', 'pene', 'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong', 'shaft', 
-  'culo', 'orto', 'nalgas', 'pompis', 'ass', 'butt', 'botty', 'teta', 'tetas', 'pecho', 'pechos', 'boob', 'boobs', 'tit', 'tits', 'breast',
-  'breasts', 'knockers', 'jugs', 'vagina', 'concha', 'coño', 'sexo', 'pussy', 'cunt', 'snatch', 'twat', 'beaver', 'muff', 'puta', 'slut'
+  'naughty', 'teasing',
 ]
+// Explicit tier first: when a message matches more than one word, `matchAiKeyword`
+// (which just takes the first regex match) ends up tagging it with the explicit one —
+// the more attention-grabbing label — rather than an incidental vaguer word alongside it.
+const flirtyWords = [...flirtyExplicitWords, ...flirtyEverydayWords]
+const flirtyExplicitWordSet = new Set(flirtyExplicitWords)
 const flirtyPattern = toBoundaryPattern(flirtyWords)
 const flirtyWordPatterns = flirtyWords.map((word) => ({
   word,
+  isExplicit: flirtyExplicitWordSet.has(word),
   pattern: new RegExp(`\\b${escapeRegExp(word)}\\b`),
 }))
+
+// ---------------------------------------------------------------------------
+// AI-assisted metrics
+//
+// The keyword dictionaries above are deliberately broad — "hot" matches both
+// "you look hot" and "the food was hot". These two metrics therefore treat a
+// keyword hit as a *candidate*, not a result: with Pro access, the candidates are
+// sent (already filtered, without names) to the backend, which asks Gemini which
+// ones genuinely mean what the metric claims. Without a verdict the metric stays
+// locked rather than showing the noisy keyword-only numbers.
+// ---------------------------------------------------------------------------
+
+export type AiMetricId = 'tonopicante' | 'redflags'
+
+export const aiMetricIds: readonly AiMetricId[] = ['tonopicante', 'redflags']
+
+export function isAiMetricId(metricId: string): metricId is AiMetricId {
+  return (aiMetricIds as readonly string[]).includes(metricId)
+}
+
+/**
+ * The exact dictionary phrase that made this message a candidate for an AI-backed
+ * metric, or null when the message isn't a candidate at all. The phrase travels with
+ * the snippet so the model knows which word to weigh — and so a long message can be
+ * cropped around it instead of blindly from the start.
+ */
+export function matchAiKeyword(metricId: AiMetricId, text: string): string | null {
+  const normalized = normalizeForMatch(text)
+
+  if (metricId === 'tonopicante') {
+    return matchedFlirtyWord(text)?.word ?? null
+  }
+
+  for (const category of redFlagCategories) {
+    const match = category.pattern.exec(normalized)
+    if (match) {
+      return match[0]
+    }
+  }
+
+  return null
+}
+
+/** Accepted message ids per AI metric, as returned by the backend. */
+export type AiVerdicts = Partial<Record<AiMetricId, ReadonlySet<string>>>
+
+/** Per-metric AI state handed to `gateAnalysis`. A metric missing from this map is
+ * treated as still pending, which keeps it locked rather than leaking raw numbers. */
+export type AiCardStates = Partial<Record<AiMetricId, AiCardState>>
 
 const weekdayLabels: Record<Language, string[]> = {
   es: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
@@ -371,15 +453,26 @@ export interface AnalysisCore {
   rawVipMetrics: MetricCard[]
 }
 
+/** Derives the per-metric working set from parsed messages. Cheap next to the metric
+ * functions themselves, so the full analysis and the AI re-pass each build one fresh
+ * instead of trying to keep a context object alive between them. */
+export function createMetricContext(messages: ChatMessage[], language: Language): MetricContext {
+  const chatMessages = messages.filter((message) => !message.isSystem && message.sender)
+  const textMessages = chatMessages.filter((message) => !message.isSystemPlaceholder)
+  const participants = [...new Set(chatMessages.map((message) => message.sender as string))]
+  const messageIndex = new Map(chatMessages.map((message, index) => [message.id, index]))
+
+  return { chatMessages, textMessages, participants, language, messageIndex }
+}
+
 export async function computeAnalysisCore(
   chatName: string,
   messages: ChatMessage[],
   language: Language,
   sourceHash: string,
 ): Promise<AnalysisCore> {
-  const chatMessages = messages.filter((message) => !message.isSystem && message.sender)
-  const textMessages = chatMessages.filter((message) => !message.isSystemPlaceholder)
-  const participants = [...new Set(chatMessages.map((message) => message.sender as string))]
+  const ctx = createMetricContext(messages, language)
+  const { chatMessages, participants } = ctx
   const firstMessage = chatMessages[0]
   const lastMessage = chatMessages.at(-1)
 
@@ -396,9 +489,6 @@ export async function computeAnalysisCore(
       rawVipMetrics: [],
     }
   }
-
-  const messageIndex = new Map(chatMessages.map((message, index) => [message.id, index]))
-  const ctx: MetricContext = { chatMessages, textMessages, participants, language, messageIndex }
 
   const rawFreeMetrics = buildFreeMetrics(ctx).filter((card) => card.hasData)
   await yieldToBrowser()
@@ -417,15 +507,65 @@ export async function computeAnalysisCore(
   }
 }
 
+/**
+ * Re-derives only the AI-backed cards once the model's verdicts are in. Everything
+ * else in the core is left exactly as the worker computed it, so unlocking the AI
+ * metrics costs two passes over the messages instead of a full re-analysis — the
+ * same reasoning that keeps `gateAnalysis` separate from `computeAnalysisCore`.
+ */
+export async function applyAiVerdicts(
+  core: AnalysisCore,
+  messages: ChatMessage[],
+  language: Language,
+  verdicts: AiVerdicts,
+): Promise<AnalysisCore> {
+  const pending = aiMetricIds.filter((metricId) => verdicts[metricId] !== undefined)
+
+  if (pending.length === 0) {
+    return core
+  }
+
+  const ctx = createMetricContext(messages, language)
+  const rebuilt = new Map<AiMetricId, MetricResult>()
+
+  for (const metricId of pending) {
+    rebuilt.set(
+      metricId,
+      metricId === 'tonopicante'
+        ? metricTonoPicante(ctx, verdicts[metricId])
+        : metricRedflags(ctx, verdicts[metricId]),
+    )
+    await yieldToBrowser()
+  }
+
+  const rawVipMetrics = core.rawVipMetrics
+    .map((card) => {
+      const result = isAiMetricId(card.id) ? rebuilt.get(card.id) : undefined
+
+      return result
+        ? { ...card, hasData: result.hasData, basic: result.basic, detail: result.detail }
+        : card
+    })
+    // The AI only ever removes candidates, so a card can lose all its data here — for
+    // instance a chat where every "hot" turned out to be about the weather.
+    .filter((card) => card.hasData)
+
+  return { ...core, rawVipMetrics }
+}
+
 /** Cheap: just decides which cards' `basic`/`detail` are visible for this viewer.
- * Safe to call synchronously on every `hasVipAccess`/replay change since none of
- * the underlying metric numbers depend on VIP status. */
-export function gateAnalysis(core: AnalysisCore, hasVipAccess: boolean): AnalysisBundle {
+ * Safe to call synchronously on every `hasVipAccess`/replay/AI-state change since none
+ * of the underlying metric numbers depend on VIP status. */
+export function gateAnalysis(
+  core: AnalysisCore,
+  hasVipAccess: boolean,
+  aiStates: AiCardStates = {},
+): AnalysisBundle {
   const { rawFreeMetrics, rawVipMetrics, ...meta } = core
   return {
     ...meta,
-    freeMetrics: rawFreeMetrics.map((card) => gateCard(card, hasVipAccess)),
-    vipMetrics: rawVipMetrics.map((card) => gateCard(card, hasVipAccess)),
+    freeMetrics: rawFreeMetrics.map((card) => gateCard(card, hasVipAccess, aiStates)),
+    vipMetrics: rawVipMetrics.map((card) => gateCard(card, hasVipAccess, aiStates)),
   }
 }
 
@@ -506,14 +646,24 @@ function createMetric(
 /** Applies VIP/locking rules to an already-computed (ungated) card. Cheap and
  * pure, so it can re-run on every `hasVipAccess` change with no recompute cost —
  * see `gateAnalysis`. */
-function gateCard(card: MetricCard, hasVipAccess: boolean): MetricCard {
-  const basicLocked = card.tier === 'vip' && !hasVipAccess
-  const detailLocked = !hasVipAccess
+function gateCard(card: MetricCard, hasVipAccess: boolean, aiStates: AiCardStates): MetricCard {
+  const aiState: AiCardState | undefined = isAiMetricId(card.id)
+    ? aiStates[card.id] ?? { status: 'pending' }
+    : undefined
+
+  // An AI metric without a verdict must never fall back to the raw keyword numbers:
+  // those false positives are the whole reason the AI pass exists. It stays locked and
+  // the card shows why — which is also what keeps one failed metric from taking the
+  // other twenty-four down with it.
+  const aiUnresolved = aiState !== undefined && aiState.status !== 'ready'
+  const basicLocked = (card.tier === 'vip' && !hasVipAccess) || aiUnresolved
+  const detailLocked = !hasVipAccess || aiUnresolved
 
   return {
     ...card,
     basic: basicLocked ? undefined : card.basic,
     detail: detailLocked ? undefined : card.detail,
+    ...(aiState ? { ai: aiState } : {}),
   }
 }
 
@@ -1199,12 +1349,18 @@ function metricWordcloud(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricRedflags(ctx: MetricContext): MetricResult {
+function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
   const { chatMessages, textMessages, language } = ctx
 
+  // Only the keyword side of this metric goes through the AI — deletions and long
+  // silences are structural facts about the chat, with no wording to misread.
   const categoryHits = redFlagCategories.map((category) => ({
     category,
-    messages: textMessages.filter((message) => category.pattern.test(normalizeForMatch(message.contentText))),
+    messages: textMessages.filter(
+      (message) =>
+        category.pattern.test(normalizeForMatch(message.contentText)) &&
+        (!accepted || accepted.has(message.id)),
+    ),
   }))
   const deletions = chatMessages.filter((message) => message.isDeleted)
   // 48h matches the threshold "Rachas de Inactividad" already uses for a "long
@@ -1236,20 +1392,24 @@ function metricRedflags(ctx: MetricContext): MetricResult {
 
   const byKeywordSender = countBySender(categoryHits.flatMap((entry) => entry.messages))
 
-  const flaggedById = new Map<string, { message: ChatMessage; reason: string }>()
+  // Examples worth reading: keyword hits (celos, insultos, culpa, rupturas) and long
+  // silences, each rendered with the real conversation around them. Deletions still
+  // count toward the score and the breakdown chart above, but a "this message got
+  // deleted" example has no actual text to show — so, on purpose, they never appear here.
+  const momentsById = new Map<string, { message: ChatMessage; heading: string }>()
   for (const entry of categoryHits) {
     for (const message of entry.messages) {
-      if (!flaggedById.has(message.id)) {
-        flaggedById.set(message.id, { message, reason: categoryLabel(entry.category, language) })
+      if (!momentsById.has(message.id)) {
+        momentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
       }
     }
   }
-  for (const message of deletions) {
-    if (!flaggedById.has(message.id)) {
-      flaggedById.set(message.id, { message, reason: language === 'es' ? 'mensaje eliminado' : 'deleted message' })
+  for (const gap of longSilences) {
+    if (!momentsById.has(gap.after.id)) {
+      momentsById.set(gap.after.id, { message: gap.after, heading: silenceHeading(gap, language) })
     }
   }
-  const flagged = [...flaggedById.values()].sort(
+  const moments = [...momentsById.values()].sort(
     (left, right) => (ctx.messageIndex.get(left.message.id) ?? 0) - (ctx.messageIndex.get(right.message.id) ?? 0),
   )
 
@@ -1295,7 +1455,7 @@ function metricRedflags(ctx: MetricContext): MetricResult {
           ? 'No es un diagnóstico: cruza silencios largos, borrados y frases clave agrupadas por categoría (celos, insultos, culpa, rupturas).'
           : 'Not a diagnosis: it combines long silences, deletions, and keyword phrases grouped by category (jealousy, insults, guilt-tripping, breakups).',
       breakdown: totalKeywordHits > 0 ? breakdownPercent(byKeywordSender, totalKeywordHits) : undefined,
-      groups: capGroups(flagged.map((entry) => momentGroup(ctx, entry.message, `${entry.message.sender} — ${entry.reason}`))),
+      groups: capGroups(moments.map((moment) => momentGroup(ctx, moment.message, moment.heading))),
       paginatedItemsLabel: language === 'es' ? 'Momentos señalados' : 'Flagged moments',
     },
   }
@@ -1615,9 +1775,15 @@ function metricDramatico(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricTonoPicante(ctx: MetricContext): MetricResult {
+function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
   const { textMessages, participants, language } = ctx
-  const flagged = textMessages.filter((message) => hasFlirtyWord(message.contentText))
+  // `accepted` is the AI's verdict: keep only the candidates it confirmed really are
+  // suggestive. Undefined means the verdict hasn't run, so every keyword hit counts —
+  // that raw version is never shown to a user (see gateAnalysis), it just keeps the
+  // metric computable before and independently of the AI pass.
+  const flagged = textMessages.filter(
+    (message) => hasFlirtyWord(message.contentText) && (!accepted || accepted.has(message.id)),
+  )
 
   if (flagged.length === 0) {
     return { hasData: false }
@@ -1638,13 +1804,34 @@ function metricTonoPicante(ctx: MetricContext): MetricResult {
     }
   }
 
+  // Explicit-tier hits lead, both here and in the word list below — Santiago wants the
+  // attention-grabbing matches surfaced, not buried under five milder ones a participant
+  // happened to send earlier in the chat. Frequency/chronology only break ties within a tier.
   const groupsList: MessageGroup[] = []
   for (const name of participants) {
-    const own = flagged.filter((message) => message.sender === name).slice(0, 5)
-    for (const message of own) {
-      groupsList.push(momentGroup(ctx, message, `${name} — ${formatDate(message.timestamp, language)}`))
+    const ownMatches = flagged
+      .filter((message) => message.sender === name)
+      .flatMap((message) => {
+        const match = matchedFlirtyWord(message.contentText)
+        return match ? [{ message, match }] : []
+      })
+      .sort((left, right) => Number(right.match.isExplicit) - Number(left.match.isExplicit))
+      .slice(0, 5)
+
+    for (const { message, match } of ownMatches) {
+      groupsList.push(
+        momentGroup(ctx, message, `${name} — "${match.word}" — ${formatDate(message.timestamp, language)}`),
+      )
     }
   }
+
+  // Same tiering for the word list: explicit terms rank above everyday ones regardless
+  // of how often each was used, with count only breaking ties inside a tier.
+  const rankedTerms = [...termCounts.entries()].sort(
+    (left, right) =>
+      Number(flirtyExplicitWordSet.has(right[0])) - Number(flirtyExplicitWordSet.has(left[0])) ||
+      right[1] - left[1],
+  )
 
   return {
     hasData: true,
@@ -1663,9 +1850,9 @@ function metricTonoPicante(ctx: MetricContext): MetricResult {
       groups: capGroups(groupsList),
       groupsLabel: language === 'es' ? 'Los mensajes más picantes de cada uno' : "Each participant's spiciest messages",
       paginatedItems: capList(
-        [...termCounts.entries()]
-          .sort((left, right) => right[1] - left[1])
-          .map(([word, count]) => (language === 'es' ? `"${word}" se usó ${count} veces` : `"${word}" used ${count} times`)),
+        rankedTerms.map(([word, count]) =>
+          language === 'es' ? `"${word}" se usó ${count} veces` : `"${word}" used ${count} times`,
+        ),
       ),
       paginatedItemsLabel: language === 'es' ? 'Palabras más usadas' : 'Most used words',
     },
@@ -2332,6 +2519,28 @@ function hasCringeWord(text: string): boolean {
 
 function hasFlirtyWord(text: string): boolean {
   return flirtyPattern.test(normalizeForMatch(text))
+}
+
+/** Which flirty word matched, and whether it's the explicit tier — checked in tier
+ * order so a message containing both an explicit and an everyday word (e.g. "estabas
+ * sexy... y tu pene...") is tagged with the explicit one, not whichever happens to sit
+ * first in the raw text. Purely a display-priority signal (see the tiered lists above);
+ * it never affects which candidates get sent to or accepted by the AI. */
+function matchedFlirtyWord(text: string): { word: string; isExplicit: boolean } | null {
+  const normalized = normalizeForMatch(text)
+  let everydayMatch: string | null = null
+
+  for (const { word, isExplicit, pattern } of flirtyWordPatterns) {
+    if (!pattern.test(normalized)) {
+      continue
+    }
+    if (isExplicit) {
+      return { word, isExplicit: true }
+    }
+    everydayMatch ??= word
+  }
+
+  return everydayMatch ? { word: everydayMatch, isExplicit: false } : null
 }
 
 // Home-row letters that a "jaja"/"jsjs" laugh naturally spills onto when someone's

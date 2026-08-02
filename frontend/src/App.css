@@ -1174,6 +1174,63 @@ h3 {
   box-shadow: 0 0 0 6px rgba(192, 132, 252, 0.18);
 }
 
+.unlock-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  animation: none;
+  box-shadow: none;
+  transform: none;
+}
+
+/* An AI-blocked card is not a locked one: the viewer already paid, so it reads as a
+   status (and an action) rather than an upsell — cooler palette, no pulsing lock. */
+.ai-panel .locked-overlay {
+  background: rgba(8, 11, 22, 0.62);
+  gap: 6px;
+}
+
+.ai-panel .locked-icon,
+.locked-panel:hover .ai-icon {
+  background: rgba(34, 211, 238, 0.16);
+  color: #67e8f9;
+}
+
+.ai-panel-title {
+  color: #f8fafc;
+  font-size: 0.92rem;
+  line-height: 1.3;
+  max-width: 280px;
+}
+
+.ai-countdown {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.consent-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.consent-actions .primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* .history-panel is .analytics-sidebar's only child now (the account panel
    moved into the topbar's .account-menu dropdown — see App.tsx), so it's free
    to take up the sidebar's full height. min-height: 0 overrides the flex

@@ -1,18 +1,39 @@
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 import './App.css'
+import { AiConsentModal } from './components/AiConsentModal'
+import type { AiPanelProps } from './components/AiStatePanel'
 import { CrossButton } from './components/IconButton'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { MetricCard } from './components/MetricCard'
 import { MetricModal } from './components/MetricModal'
 import { VipBadge } from './components/VipBadge'
-import { analyzeInWorker } from './lib/analysisClient'
-import { getCurrentUser, listAnalyses, loginWithGoogle, saveAnalysis } from './lib/api'
+import { toAcceptedMessageIds, type AiCandidateSet } from './lib/aiCandidates'
+import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from './lib/analysisClient'
+import {
+  analyzeAiMetrics,
+  ApiError,
+  getCurrentUser,
+  grantAiConsent,
+  listAnalyses,
+  loginWithGoogle,
+  retryAiMetrics,
+  saveAnalysis,
+} from './lib/api'
 import { getLandingPreviewCards } from './lib/landingPreview'
-import { formatNumber, gateAnalysis, type AnalysisCore } from './lib/metrics'
+import {
+  aiMetricIds,
+  formatNumber,
+  gateAnalysis,
+  isAiMetricId,
+  type AiCardStates,
+  type AiMetricId,
+  type AnalysisCore,
+} from './lib/metrics'
 import { parseChatFile } from './lib/parser'
 import { useInView } from './lib/useInView'
 import type {
+  AiMetricStatus,
   AnalysisBundle,
   ChatMessage,
   Language,
@@ -44,8 +65,8 @@ const shellCopy = {
     heroCaption: 'Privado, visual y un poquito picante.',
     whatItDoesTitle: '¿Para qué sirve?',
     whatItDoesBody:
-      'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión.',
-    trustBadges: ['🔒 100% local, tu chat nunca se sube', '⚡ Resultados en segundos', '🆓 Empezá gratis, sin tarjeta'],
+      'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión. Las dos métricas Pro con IA son la única excepción, y te pedimos permiso antes.',
+    trustBadges: ['🔒 Tu chat se procesa en tu navegador', '⚡ Resultados en segundos', '🆓 Empezá gratis, sin tarjeta'],
     marqueeItems: [
       '🚩 Detector de Red Flags',
       '😂 Analizador de risas',
@@ -58,7 +79,7 @@ const shellCopy = {
     howItWorksTitle: 'Cómo funciona',
     howItWorksSteps: [
       { title: 'Subí tu chat', body: 'Exportá la conversación desde WhatsApp (.txt o .zip) y soltala acá.' },
-      { title: 'Se procesa en tu navegador', body: 'Nada del texto crudo sale de tu dispositivo: solo calculamos métricas.' },
+      { title: 'Se procesa en tu navegador', body: 'Las métricas se calculan ahí mismo: el chat completo nunca se sube.' },
       { title: 'Mirá tu Wrapped', body: 'Recorré tarjetas tipo historia con los datos más divertidos del chat.' },
       { title: 'Desbloqueá lo picante', body: 'Con VIP accedés a red flags, tono picante, sentimiento y mucho más.' },
     ],
@@ -85,9 +106,49 @@ const shellCopy = {
     logout: 'Cerrar sesión',
     processing: 'Procesando archivo...',
     analyzing: 'Analizando tu chat...',
+    analyzingAi: 'Analizando las métricas Pro con IA...',
     saving: 'Guardando análisis...',
     loggingIn: 'Iniciando sesión...',
     overlaySubtitle: 'Aguardá unos minutos mientras procesamos la información.',
+    aiPartialError:
+      'No pudimos procesar algunas métricas con IA. El resto de tu Wrapped está completo — probá de nuevo en unos instantes.',
+    ai: {
+      failedTitle: 'No pudimos analizar esta métrica con IA',
+      reasons: {
+        quota: 'Nos quedamos sin cupo de IA por un momento.',
+        unavailable: 'La IA no respondió a tiempo.',
+        blocked: 'La IA no pudo evaluar estos mensajes.',
+        invalid: 'La IA devolvió una respuesta inesperada.',
+        config: 'El análisis con IA no está configurado en el servidor.',
+        default: 'No pudimos procesar la solicitud con IA.',
+      },
+      retry: 'Volver a analizar',
+      retryIn: 'Vas a poder reintentar en {time}',
+      retrying: 'Analizando...',
+      needsUpload: 'Subí el chat de nuevo para reintentar',
+      consentTitle: 'Métrica con IA',
+      consentBody: 'Activá el análisis con IA para ver esta métrica sin falsos positivos.',
+      consentCta: 'Activar análisis con IA',
+      unavailableTitle: 'IA no disponible',
+      unavailableBody: 'Esta instalación todavía no tiene configurado el análisis con IA.',
+      pendingTitle: 'Analizando con IA',
+      pendingBody: 'Estamos revisando los mensajes marcados. Tarda unos segundos.',
+    },
+    consent: {
+      eyebrow: 'Un permiso, una sola vez',
+      title: 'Análisis con IA para dos métricas Pro',
+      body:
+        'El Detector de Red Flags y El Tono Picante usan filtros de palabras que se equivocan seguido: sin IA, "la comida estaba caliente" cuenta como mensaje subido de tono. La IA revisa esos mensajes marcados y descarta los que no corresponden.',
+      bullets: [
+        'Solo se envían los mensajes que ya pasaron el filtro de palabras, recortados y con un par de líneas de contexto.',
+        'No viajan nombres: cada participante aparece como una letra.',
+        'El resto del chat se sigue procesando en tu navegador y nunca sale de tu dispositivo.',
+        'El resultado se guarda una sola vez por chat: no se vuelve a analizar ni a cobrar.',
+      ],
+      accept: 'Activar y analizar',
+      decline: 'Ahora no',
+      working: 'Activando...',
+    },
     account: 'Cuenta',
     subscription: 'Suscripción',
     participants: 'Participantes',
@@ -127,7 +188,7 @@ const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Tus mensajes se procesan en tu navegador y nunca se suben a un servidor. Solo guardamos métricas agregadas cuando iniciás sesión.',
+      'Tus mensajes se procesan en tu navegador y el chat nunca se sube entero. Solo guardamos métricas agregadas cuando iniciás sesión. Con Pro, y únicamente si lo autorizás, dos métricas envían los mensajes ya marcados por el filtro —recortados y sin nombres— para que una IA los revise.',
     footerRights: 'Hecho con demasiado jajaja.',
   },
   en: {
@@ -137,8 +198,8 @@ const shellCopy = {
     heroCaption: 'Private, visual, and a little spicy.',
     whatItDoesTitle: 'What is it for?',
     whatItDoesBody:
-      'The app processes the chat in your browser, computes playful metrics, and only stores aggregated results once you decide to sign in.',
-    trustBadges: ['🔒 100% local — your chat is never uploaded', '⚡ Results in seconds', '🆓 Start free, no card needed'],
+      'The app processes the chat in your browser, computes playful metrics, and only stores aggregated results once you decide to sign in. The two AI-powered Pro metrics are the single exception, and we ask first.',
+    trustBadges: ['🔒 Your chat is processed in your browser', '⚡ Results in seconds', '🆓 Start free, no card needed'],
     marqueeItems: [
       '🚩 Red Flag Detector',
       '😂 Laugh Analyzer',
@@ -151,7 +212,7 @@ const shellCopy = {
     howItWorksTitle: 'How it works',
     howItWorksSteps: [
       { title: 'Upload your chat', body: 'Export the conversation from WhatsApp (.txt or .zip) and drop it here.' },
-      { title: "It's processed in your browser", body: 'None of the raw text leaves your device — we only compute metrics.' },
+      { title: "It's processed in your browser", body: 'Metrics are computed right there — the full chat is never uploaded.' },
       { title: 'See your Wrapped', body: 'Swipe through story-style cards with the most fun stats from the chat.' },
       { title: 'Unlock the spicy stuff', body: 'VIP gets you red flags, spicy tone, sentiment, and a lot more.' },
     ],
@@ -178,9 +239,49 @@ const shellCopy = {
     logout: 'Sign out',
     processing: 'Processing file...',
     analyzing: 'Analyzing your chat...',
+    analyzingAi: 'Analyzing the Pro metrics with AI...',
     saving: 'Saving analysis...',
     loggingIn: 'Signing in...',
     overlaySubtitle: 'Please wait a few minutes while we process the information.',
+    aiPartialError:
+      "We couldn't process some metrics with AI. The rest of your Wrapped is complete — try again in a moment.",
+    ai: {
+      failedTitle: "We couldn't analyze this metric with AI",
+      reasons: {
+        quota: 'We ran out of AI credit for a moment.',
+        unavailable: "The AI didn't answer in time.",
+        blocked: "The AI couldn't evaluate these messages.",
+        invalid: 'The AI returned an unexpected answer.',
+        config: 'AI analysis is not configured on the server.',
+        default: "We couldn't process the AI request.",
+      },
+      retry: 'Analyze again',
+      retryIn: 'You can retry in {time}',
+      retrying: 'Analyzing...',
+      needsUpload: 'Upload the chat again to retry',
+      consentTitle: 'AI-powered metric',
+      consentBody: 'Turn on AI analysis to see this metric without false positives.',
+      consentCta: 'Turn on AI analysis',
+      unavailableTitle: 'AI unavailable',
+      unavailableBody: 'This installation does not have AI analysis configured yet.',
+      pendingTitle: 'Analyzing with AI',
+      pendingBody: 'We are reviewing the flagged messages. It takes a few seconds.',
+    },
+    consent: {
+      eyebrow: 'One permission, just once',
+      title: 'AI analysis for two Pro metrics',
+      body:
+        'The Red Flag Detector and The Spicy Tone rely on keyword filters that get it wrong often: without AI, "the food was hot" counts as a suggestive message. The AI reviews those flagged messages and drops the ones that do not belong.',
+      bullets: [
+        'Only the messages that already passed the keyword filter are sent, trimmed and with a couple of context lines.',
+        'No names travel: each participant shows up as a letter.',
+        'The rest of the chat is still processed in your browser and never leaves your device.',
+        'The result is stored once per chat: it is never analyzed — or billed — twice.',
+      ],
+      accept: 'Turn on and analyze',
+      decline: 'Not now',
+      working: 'Turning on...',
+    },
     account: 'Account',
     subscription: 'Subscription',
     participants: 'Participants',
@@ -220,7 +321,7 @@ const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Your messages are processed in your browser and never uploaded to a server. We only store aggregated metrics once you sign in.',
+      'Your messages are processed in your browser and the chat is never uploaded in full. We only store aggregated metrics once you sign in. With Pro, and only if you authorize it, two metrics send the messages already flagged by the keyword filter — trimmed and without names — for an AI to review.',
     footerRights: 'Made with way too much "hahaha".',
   },
 } as const
@@ -239,7 +340,10 @@ function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem(authTokenKey))
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
-  const [analysis, setAnalysis] = useState<AnalysisBundle | null>(null)
+  // Two sources for what's on screen: a live upload (kept as an ungated core so VIP
+  // and AI state can be re-applied for free) and a bundle replayed from history.
+  const [core, setCore] = useState<AnalysisCore | null>(null)
+  const [replayedAnalysis, setReplayedAnalysis] = useState<AnalysisBundle | null>(null)
   const [isReplay, setIsReplay] = useState(false)
   const [pendingPersist, setPendingPersist] = useState(false)
   const [busyMessage, setBusyMessage] = useState<string>('')
@@ -247,6 +351,9 @@ function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null)
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  const [aiStates, setAiStates] = useState<AiCardStates>({})
+  const [isAiBusy, setIsAiBusy] = useState(false)
+  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false)
 
   const copy = shellCopy[language]
   const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
@@ -258,6 +365,15 @@ function App() {
   // Caching one core per (sourceHash, language) means unlocking VIP after login is
   // a synchronous re-gate, not a second multi-second recompute.
   const analysisCoreCache = useRef<Map<string, AnalysisCore>>(new Map())
+
+  // Snippets are derived from the messages, not from VIP state, so one build per chat
+  // serves the first analysis and every later retry.
+  const aiCandidateCache = useRef<Map<string, AiCandidateSet[]>>(new Map())
+  // Which (chat, language) the AI phase has already been attempted for, so the effect
+  // doesn't re-fire when applying the verdicts changes `core`.
+  const aiAttemptedFor = useRef<string>('')
+  // The consent modal opens by itself once per session, not on every upload.
+  const consentPrompted = useRef(false)
 
   // Landing page sections reveal as they're scrolled into view, each tracked
   // independently so the page animates in stages instead of all at once.
@@ -282,6 +398,35 @@ function App() {
     setPhoneTilt({ x: 0, y: 0 })
   }
 
+  const hasVipAccess = Boolean(user?.hasVipAccess)
+
+  // What each AI-backed card should say. A viewer without Pro gets an empty map, which
+  // the gate reads as "no verdict" and renders as the ordinary VIP lock. A Pro viewer
+  // gets the real reason instead: no key on this server, consent not given yet, or
+  // whatever the backend last recorded for that metric.
+  const aiCardStates = useMemo<AiCardStates>(() => {
+    if (!hasVipAccess) {
+      return {}
+    }
+
+    if (!user?.aiEnabled) {
+      return everyAiMetric('unavailable')
+    }
+
+    if (!user.hasAiConsent) {
+      return everyAiMetric('consent')
+    }
+
+    return aiStates
+  }, [hasVipAccess, user?.aiEnabled, user?.hasAiConsent, aiStates])
+
+  // Either a live upload (gated on the fly, so VIP or an AI verdict landing mid-session
+  // costs nothing to reflect) or a bundle replayed from history exactly as it was saved.
+  const analysis = useMemo(
+    () => replayedAnalysis ?? (core ? gateAnalysis(core, hasVipAccess, aiCardStates) : null),
+    [replayedAnalysis, core, hasVipAccess, aiCardStates],
+  )
+
   useEffect(() => {
     if (!token) {
       return
@@ -290,25 +435,22 @@ function App() {
     void hydrateSession(token)
   }, [token])
 
-  // Recompute locally whenever the underlying chat, language, or VIP entitlement
-  // changes. Locked cards never carry real numbers in `analysis` in the first
-  // place (see gateAnalysis), so unlocking means re-gating an already-computed
-  // core still held in memory — never a server round trip, and (see cache above)
-  // almost never a second worker computation either.
+  // Recompute locally whenever the underlying chat or language changes. VIP
+  // entitlement is deliberately *not* a dependency: gating happens downstream in
+  // `gateAnalysis`, so unlocking VIP re-gates an already-computed core still held in
+  // memory — never a server round trip, and (see cache above) almost never a second
+  // worker computation either.
   useEffect(() => {
     if (!activeChat) {
       return
     }
 
-    const hasVipAccess = Boolean(user?.hasVipAccess)
     const cacheKey = `${activeChat.sourceHash}:${language}`
     const cached = analysisCoreCache.current.get(cacheKey)
 
     if (cached) {
-      // Re-gating is synchronous and cheap — clear whatever busy state handed off
-      // to us (a fresh upload, or nothing at all if only VIP access changed).
       setBusyMessage('')
-      setAnalysis(gateAnalysis(cached, hasVipAccess))
+      setCore(cached)
       return
     }
 
@@ -318,12 +460,12 @@ function App() {
     setBusyMessage(copy.analyzing)
 
     analyzeInWorker(activeChat.chatName, activeChat.messages, language, activeChat.sourceHash)
-      .then((core) => {
+      .then((computed) => {
         if (cancelled) {
           return
         }
-        analysisCoreCache.current.set(cacheKey, core)
-        setAnalysis(gateAnalysis(core, hasVipAccess))
+        analysisCoreCache.current.set(cacheKey, computed)
+        setCore(computed)
       })
       .catch((caught: unknown) => {
         if (cancelled) {
@@ -341,7 +483,45 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeChat, language, user?.hasVipAccess])
+  }, [activeChat, language])
+
+  // The AI pass is kept out of the analysis above on purpose: it is the only part of
+  // this app that costs money, so it runs exactly when it can produce something the
+  // viewer will actually see — Pro access, a key configured on the server, consent
+  // given, and the chat still in memory to build the snippets from. A free user never
+  // reaches this effect, which is what keeps their upload from spending a single token.
+  useEffect(() => {
+    if (!activeChat || !core || !token) {
+      return
+    }
+
+    if (!user?.hasVipAccess || !user.aiEnabled || !user.hasAiConsent) {
+      return
+    }
+
+    const runKey = `${activeChat.sourceHash}:${language}`
+    if (aiAttemptedFor.current === runKey) {
+      return
+    }
+
+    aiAttemptedFor.current = runKey
+    void runAiPhase(token, activeChat, core, { retry: false })
+  }, [activeChat, core, token, language, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
+
+  // Asked once per session, and only where it's actionable: a Pro viewer looking at a
+  // chat whose spicy/red-flag cards are waiting on exactly this permission.
+  useEffect(() => {
+    if (consentPrompted.current || !core) {
+      return
+    }
+
+    if (!user?.hasVipAccess || !user.aiEnabled || user.hasAiConsent) {
+      return
+    }
+
+    consentPrompted.current = true
+    setIsConsentModalOpen(true)
+  }, [core, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   useEffect(() => {
     if (!pendingPersist || !analysis) {
@@ -433,6 +613,8 @@ function App() {
     setSavedAnalyses([])
     setError('')
     setIsAccountMenuOpen(false)
+    setAiStates({})
+    aiAttemptedFor.current = ''
   }
 
   function openFilePicker() {
@@ -455,6 +637,11 @@ function App() {
     try {
       const { messages, sourceHash } = await parseChatFile(file)
       setIsReplay(false)
+      setReplayedAnalysis(null)
+      // Per-chat state: cleared here, then rebuilt by the AI effect (which will read
+      // the backend's stored verdicts for free if this chat was analyzed before).
+      setAiStates({})
+      aiAttemptedFor.current = ''
       setActiveChat({ chatName: stripExtension(file.name), messages, sourceHash })
       setPendingPersist(true)
       setSelectedMetricId(null)
@@ -467,6 +654,154 @@ function App() {
       setError(caught instanceof Error ? caught.message : copy.loadError)
     } finally {
       event.target.value = ''
+    }
+  }
+
+  /** Snippets depend only on the messages, so one build per chat serves the first
+   * analysis and every later retry. */
+  async function getAiCandidates(chat: ActiveChat): Promise<AiCandidateSet[]> {
+    const cached = aiCandidateCache.current.get(chat.sourceHash)
+
+    if (cached) {
+      return cached
+    }
+
+    const built = await buildAiCandidatesInWorker(chat.sourceHash, chat.messages)
+    aiCandidateCache.current.set(chat.sourceHash, built)
+    return built
+  }
+
+  /**
+   * Sends the filtered snippets for judging and folds the answer back into the core.
+   * Metrics are handled one by one all the way down, so a metric that runs out of
+   * quota leaves the others — AI-backed or not — exactly as they were.
+   */
+  async function runAiPhase(
+    authToken: string,
+    chat: ActiveChat,
+    currentCore: AnalysisCore,
+    options: { retry: boolean },
+  ) {
+    // Toggling the language mid-flight rebuilds the core under a different key. This
+    // request's answer belongs to the core it started from, so it's dropped rather
+    // than allowed to overwrite a newer one.
+    const runKey = `${chat.sourceHash}:${language}`
+    const isStale = () => aiAttemptedFor.current !== runKey
+
+    setIsAiBusy(true)
+    setBusyMessage(copy.analyzingAi)
+
+    try {
+      const candidateSets = await getAiCandidates(chat)
+
+      const results = options.retry
+        ? // A retry needs no payload: the backend still holds the snippets from the
+          // attempt that failed, and only re-runs the metrics still marked failed.
+          await retryAiMetrics(authToken, chat.sourceHash)
+        : await analyzeAiMetrics(authToken, {
+            sourceHash: chat.sourceHash,
+            metrics: candidateSets.map((set) => ({
+              metricId: set.metricId,
+              snippets: set.candidates.map(({ id, keyword, text }) => ({ id, keyword, text })),
+            })),
+          })
+
+      const nextStates: AiCardStates = {}
+      const verdicts: Partial<Record<AiMetricId, string[]>> = {}
+
+      for (const result of results) {
+        if (!isAiMetricId(result.metricId)) {
+          continue
+        }
+
+        nextStates[result.metricId] = {
+          status: result.status,
+          errorCode: result.errorCode,
+          retryAvailableAtUtc: result.retryAvailableAtUtc,
+        }
+
+        if (result.status === 'ready') {
+          const set = candidateSets.find((candidate) => candidate.metricId === result.metricId)
+          verdicts[result.metricId] = [...toAcceptedMessageIds(set?.candidates ?? [], result.acceptedIds)]
+        }
+      }
+
+      if (isStale()) {
+        return
+      }
+
+      setAiStates((current) => ({ ...current, ...nextStates }))
+
+      if (Object.keys(verdicts).length > 0) {
+        const enriched = await applyAiVerdictsInWorker(
+          currentCore,
+          chat.sourceHash,
+          language,
+          chat.messages,
+          verdicts,
+        )
+
+        if (isStale()) {
+          return
+        }
+
+        analysisCoreCache.current.set(runKey, enriched)
+        setCore(enriched)
+        // Store the enriched bundle so reopening this chat from history shows the
+        // verified numbers without asking the model anything again.
+        setPendingPersist(true)
+      }
+
+      setError(results.some((result) => result.status === 'failed') ? copy.aiPartialError : '')
+    } catch (caught) {
+      console.error(caught)
+
+      if (isStale()) {
+        return
+      }
+
+      // The request never landed (offline, server down, consent revoked). Mark the AI
+      // metrics so they show a way forward — everything else on the page stays up.
+      const code = caught instanceof ApiError ? caught.code : undefined
+      setAiStates((current) => ({
+        ...current,
+        ...everyAiMetric(code === 'consent_required' ? 'consent' : 'failed'),
+      }))
+      setError(copy.aiPartialError)
+    } finally {
+      setIsAiBusy(false)
+      setBusyMessage('')
+    }
+  }
+
+  function handleAiRetry() {
+    if (!token || !activeChat || !core) {
+      // Nothing in memory to rebuild the snippets from — ask for the chat instead of
+      // firing a retry whose result could never be displayed.
+      openFilePicker()
+      return
+    }
+
+    void runAiPhase(token, activeChat, core, { retry: true })
+  }
+
+  async function handleConsentAccept() {
+    if (!token) {
+      return
+    }
+
+    setIsAiBusy(true)
+
+    try {
+      setUser(await grantAiConsent(token))
+      setIsConsentModalOpen(false)
+      // Clear the guard so the AI effect fires for the chat already on screen.
+      aiAttemptedFor.current = ''
+    } catch (caught) {
+      console.error(caught)
+      setError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setIsAiBusy(false)
     }
   }
 
@@ -491,18 +826,35 @@ function App() {
 
   function openSavedAnalysis(item: SavedAnalysis) {
     setActiveChat(null)
+    setCore(null)
     setIsReplay(true)
     setPendingPersist(false)
-    setAnalysis(JSON.parse(item.resultsJson) as AnalysisBundle)
+    // A saved bundle is already gated and already carries whatever AI state it had
+    // when it was stored; it is shown as-is, since re-deriving any card would need the
+    // raw messages, which never leave the browser and are gone by now.
+    setReplayedAnalysis(JSON.parse(item.resultsJson) as AnalysisBundle)
     setSelectedMetricId(null)
   }
 
   function backToLanding() {
-    setAnalysis(null)
+    setCore(null)
+    setReplayedAnalysis(null)
     setActiveChat(null)
     setIsReplay(false)
     setSelectedMetricId(null)
   }
+
+  // Only Pro viewers get the AI panel; for everyone else an AI metric is just a locked
+  // VIP card and the upsell is the right message.
+  const aiPanel: AiPanelProps | undefined = hasVipAccess
+    ? {
+        copy: copy.ai,
+        canRetry: Boolean(activeChat && core),
+        isBusy: isAiBusy,
+        onRetry: handleAiRetry,
+        onConsent: () => setIsConsentModalOpen(true),
+      }
+    : undefined
 
   const generatedAt = useMemo(() => {
     if (!analysis) {
@@ -692,6 +1044,7 @@ function App() {
                         card={card}
                         seeMoreLabel={copy.seeMore}
                         unlockLabel={copy.unlock}
+                        ai={aiPanel}
                         onOpen={(selected) => setSelectedMetricId(selected.id)}
                         onUnlock={requestUnlock}
                       />
@@ -911,8 +1264,20 @@ function App() {
             unlock: copy.unlock,
             searchPlaceholder: copy.searchPlaceholder,
           }}
+          ai={aiPanel}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
+        />
+      ) : null}
+
+      {isConsentModalOpen ? (
+        <AiConsentModal
+          copy={{ ...copy.consent, close: copy.close }}
+          isBusy={isAiBusy}
+          onAccept={() => {
+            void handleConsentAccept()
+          }}
+          onDismiss={() => setIsConsentModalOpen(false)}
         />
       ) : null}
 
@@ -937,6 +1302,12 @@ function Stat({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   )
+}
+
+/** The same state for every AI-backed metric — used for the reasons that apply to all
+ * of them at once (no key on the server, no consent, request never landed). */
+function everyAiMetric(status: AiMetricStatus): AiCardStates {
+  return Object.fromEntries(aiMetricIds.map((metricId) => [metricId, { status }])) as AiCardStates
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
