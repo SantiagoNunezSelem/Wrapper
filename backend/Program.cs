@@ -8,6 +8,7 @@ using Google.Apis.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));
 builder.Services.Configure<AdminSeedOptions>(builder.Configuration.GetSection(AdminSeedOptions.SectionName));
+builder.Services.Configure<GoogleAiOptions>(builder.Configuration.GetSection(GoogleAiOptions.SectionName));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -22,6 +24,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddHttpClient<GoogleAiClient>();
+builder.Services.AddScoped<AiMetricService>();
 builder.Services.AddOpenApi();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -63,6 +67,9 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
+    // EnsureCreated skips databases that already exist, so anything added to the schema
+    // after the first run has to be applied by hand. See SchemaUpgrades.
+    await SchemaUpgrades.ApplyAsync(db);
     await SeedData.InitializeAsync(scope.ServiceProvider, db);
 }
 
@@ -166,18 +173,25 @@ app.MapPost("/api/auth/google", async (
 
     await db.SaveChangesAsync(cancellationToken);
 
-    var response = AuthResponse.Create(tokenService.Create(user), user);
+    var aiOptions = configuration.GetSection(GoogleAiOptions.SectionName).Get<GoogleAiOptions>() ?? new GoogleAiOptions();
+    var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured);
     return Results.Ok(response);
 });
 
-app.MapGet("/api/auth/me", [Authorize] async (ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken) =>
+app.MapGet("/api/auth/me", [Authorize] async (
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    IOptions<GoogleAiOptions> googleAi,
+    CancellationToken cancellationToken) =>
 {
     var userId = principal.GetRequiredUserId();
     var user = await db.Users
         .Include(candidate => candidate.Subscriptions)
         .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
 
-    return user is null ? Results.Unauthorized() : Results.Ok(CurrentUserResponse.FromUser(user));
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured));
 });
 
 app.MapGet("/api/analyses", [Authorize] async (ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken) =>
@@ -248,9 +262,169 @@ app.MapPost("/api/analyses", [Authorize] async (
     return Results.Created($"/api/analyses/{analysis.Id}", SavedAnalysisResponse.FromEntity(analysis));
 });
 
+// ---------------------------------------------------------------------------
+// AI-backed Pro metrics
+//
+// Every route here is gated on an active Pro subscription *before* anything is
+// sent to Google. A free user's request costs zero tokens: it is rejected at the
+// door, because a locked metric would never display the answer anyway.
+// ---------------------------------------------------------------------------
+
+app.MapPost("/api/ai/consent", [Authorize] async (
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    IOptions<GoogleAiOptions> googleAi,
+    CancellationToken cancellationToken) =>
+{
+    var userId = principal.GetRequiredUserId();
+    var user = await db.Users
+        .Include(candidate => candidate.Subscriptions)
+        .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    user.AiConsentAtUtc ??= DateTime.UtcNow;
+    user.UpdatedAtUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured));
+});
+
+app.MapGet("/api/ai/metrics", [Authorize] async (
+    string sourceHash,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    AiMetricService service,
+    CancellationToken cancellationToken) =>
+{
+    var access = await AiAccess.EvaluateAsync(principal, db, cancellationToken);
+    if (access.Failure is not null)
+    {
+        return access.Failure;
+    }
+
+    if (string.IsNullOrWhiteSpace(sourceHash))
+    {
+        return Results.BadRequest(new { message = "sourceHash is required." });
+    }
+
+    return Results.Ok(new AiMetricsResponse(await service.GetAsync(access.User!.Id, sourceHash, cancellationToken)));
+});
+
+app.MapPost("/api/ai/metrics", [Authorize] async (
+    AiAnalyzeRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    AiMetricService service,
+    CancellationToken cancellationToken) =>
+{
+    var access = await AiAccess.EvaluateAsync(principal, db, cancellationToken);
+    if (access.Failure is not null)
+    {
+        return access.Failure;
+    }
+
+    if (access.User!.AiConsentAtUtc is null)
+    {
+        return Results.Json(
+            new { message = "AI analysis has not been authorized by this user.", code = "consent_required" },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (string.IsNullOrWhiteSpace(request.SourceHash))
+    {
+        return Results.BadRequest(new { message = "SourceHash is required." });
+    }
+
+    var results = await service.AnalyzeAsync(
+        access.User.Id,
+        request.SourceHash,
+        request.Metrics ?? [],
+        cancellationToken);
+
+    return Results.Ok(new AiMetricsResponse(results));
+});
+
+app.MapPost("/api/ai/metrics/retry", [Authorize] async (
+    AiRetryRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    AiMetricService service,
+    CancellationToken cancellationToken) =>
+{
+    var access = await AiAccess.EvaluateAsync(principal, db, cancellationToken);
+    if (access.Failure is not null)
+    {
+        return access.Failure;
+    }
+
+    if (access.User!.AiConsentAtUtc is null)
+    {
+        return Results.Json(
+            new { message = "AI analysis has not been authorized by this user.", code = "consent_required" },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (string.IsNullOrWhiteSpace(request.SourceHash))
+    {
+        return Results.BadRequest(new { message = "SourceHash is required." });
+    }
+
+    // Retries only ever touch metrics currently marked failed, and only once their
+    // stored cooldown has elapsed — the button can't be used to hammer the quota.
+    var results = await service.RetryFailedAsync(access.User.Id, request.SourceHash, cancellationToken);
+    return Results.Ok(new AiMetricsResponse(results));
+});
+
 app.Run();
 
 record GoogleLoginRequest(string IdToken);
+
+record AiAnalyzeRequest(string SourceHash, List<AiMetricRequestItem>? Metrics);
+
+record AiRetryRequest(string SourceHash);
+
+record AiMetricsResponse(IReadOnlyList<AiMetricStateDto> Results);
+
+/// <summary>
+/// Shared entry check for the AI routes: the caller must be a real, signed-in user
+/// with Pro access. Returns the ready-to-return failure instead of throwing so each
+/// endpoint stays a straight line.
+/// </summary>
+static class AiAccess
+{
+    public static async Task<AiAccessResult> EvaluateAsync(
+        ClaimsPrincipal principal,
+        AppDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = principal.GetRequiredUserId();
+        var user = await db.Users
+            .Include(candidate => candidate.Subscriptions)
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return new AiAccessResult(null, Results.Unauthorized());
+        }
+
+        if (!SubscriptionAccessEvaluator.HasVipAccess(user))
+        {
+            return new AiAccessResult(
+                null,
+                Results.Json(
+                    new { message = "AI metrics require an active Pro subscription.", code = "pro_required" },
+                    statusCode: StatusCodes.Status403Forbidden));
+        }
+
+        return new AiAccessResult(user, null);
+    }
+}
+
+record AiAccessResult(User? User, IResult? Failure);
 
 record SaveAnalysisRequest(
     string ChatName,
@@ -292,9 +466,16 @@ record CurrentUserResponse(
     bool IsAdmin,
     bool HasUsedTrial,
     bool HasVipAccess,
-    string SubscriptionState)
+    string SubscriptionState,
+    bool HasAiConsent,
+    bool AiEnabled)
 {
-    public static CurrentUserResponse FromUser(User user) =>
+    /// <param name="aiEnabled">
+    /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
+    /// the AI flow entirely instead of showing a retry button for what is really a
+    /// server-side misconfiguration.
+    /// </param>
+    public static CurrentUserResponse FromUser(User user, bool aiEnabled) =>
         new(
             user.Id,
             user.Email,
@@ -303,12 +484,15 @@ record CurrentUserResponse(
             user.IsAdmin,
             user.HasUsedTrial,
             SubscriptionAccessEvaluator.HasVipAccess(user),
-            SubscriptionAccessEvaluator.GetVisibleState(user));
+            SubscriptionAccessEvaluator.GetVisibleState(user),
+            user.AiConsentAtUtc is not null,
+            aiEnabled);
 }
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {
-    public static AuthResponse Create(string token, User user) => new(token, CurrentUserResponse.FromUser(user));
+    public static AuthResponse Create(string token, User user, bool aiEnabled) =>
+        new(token, CurrentUserResponse.FromUser(user, aiEnabled));
 }
 
 static class ClaimsPrincipalExtensions

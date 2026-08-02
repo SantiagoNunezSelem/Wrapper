@@ -1,3 +1,11 @@
 backend/bin/
 
 backend/obj/
+
+# Local SQLite runtime database (contains real user data, changes every request)
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Per-developer local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json

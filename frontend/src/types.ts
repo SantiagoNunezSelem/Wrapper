@@ -9,6 +9,37 @@ export interface UserProfile {
   hasUsedTrial: boolean
   hasVipAccess: boolean
   subscriptionState: string
+  /** Whether this user agreed to send filtered snippets to the AI. */
+  hasAiConsent: boolean
+  /** Whether the backend has a Google AI Studio key configured at all. */
+  aiEnabled: boolean
+}
+
+/**
+ * Why an AI-backed metric is (or isn't) showing data.
+ * - `ready`: the model answered and the card holds verified numbers.
+ * - `failed`: the call failed — show "Analizar de nuevo" plus the countdown.
+ * - `pending`: no verdict yet (still running, or the viewer isn't Pro).
+ * - `consent`: Pro, but hasn't authorized sending snippets yet.
+ * - `unavailable`: this deployment has no AI key configured.
+ */
+export type AiMetricStatus = 'ready' | 'failed' | 'pending' | 'consent' | 'unavailable'
+
+export interface AiCardState {
+  status: AiMetricStatus
+  errorCode?: string | null
+  /** Server timestamp. The retry button stays disabled until this moment passes. */
+  retryAvailableAtUtc?: string | null
+}
+
+/** One metric's stored verdict, exactly as the backend returns it. */
+export interface AiMetricState {
+  metricId: string
+  status: 'ready' | 'failed'
+  acceptedIds: string[]
+  errorCode: string | null
+  retryAvailableAtUtc: string | null
+  updatedAtUtc: string
 }
 
 export interface AuthResponse {
@@ -175,6 +206,8 @@ export interface MetricCard {
   detail?: MetricDetail
   /** Safe teaser copy shown in place of `basic`/`detail` while locked. */
   preview: string
+  /** Present only on metrics whose result depends on the AI pass. */
+  ai?: AiCardState
 }
 
 export interface AnalysisBundle {

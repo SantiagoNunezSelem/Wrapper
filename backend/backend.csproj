@@ -4,6 +4,9 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Lets the Google AI Studio key live outside the repo:
+         dotnet user-secrets set "GoogleAi:ApiKey" "..." -->
+    <UserSecretsId>wrapper-crm-backend</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

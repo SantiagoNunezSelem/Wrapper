@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChartData, MetricCard as MetricCardData } from '../types'
+import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
 import { CrossButton } from './IconButton'
@@ -52,11 +53,14 @@ function usePaginatedReveal(pageSize: number) {
 export function MetricModal({
   card,
   copy,
+  ai,
   onClose,
   onUnlock,
 }: {
   card: MetricCardData
   copy: MetricModalCopy
+  /** Passed only to viewers with Pro access; everyone else gets the ordinary upsell. */
+  ai?: AiPanelProps
   onClose: () => void
   onUnlock: () => void
 }) {
@@ -64,8 +68,9 @@ export function MetricModal({
   const itemsPagination = usePaginatedReveal(PAGE_SIZE)
   const [wordSearch, setWordSearch] = useState('')
 
-  const basicLocked = card.tier === 'vip' && !card.basic
-  const detailLocked = !card.detail
+  const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
+  const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
+  const detailLocked = !aiBlocked && !card.detail
 
   const hasWordCloud =
     card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
@@ -88,7 +93,9 @@ export function MetricModal({
         <h2>{card.title}</h2>
         <p className="panel-copy modal-description">{card.description}</p>
 
-        {basicLocked ? (
+        {aiBlocked ? (
+          <AiStatePanel state={card.ai!} {...ai!} tall />
+        ) : basicLocked ? (
           <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} />
         ) : card.basic ? (
           <div className="modal-basic">
@@ -105,7 +112,9 @@ export function MetricModal({
           </div>
         ) : null}
 
-        <div className="modal-detail-section">
+        {/* An AI-blocked card already explains itself above — repeating the same panel
+            for the breakdown would just be the same message twice. */}
+        <div className="modal-detail-section" hidden={aiBlocked}>
           <h3>{copy.detailTitle}</h3>
 
           {detailLocked ? (
