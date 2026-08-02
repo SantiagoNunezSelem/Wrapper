@@ -42,7 +42,7 @@ Estados posibles de una `Suscripcion` (ver modelo de datos en `02_Arquitectura_T
 *   `activa`: suscripción pagada y vigente (post-trial o compra directa sin trial si ya usó el trial antes), acceso PRO activo.
 *   `pago_fallido`: la pasarela intentó cobrar y falló (tarjeta rechazada, fondos insuficientes, etc.). Se recomienda dar una ventana de gracia corta (ej. 2-3 días) antes de revocar el acceso PRO, para permitir que el usuario actualice su método de pago, y notificarlo (in-app y/o email).
 *   `cancelada`: el usuario canceló. Mantiene acceso PRO hasta el final del período ya pagado (o del trial), luego pasa a `vencida`.
-*   `vencida`: sin acceso PRO. El usuario puede volver a suscribirse (sin derecho a nuevo trial si ya lo usó antes).
+*   `inactiva`: sin acceso PRO. El usuario puede volver a suscribirse (sin derecho a nuevo trial si ya lo usó antes).
 
 ## 5. Webhooks a implementar por pasarela
 Independientemente de la pasarela, el backend debe exponer endpoints de webhook que, como mínimo, manejen estos eventos equivalentes:
@@ -51,7 +51,7 @@ Independientemente de la pasarela, el backend debe exponer endpoints de webhook 
 *   Pago recurrente exitoso (renovaciones siguientes).
 *   Pago fallido.
 *   Suscripción cancelada por el usuario.
-*   Suscripción vencida/expirada.
+*   Suscripción inactiva/expirada.
 
 Cada webhook debe:
 1.  Validar la autenticidad de la notificación (firma/secreto provisto por la pasarela).

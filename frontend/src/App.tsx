@@ -2,12 +2,14 @@ import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 import './App.css'
 import { CrossButton } from './components/IconButton'
+import { LoadingOverlay } from './components/LoadingOverlay'
 import { MetricCard } from './components/MetricCard'
 import { MetricModal } from './components/MetricModal'
 import { VipBadge } from './components/VipBadge'
+import { analyzeInWorker } from './lib/analysisClient'
 import { getCurrentUser, listAnalyses, loginWithGoogle, saveAnalysis } from './lib/api'
 import { getLandingPreviewCards } from './lib/landingPreview'
-import { buildAnalysis, formatNumber } from './lib/metrics'
+import { formatNumber, gateAnalysis, type AnalysisCore } from './lib/metrics'
 import { parseChatFile } from './lib/parser'
 import { useInView } from './lib/useInView'
 import type {
@@ -82,7 +84,10 @@ const shellCopy = {
     chatSummaryTitle: 'Resumen del chat',
     logout: 'Cerrar sesión',
     processing: 'Procesando archivo...',
+    analyzing: 'Analizando tu chat...',
     saving: 'Guardando análisis...',
+    loggingIn: 'Iniciando sesión...',
+    overlaySubtitle: 'Aguardá unos minutos mientras procesamos la información.',
     account: 'Cuenta',
     subscription: 'Suscripción',
     participants: 'Participantes',
@@ -172,7 +177,10 @@ const shellCopy = {
     chatSummaryTitle: 'Chat summary',
     logout: 'Sign out',
     processing: 'Processing file...',
+    analyzing: 'Analyzing your chat...',
     saving: 'Saving analysis...',
+    loggingIn: 'Signing in...',
+    overlaySubtitle: 'Please wait a few minutes while we process the information.',
     account: 'Account',
     subscription: 'Subscription',
     participants: 'Participants',
@@ -238,10 +246,18 @@ function App() {
   const [error, setError] = useState<string>('')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null)
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
 
   const copy = shellCopy[language]
   const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
+
+  // The expensive part of analysis (every metric, computed in a Web Worker) never
+  // depends on VIP status — only which fields get exposed does (see gateAnalysis).
+  // Caching one core per (sourceHash, language) means unlocking VIP after login is
+  // a synchronous re-gate, not a second multi-second recompute.
+  const analysisCoreCache = useRef<Map<string, AnalysisCore>>(new Map())
 
   // Landing page sections reveal as they're scrolled into view, each tracked
   // independently so the page animates in stages instead of all at once.
@@ -276,24 +292,52 @@ function App() {
 
   // Recompute locally whenever the underlying chat, language, or VIP entitlement
   // changes. Locked cards never carry real numbers in `analysis` in the first
-  // place (see buildAnalysis), so unlocking means recomputing from the raw
-  // messages still held in memory — never a server round trip.
+  // place (see gateAnalysis), so unlocking means re-gating an already-computed
+  // core still held in memory — never a server round trip, and (see cache above)
+  // almost never a second worker computation either.
   useEffect(() => {
     if (!activeChat) {
       return
     }
 
-    // buildAnalysis is async (it yields mid-computation on large chats so the tab
-    // stays responsive) — guard against setting stale results if activeChat,
-    // language, or VIP access changes again before it resolves.
+    const hasVipAccess = Boolean(user?.hasVipAccess)
+    const cacheKey = `${activeChat.sourceHash}:${language}`
+    const cached = analysisCoreCache.current.get(cacheKey)
+
+    if (cached) {
+      // Re-gating is synchronous and cheap — clear whatever busy state handed off
+      // to us (a fresh upload, or nothing at all if only VIP access changed).
+      setBusyMessage('')
+      setAnalysis(gateAnalysis(cached, hasVipAccess))
+      return
+    }
+
+    // Guard against setting stale results if activeChat or language changes again
+    // before the worker responds.
     let cancelled = false
-    void buildAnalysis(activeChat.chatName, activeChat.messages, language, Boolean(user?.hasVipAccess), activeChat.sourceHash).then(
-      (result) => {
-        if (!cancelled) {
-          setAnalysis(result)
+    setBusyMessage(copy.analyzing)
+
+    analyzeInWorker(activeChat.chatName, activeChat.messages, language, activeChat.sourceHash)
+      .then((core) => {
+        if (cancelled) {
+          return
         }
-      },
-    )
+        analysisCoreCache.current.set(cacheKey, core)
+        setAnalysis(gateAnalysis(core, hasVipAccess))
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) {
+          return
+        }
+        console.error(caught)
+        setError(caught instanceof Error ? caught.message : copy.loadError)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBusyMessage('')
+        }
+      })
+
     return () => {
       cancelled = true
     }
@@ -312,6 +356,25 @@ function App() {
       setIsAuthModalOpen(true)
     }
   }, [pendingPersist, analysis, token])
+
+  // The account dropdown has no backdrop of its own (unlike the auth/metric
+  // modals) — it closes on any click outside the pill instead, checked on
+  // mousedown so it doesn't swallow the click that opened it or race with
+  // whatever else that outside click was meant to do (e.g. backToLanding).
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return
+    }
+
+    function handlePointerDown(event: globalThis.MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
+        setIsAccountMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [isAccountMenuOpen])
 
   async function hydrateSession(authToken: string) {
     try {
@@ -337,6 +400,11 @@ function App() {
     }
 
     setError('')
+    // The modal's own job is done once we have a credential — close it and hand
+    // off to the full-screen overlay so there's a clear "still working" signal
+    // for however long sign-in (and, if a chat is loaded, re-gating it) takes.
+    setIsAuthModalOpen(false)
+    setBusyMessage(copy.loggingIn)
 
     try {
       const auth = await loginWithGoogle(response.credential)
@@ -350,12 +418,11 @@ function App() {
         // this flag lets the persist effect pick up that fresh value.
         setPendingPersist(true)
       }
-
-      setIsAuthModalOpen(false)
     } catch (caught) {
       console.error(caught)
-      setBusyMessage('')
       setError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setBusyMessage('')
     }
   }
 
@@ -365,6 +432,7 @@ function App() {
     setUser(null)
     setSavedAnalyses([])
     setError('')
+    setIsAccountMenuOpen(false)
   }
 
   function openFilePicker() {
@@ -390,11 +458,14 @@ function App() {
       setActiveChat({ chatName: stripExtension(file.name), messages, sourceHash })
       setPendingPersist(true)
       setSelectedMetricId(null)
+      // Left on: parsing hands off straight into the recompute effect's worker
+      // call, which clears it once the analysis is actually ready — otherwise the
+      // overlay would flash off between "file parsed" and "analysis starting."
     } catch (caught) {
       console.error(caught)
+      setBusyMessage('')
       setError(caught instanceof Error ? caught.message : copy.loadError)
     } finally {
-      setBusyMessage('')
       event.target.value = ''
     }
   }
@@ -492,9 +563,28 @@ function App() {
           </button>
 
           {user ? (
-            <div className="user-pill">
-              <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+            <div className="user-pill" ref={accountMenuRef}>
+              <button
+                type="button"
+                className="user-avatar-button"
+                onClick={() => setIsAccountMenuOpen((open) => !open)}
+                aria-expanded={isAccountMenuOpen}
+                aria-label={copy.account}
+              >
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </button>
               <CrossButton label={copy.logout} onClick={handleLogout} />
+
+              {isAccountMenuOpen ? (
+                <div id="account-info" className="account-menu">
+                  <p className="account-name">{user.displayName}</p>
+                  <p>{user.email}</p>
+                  <p>
+                    {copy.subscription}: <strong>{user.subscriptionState}</strong>
+                  </p>
+                  <VipBadge active={user.hasVipAccess} label={user.hasVipAccess ? copy.vipOn : copy.vipOff} compact />
+                </div>
+              ) : null}
             </div>
           ) : (
             <button type="button" className="icon-button" onClick={() => setIsAuthModalOpen(true)}>
@@ -510,126 +600,107 @@ function App() {
 
       {analysis ? (
         <main className="analytics-layout">
-          <section className="analytics-main">
-            <section className="analytics-hero panel">
-              <div>
-                <p className="eyebrow">{analysis.chatName}</p>
-                <h1>{copy.metricsTitle}</h1>
-                <p className="lead">{copy.metricsSubtitle}</p>
-              </div>
+          <section className="analytics-hero panel">
+            <div>
+              <p className="eyebrow">{analysis.chatName}</p>
+              <h1>{copy.metricsTitle}</h1>
+              <p className="lead">{copy.metricsSubtitle}</p>
+            </div>
 
-              <div className="analytics-hero-actions">
-                <button type="button" className="primary-button" onClick={openFilePicker}>
-                  {busyMessage || copy.uploadCta}
-                </button>
-                <CrossButton label={copy.backToLanding} onClick={backToLanding} />
-              </div>
-            </section>
-
-            {activeChat && !user ? (
-              <div className="save-prompt">
-                <span className="save-prompt-icon" aria-hidden="true">
-                  <SaveIcon />
-                </span>
-                <div className="save-prompt-copy">
-                  <strong>{copy.savePromptTitle}</strong>
-                  <p>{copy.savePromptBody}</p>
-                </div>
-                <button type="button" className="primary-button" onClick={() => setIsAuthModalOpen(true)}>
-                  {copy.login}
-                </button>
-              </div>
-            ) : null}
-            {showReprocessHint ? <p className="warning-banner">{copy.reprocessHint}</p> : null}
-
-            <section className="panel summary-panel">
-              <div className="summary-header">
-                <div>
-                  <p className="eyebrow">{analysis.dateRangeLabel}</p>
-                  <h2>{copy.chatSummaryTitle}</h2>
-                </div>
-                <VipBadge active={Boolean(user?.hasVipAccess)} label={user?.hasVipAccess ? copy.vipOn : copy.vipOff} />
-              </div>
-
-              <div className="summary-stats">
-                <Stat label={copy.messages} value={formatNumber(analysis.messageCount, language)} />
-                <Stat label={copy.participants} value={formatNumber(analysis.participantCount, language)} />
-                <Stat label={copy.generatedAt} value={generatedAt} />
-              </div>
-
-              <div className="participant-list">
-                {analysis.participants.map((participant) => (
-                  <span key={participant} className="participant-chip">
-                    {participant}
-                  </span>
-                ))}
-              </div>
-            </section>
-
-            <section className="panel metric-panel">
-              <div className="metric-list">
-                {chunk(interleavedMetrics, 3).map((row, rowIndex) => (
-                  <div className="metric-row" key={rowIndex}>
-                    {row.map((card, indexInRow) => (
-                      <div
-                        key={card.id}
-                        className="metric-list-item"
-                        style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
-                      >
-                        <MetricCard
-                          card={card}
-                          seeMoreLabel={copy.seeMore}
-                          unlockLabel={copy.unlock}
-                          onOpen={(selected) => setSelectedMetricId(selected.id)}
-                          onUnlock={requestUnlock}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </section>
+            <div className="analytics-hero-actions">
+              <button type="button" className="primary-button" onClick={openFilePicker}>
+                {busyMessage || copy.uploadCta}
+              </button>
+              <CrossButton label={copy.backToLanding} onClick={backToLanding} />
+            </div>
           </section>
 
-          <aside className="analytics-sidebar">
-            <section className="panel account-panel">
-              <h2>{copy.account}</h2>
-              {user ? (
-                <>
-                  <p className="account-name">{user.displayName}</p>
-                  <p>{user.email}</p>
-                  <p>
-                    {copy.subscription}: <strong>{user.subscriptionState}</strong>
-                  </p>
-                  <VipBadge active={user.hasVipAccess} label={user.hasVipAccess ? copy.vipOn : copy.vipOff} compact />
-                </>
-              ) : (
-                <div className="inline-cta">
-                  <p>{copy.loginAfterUpload}</p>
-                  <button type="button" className="ghost-button" onClick={() => setIsAuthModalOpen(true)}>
+          <div className="analytics-summary-row">
+            <section className="analytics-main">
+              {activeChat && !user ? (
+                <div className="save-prompt">
+                  <span className="save-prompt-icon" aria-hidden="true">
+                    <SaveIcon />
+                  </span>
+                  <div className="save-prompt-copy">
+                    <strong>{copy.savePromptTitle}</strong>
+                    <p>{copy.savePromptBody}</p>
+                  </div>
+                  <button type="button" className="primary-button" onClick={() => setIsAuthModalOpen(true)}>
                     {copy.login}
                   </button>
                 </div>
-              )}
+              ) : null}
+              {showReprocessHint ? <p className="warning-banner">{copy.reprocessHint}</p> : null}
+
+              <section className="panel summary-panel">
+                <div className="summary-header">
+                  <div>
+                    <p className="eyebrow">{analysis.dateRangeLabel}</p>
+                    <h2>{copy.chatSummaryTitle}</h2>
+                  </div>
+                  <VipBadge active={Boolean(user?.hasVipAccess)} label={user?.hasVipAccess ? copy.vipOn : copy.vipOff} />
+                </div>
+
+                <div className="summary-stats">
+                  <Stat label={copy.messages} value={formatNumber(analysis.messageCount, language)} />
+                  <Stat label={copy.participants} value={formatNumber(analysis.participantCount, language)} />
+                  <Stat label={copy.generatedAt} value={generatedAt} />
+                </div>
+
+                <div className="participant-list">
+                  {analysis.participants.map((participant) => (
+                    <span key={participant} className="participant-chip">
+                      {participant}
+                    </span>
+                  ))}
+                </div>
+              </section>
             </section>
 
-            <section className="panel history-panel">
-              <h2>{copy.savedTitle}</h2>
-              {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
-              <div className="history-list">
-                {savedAnalyses.map((item) => (
-                  <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
-                    <strong>{item.chatName}</strong>
-                    <span>{item.dateRangeLabel}</span>
-                    <span>
-                      {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
-                    </span>
-                    <em>{copy.openSaved}</em>
-                  </button>
-                ))}
-              </div>
-            </section>
-          </aside>
+            <aside className="analytics-sidebar">
+              <section className="panel history-panel">
+                <h2>{copy.savedTitle}</h2>
+                {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
+                <div className="history-list">
+                  {savedAnalyses.map((item) => (
+                    <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
+                      <strong>{item.chatName}</strong>
+                      <span>{item.dateRangeLabel}</span>
+                      <span>
+                        {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
+                      </span>
+                      <em>{copy.openSaved}</em>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </aside>
+          </div>
+
+          <section className="panel metric-panel">
+            <div className="metric-list">
+              {chunk(interleavedMetrics, 3).map((row, rowIndex) => (
+                <div className="metric-row" key={rowIndex}>
+                  {row.map((card, indexInRow) => (
+                    <div
+                      key={card.id}
+                      className="metric-list-item"
+                      style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
+                    >
+                      <MetricCard
+                        card={card}
+                        seeMoreLabel={copy.seeMore}
+                        unlockLabel={copy.unlock}
+                        onOpen={(selected) => setSelectedMetricId(selected.id)}
+                        onUnlock={requestUnlock}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
         </main>
       ) : (
         <main className="landing-layout">
@@ -844,6 +915,8 @@ function App() {
           onUnlock={requestUnlock}
         />
       ) : null}
+
+      {busyMessage ? <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} /> : null}
     </div>
   )
 }

@@ -26,7 +26,7 @@
   - Persisting users, subscriptions, and saved analyses.
   - Enforcing PRO access on every premium request.
   - Managing payment-provider webhooks and subscription state transitions.
-- Subscription access is **state-based**, not a static boolean. Model PRO access from subscription lifecycle data (`trial`, `activa`, `cancelada`, `vencida`, `pago_fallido`) rather than an `IsPro` flag.
+- Subscription access is **state-based**, not a static boolean. Model PRO access from subscription lifecycle data (`trial`, `activa`, `cancelada`, `inactiva`, `pago_fallido`) rather than an `IsPro` flag.
 
 ## Key conventions
 - **Privacy is a hard requirement:** future implementations must preserve the rule that chat contents stay in the browser; only aggregated metrics may be stored server-side.

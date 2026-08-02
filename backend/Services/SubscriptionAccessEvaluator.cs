@@ -21,7 +21,7 @@ public static class SubscriptionAccessEvaluator
             return "activa";
         }
 
-        return GetLatestRelevantSubscription(user)?.Status ?? "vencida";
+        return GetLatestRelevantSubscription(user)?.Status ?? "inactiva";
     }
 
     public static bool HasVipAccess(Subscription subscription)

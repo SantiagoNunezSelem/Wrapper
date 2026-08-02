@@ -102,10 +102,25 @@ app.MapPost("/api/auth/google", async (
     GoogleJsonWebSignature.Payload payload;
     try
     {
-        payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, new GoogleJsonWebSignature.ValidationSettings
+        // Google.Apis.Auth has no built-in way to bound this call (no CancellationToken
+        // or HttpClient override on ValidationSettings), and its default HttpClient
+        // timeout is 100s — long enough to look like a frozen page. Race it against our
+        // own timeout so a slow/unreachable network fails fast with a clear error
+        // instead of hanging the request for up to a minute or two.
+        var validationTask = GoogleJsonWebSignature.ValidateAsync(request.IdToken, new GoogleJsonWebSignature.ValidationSettings
         {
             Audience = [googleOptions.AllowedAudience],
         });
+
+        if (await Task.WhenAny(validationTask, Task.Delay(TimeSpan.FromSeconds(10), cancellationToken)) != validationTask)
+        {
+            return Results.Problem(
+                title: "Google validation timed out",
+                detail: "Could not reach Google to verify the sign-in token in time. Please try again.",
+                statusCode: StatusCodes.Status504GatewayTimeout);
+        }
+
+        payload = await validationTask;
     }
     catch (Exception)
     {

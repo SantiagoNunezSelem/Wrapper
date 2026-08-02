@@ -7,11 +7,17 @@
 .topbar,
 .panel,
 .landing-visual,
-.modal-card {
+.modal-card,
+.account-menu {
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(15, 23, 42, 0.74);
   backdrop-filter: blur(20px);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+#account-info {
+  margin-top: 5px;
+  background: rgb(15, 23, 42);
 }
 
 .topbar {
@@ -154,19 +160,51 @@
 }
 
 .user-pill {
+  position: relative;
   padding: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
 }
 
-.user-pill span {
+.user-avatar-button {
   display: grid;
   place-items: center;
   width: 36px;
   height: 36px;
+  border: 0;
   border-radius: 999px;
   background: rgba(192, 132, 252, 0.2);
+  color: #f8fafc;
   font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.user-avatar-button:hover,
+.user-avatar-button[aria-expanded='true'] {
+  background: rgba(192, 132, 252, 0.36);
+}
+
+/* Anchored to .user-pill (position: relative above), not the topbar itself —
+   stays pinned to the avatar even though the topbar is a wide, space-between
+   flex row. See handlePointerDown in App.tsx for the click-outside close. */
+.account-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 6;
+  width: 240px;
+  border-radius: 20px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  animation: modalIn 0.22s ease;
+}
+
+.account-menu p {
+  color: #cbd5e1;
 }
 
 .warning-banner,
@@ -739,15 +777,36 @@ h3 {
   font-size: 0.84rem;
 }
 
+/* Hero, the summary/sidebar row, and the metric grid just stack full-width —
+   the only place two columns actually share a row is inside
+   .analytics-summary-row below. */
 .analytics-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  /* The sidebar's own content (account panel + a height-capped history list) is
-     much shorter than the metrics column — without this, grid's default stretch
-     would still size the sidebar's box to match, just leaving dead empty space
-     under it instead of letting the column end where its content ends. */
-  align-items: start;
+  display: flex;
+  flex-direction: column;
   gap: 18px;
+}
+
+.analytics-summary-row {
+  position: relative;
+}
+
+/* Narrowed to leave room for the absolutely positioned sidebar (260px + an
+   18px gap) beside it. */
+.analytics-main {
+  width: calc(100% - 278px);
+}
+
+/* Positioned absolutely — rather than sized via grid/flex stretch — so its
+   own (potentially long) content never influences .analytics-summary-row's
+   height; only .analytics-main's does. top/right/bottom then stretch this to
+   match that height exactly, which .history-panel below treats as a hard
+   cap instead of growing the row to fit a long saved-chats list. */
+.analytics-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 260px;
 }
 
 .summary-header {
@@ -1115,21 +1174,31 @@ h3 {
   box-shadow: 0 0 0 6px rgba(192, 132, 252, 0.18);
 }
 
-.account-panel,
+/* .history-panel is .analytics-sidebar's only child now (the account panel
+   moved into the topbar's .account-menu dropdown — see App.tsx), so it's free
+   to take up the sidebar's full height. min-height: 0 overrides the flex
+   default (content-based auto), which would otherwise stop it from shrinking
+   below its natural size and defeat the sidebar's height cap (see
+   .analytics-sidebar). overflow: hidden keeps only the inner .history-list's
+   scrollbar visible instead of this panel's own edge. */
 .history-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .history-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Capped to ~1.2x a single item's height (one full item + a peek of the next)
-     so a long saved-chats history never pushes the page tall — it scrolls in
-     place instead. Item renders at 134px tall, so 1.2x ≈ 161px. */
-  max-height: 161px;
+  /* No fixed cap on desktop: this shrinks to whatever room .history-panel has
+     (itself bounded by the sidebar's height match to .summary-panel — see
+     .analytics-sidebar) and scrolls past that. The narrow-screen breakpoint
+     restores a fixed cap since the two columns stack there and nothing
+     constrains this from outside anymore. */
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
@@ -1154,14 +1223,8 @@ h3 {
 }
 
 .history-item span,
-.history-item em,
-.account-panel p {
+.history-item em {
   color: #cbd5e1;
-}
-
-.inline-cta {
-  display: grid;
-  gap: 12px;
 }
 
 .account-name {
@@ -1275,6 +1338,45 @@ h3 {
 
 .modal-chart > * {
   width: 100%;
+}
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(3px);
+  text-align: center;
+  padding: 24px;
+}
+
+.loading-overlay-spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 4px solid rgba(255, 255, 255, 0.18);
+  border-top-color: #22d3ee;
+  animation: overlaySpin 0.8s linear infinite;
+}
+
+.loading-overlay-title {
+  color: #f8fafc;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.loading-overlay-subtitle {
+  color: #cbd5e1;
+  font-size: 0.92rem;
+  max-width: 360px;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .series-grid {
@@ -1859,6 +1961,12 @@ h3 {
   word-break: break-word;
 }
 
+@keyframes overlaySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes float {
   0%,
   100% {
@@ -1990,7 +2098,6 @@ h3 {
 
 @media (max-width: 1120px) {
   .landing-hero,
-  .analytics-layout,
   .upload-strip,
   .analytics-hero {
     grid-template-columns: 1fr;
@@ -2005,6 +2112,33 @@ h3 {
 
   .steps-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Below this width the summary panel and sidebar stack instead of sharing a
+     row, so the absolute-positioning trick that makes .analytics-sidebar
+     match .analytics-main's height (see those rules) is switched off — both
+     go back to normal document flow, full width, one above the other. */
+  .analytics-summary-row {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .analytics-main {
+    width: 100%;
+  }
+
+  .analytics-sidebar {
+    position: static;
+    width: 100%;
+  }
+
+  /* .history-panel's cap (see .history-panel / .history-list) came from the
+     sidebar matching the summary panel's height — with that switched off
+     here, restore a fixed cap instead, same value as before this feature
+     (~1.2x a single item's height; item renders at 134px tall, so ≈ 161px). */
+  .history-list {
+    max-height: 161px;
   }
 }
 
@@ -2076,7 +2210,7 @@ h3 {
     gap: 6px;
   }
 
-  .user-pill span {
+  .user-avatar-button {
     width: 26px;
     height: 26px;
     font-size: 0.78rem;

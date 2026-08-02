@@ -343,20 +343,40 @@ interface MetricContext {
 }
 
 /** Hands control back to the browser for a tick. A chat with 100k+ messages can
- * take a few seconds of pure CPU work to analyze; splitting that into a couple of
- * yielded chunks (see buildAnalysis) keeps the tab responsive — and Chrome from
- * offering to kill it — instead of one long uninterrupted block. */
+ * take a few seconds of pure CPU work to analyze; yielding between every metric
+ * (see computeAnalysisCore) keeps the tab responsive — and Chrome from offering
+ * to kill it — instead of one long uninterrupted block. Real-world use runs this
+ * inside a Web Worker anyway (see analysisWorker.ts), where it's not strictly
+ * needed for responsiveness, but it's what makes cooperative cancellation and
+ * progress reporting possible there too. */
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-export async function buildAnalysis(
+/** Every metric computed in full, before VIP/locking rules are applied. Computing
+ * this is the expensive part (CPU-bound, independent of `hasVipAccess`), so it's
+ * kept separate from `AnalysisBundle` on purpose: the caller can cache one of
+ * these per (sourceHash, language) and re-derive the final bundle for free the
+ * instant `hasVipAccess` changes (e.g. right after logging in) instead of paying
+ * the full analysis cost all over again. */
+export interface AnalysisCore {
+  chatName: string
+  dateRangeLabel: string
+  generatedAt: string
+  messageCount: number
+  participantCount: number
+  participants: string[]
+  sourceHash: string
+  rawFreeMetrics: MetricCard[]
+  rawVipMetrics: MetricCard[]
+}
+
+export async function computeAnalysisCore(
   chatName: string,
   messages: ChatMessage[],
   language: Language,
-  hasVipAccess: boolean,
   sourceHash: string,
-): Promise<AnalysisBundle> {
+): Promise<AnalysisCore> {
   const chatMessages = messages.filter((message) => !message.isSystem && message.sender)
   const textMessages = chatMessages.filter((message) => !message.isSystemPlaceholder)
   const participants = [...new Set(chatMessages.map((message) => message.sender as string))]
@@ -372,17 +392,17 @@ export async function buildAnalysis(
       participantCount: 0,
       participants: [],
       sourceHash,
-      freeMetrics: [],
-      vipMetrics: [],
+      rawFreeMetrics: [],
+      rawVipMetrics: [],
     }
   }
 
   const messageIndex = new Map(chatMessages.map((message, index) => [message.id, index]))
   const ctx: MetricContext = { chatMessages, textMessages, participants, language, messageIndex }
 
-  const freeMetrics = buildFreeMetrics(ctx, hasVipAccess).filter((card) => card.hasData)
+  const rawFreeMetrics = buildFreeMetrics(ctx).filter((card) => card.hasData)
   await yieldToBrowser()
-  const vipMetrics = buildVipMetrics(ctx, hasVipAccess).filter((card) => card.hasData)
+  const rawVipMetrics = buildVipMetrics(ctx).filter((card) => card.hasData)
 
   return {
     chatName,
@@ -392,45 +412,68 @@ export async function buildAnalysis(
     participantCount: participants.length,
     participants,
     sourceHash,
-    freeMetrics,
-    vipMetrics,
+    rawFreeMetrics,
+    rawVipMetrics,
   }
 }
 
-function buildFreeMetrics(ctx: MetricContext, hasVipAccess: boolean): MetricCard[] {
+/** Cheap: just decides which cards' `basic`/`detail` are visible for this viewer.
+ * Safe to call synchronously on every `hasVipAccess`/replay change since none of
+ * the underlying metric numbers depend on VIP status. */
+export function gateAnalysis(core: AnalysisCore, hasVipAccess: boolean): AnalysisBundle {
+  const { rawFreeMetrics, rawVipMetrics, ...meta } = core
+  return {
+    ...meta,
+    freeMetrics: rawFreeMetrics.map((card) => gateCard(card, hasVipAccess)),
+    vipMetrics: rawVipMetrics.map((card) => gateCard(card, hasVipAccess)),
+  }
+}
+
+export async function buildAnalysis(
+  chatName: string,
+  messages: ChatMessage[],
+  language: Language,
+  hasVipAccess: boolean,
+  sourceHash: string,
+): Promise<AnalysisBundle> {
+  const core = await computeAnalysisCore(chatName, messages, language, sourceHash)
+  return gateAnalysis(core, hasVipAccess)
+}
+
+function buildFreeMetrics(ctx: MetricContext): MetricCard[] {
   const { language } = ctx
   return [
-    createMetric('spammer', language, 'free', 'tier-purple', metricSpammer(ctx), hasVipAccess),
-    createMetric('monologuista', language, 'free', 'tier-pink', metricMonologuista(ctx), hasVipAccess),
-    createMetric('reloj', language, 'free', 'tier-orange', metricReloj(ctx), hasVipAccess),
-    createMetric('rompehielo', language, 'free', 'tier-blue', metricRompehielo(ctx), hasVipAccess),
-    createMetric('emojis', language, 'free', 'tier-cyan', metricEmojis(ctx), hasVipAccess),
-    createMetric('racha-dias', language, 'free', 'tier-lime', metricRachaDias(ctx), hasVipAccess),
-    createMetric('testamento', language, 'free', 'tier-gold', metricTestamento(ctx), hasVipAccess),
-    createMetric('multimedia', language, 'free', 'tier-rose', metricMultimedia(ctx), hasVipAccess),
-    createMetric('top-dias', language, 'free', 'tier-indigo', metricTopDias(ctx), hasVipAccess),
-    createMetric('velocista', language, 'free', 'tier-mint', metricVelocista(ctx), hasVipAccess),
-    createMetric('heatmap-anual', language, 'free', 'tier-teal', metricHeatmapAnual(ctx), hasVipAccess),
-    createMetric('termometro', language, 'free', 'tier-violet', metricTermometro(ctx), hasVipAccess),
+    createMetric('spammer', language, 'free', 'tier-purple', metricSpammer(ctx)),
+    createMetric('monologuista', language, 'free', 'tier-pink', metricMonologuista(ctx)),
+    createMetric('reloj', language, 'free', 'tier-orange', metricReloj(ctx)),
+    createMetric('rompehielo', language, 'free', 'tier-blue', metricRompehielo(ctx)),
+    createMetric('emojis', language, 'free', 'tier-cyan', metricEmojis(ctx)),
+    createMetric('racha-dias', language, 'free', 'tier-lime', metricRachaDias(ctx)),
+    createMetric('testamento', language, 'free', 'tier-gold', metricTestamento(ctx)),
+    createMetric('multimedia', language, 'free', 'tier-rose', metricMultimedia(ctx)),
+    createMetric('top-dias', language, 'free', 'tier-indigo', metricTopDias(ctx)),
+    createMetric('velocista', language, 'free', 'tier-mint', metricVelocista(ctx)),
+    createMetric('heatmap-anual', language, 'free', 'tier-teal', metricHeatmapAnual(ctx)),
+    createMetric('termometro', language, 'free', 'tier-violet', metricTermometro(ctx)),
   ]
 }
 
-function buildVipMetrics(ctx: MetricContext, hasVipAccess: boolean): MetricCard[] {
+function buildVipMetrics(ctx: MetricContext): MetricCard[] {
   const { language } = ctx
   return [
-    createMetric('clavavistos', language, 'vip', 'tier-purple', metricClavavistos(ctx), hasVipAccess),
-    createMetric('inactividad', language, 'vip', 'tier-slate', metricInactividad(ctx), hasVipAccess),
-    createMetric('wordcloud', language, 'vip', 'tier-cyan', metricWordcloud(ctx), hasVipAccess),
-    createMetric('redflags', language, 'vip', 'tier-red', metricRedflags(ctx), hasVipAccess),
-    createMetric('cringe', language, 'vip', 'tier-orange', metricCringe(ctx), hasVipAccess),
-    createMetric('arrepentido', language, 'vip', 'tier-rose', metricArrepentido(ctx), hasVipAccess),
-    createMetric('poliglota', language, 'vip', 'tier-green', metricPoliglota(ctx), hasVipAccess),
-    createMetric('jajaja', language, 'vip', 'tier-yellow', metricJajaja(ctx), hasVipAccess),
-    createMetric('metralleta', language, 'vip', 'tier-blue', metricMetralleta(ctx), hasVipAccess),
-    createMetric('interrogador', language, 'vip', 'tier-indigo', metricInterrogador(ctx), hasVipAccess),
-    createMetric('dramatico', language, 'vip', 'tier-gold', metricDramatico(ctx), hasVipAccess),
-    createMetric('tonopicante', language, 'vip', 'tier-magenta', metricTonoPicante(ctx), hasVipAccess),
-    createMetric('curador', language, 'vip', 'tier-sky', metricCurador(ctx), hasVipAccess),
+    createMetric('clavavistos', language, 'vip', 'tier-purple', metricClavavistos(ctx)),
+    createMetric('inactividad', language, 'vip', 'tier-slate', metricInactividad(ctx)),
+    createMetric('wordcloud', language, 'vip', 'tier-cyan', metricWordcloud(ctx)),
+    createMetric('redflags', language, 'vip', 'tier-red', metricRedflags(ctx)),
+    createMetric('cringe', language, 'vip', 'tier-orange', metricCringe(ctx)),
+    createMetric('arrepentido', language, 'vip', 'tier-rose', metricArrepentido(ctx)),
+    createMetric('poliglota', language, 'vip', 'tier-green', metricPoliglota(ctx)),
+    createMetric('jajaja', language, 'vip', 'tier-yellow', metricJajaja(ctx)),
+    createMetric('metralleta', language, 'vip', 'tier-blue', metricMetralleta(ctx)),
+    createMetric('interrogador', language, 'vip', 'tier-indigo', metricInterrogador(ctx)),
+    createMetric('dramatico', language, 'vip', 'tier-gold', metricDramatico(ctx)),
+    createMetric('tonopicante', language, 'vip', 'tier-magenta', metricTonoPicante(ctx)),
+    createMetric('curador', language, 'vip', 'tier-sky', metricCurador(ctx)),
   ]
 }
 
@@ -440,16 +483,12 @@ function createMetric(
   tier: 'free' | 'vip',
   accent: string,
   result: MetricResult,
-  hasVipAccess: boolean,
 ): MetricCard {
   const meta = metricMeta[id]?.[language]
 
   if (!meta) {
     throw new Error(`Missing metric metadata for "${id}" in language "${language}".`)
   }
-
-  const basicLocked = tier === 'vip' && !hasVipAccess
-  const detailLocked = !hasVipAccess
 
   return {
     id,
@@ -458,9 +497,23 @@ function createMetric(
     tier,
     accent,
     hasData: result.hasData,
-    basic: basicLocked ? undefined : result.basic,
-    detail: detailLocked ? undefined : result.detail,
+    basic: result.basic,
+    detail: result.detail,
     preview: meta.preview,
+  }
+}
+
+/** Applies VIP/locking rules to an already-computed (ungated) card. Cheap and
+ * pure, so it can re-run on every `hasVipAccess` change with no recompute cost —
+ * see `gateAnalysis`. */
+function gateCard(card: MetricCard, hasVipAccess: boolean): MetricCard {
+  const basicLocked = card.tier === 'vip' && !hasVipAccess
+  const detailLocked = !hasVipAccess
+
+  return {
+    ...card,
+    basic: basicLocked ? undefined : card.basic,
+    detail: detailLocked ? undefined : card.detail,
   }
 }
 

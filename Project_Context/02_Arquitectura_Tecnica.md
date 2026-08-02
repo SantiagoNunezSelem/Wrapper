@@ -22,7 +22,7 @@ Para mantener los costos de infraestructura en $0 en la capa gratuita:
 
 ### 3.1. Modelo de datos sugerido (ampliado)
 *   `Usuarios`: `Id`, `GoogleId`, `Email`, `Nombre`, `FechaRegistro`, `IdiomaPreferido`.
-*   `Suscripciones`: `Id`, `UsuarioId` (FK), `Estado` (`trial`, `activa`, `cancelada`, `vencida`, `pago_fallido`), `Pasarela` (`mercadopago`, `stripe`, `paypal`), `PlanTipo` (`semanal`, `anual`), `FechaInicioTrial`, `FechaFinTrial`, `FechaInicioSuscripcion`, `FechaProximoCobro`, `FechaCancelacion`, `IdSuscripcionExterna` (id devuelto por la pasarela, necesario para reconciliar webhooks).
+*   `Suscripciones`: `Id`, `UsuarioId` (FK), `Estado` (`trial`, `activa`, `cancelada`, `inactiva`, `pago_fallido`), `Pasarela` (`mercadopago`, `stripe`, `paypal`), `PlanTipo` (`semanal`, `anual`), `FechaInicioTrial`, `FechaFinTrial`, `FechaInicioSuscripcion`, `FechaProximoCobro`, `FechaCancelacion`, `IdSuscripcionExterna` (id devuelto por la pasarela, necesario para reconciliar webhooks).
 *   `AnalisisGuardados`: `Id`, `UsuarioId` (FK), `NombreChat/Alias`, `FechaAnalisis`, `RangoFechasChat`, `JsonResultados`, `MetricasProDesbloqueadas` (booleano, calculado según si al momento de generarse el análisis el usuario tenía suscripción/trial activo).
 *   Un usuario tiene "acceso PRO" en un momento dado si tiene una `Suscripcion` con `Estado` en (`trial`, `activa`) y `FechaProximoCobro`/`FechaFinTrial` no vencida. Esto se calcula, no se guarda como un simple booleano estático, ya que puede cambiar automáticamente por webhooks o por vencimiento de fecha.
 
