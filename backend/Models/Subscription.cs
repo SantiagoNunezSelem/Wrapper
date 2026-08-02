@@ -5,7 +5,7 @@ public sealed class Subscription
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid UserId { get; set; }
     public User? User { get; set; }
-    public string Status { get; set; } = "vencida";
+    public string Status { get; set; } = "inactiva";
     public string? PaymentProvider { get; set; }
     public string PlanType { get; set; } = "semanal";
     public DateTime? TrialStartsAtUtc { get; set; }
