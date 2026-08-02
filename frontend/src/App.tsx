@@ -4,6 +4,7 @@ import './App.css'
 import { AiConsentModal } from './components/AiConsentModal'
 import type { AiPanelProps } from './components/AiStatePanel'
 import { CrossButton } from './components/IconButton'
+import { FileUploadZone } from './components/FileUploadZone'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { MetricCard } from './components/MetricCard'
 import { MetricModal } from './components/MetricModal'
@@ -625,12 +626,7 @@ function App() {
     setIsAuthModalOpen(true)
   }
 
-  async function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) {
-      return
-    }
-
+  async function processFile(file: File) {
     setError('')
     setBusyMessage(copy.processing)
 
@@ -652,9 +648,17 @@ function App() {
       console.error(caught)
       setBusyMessage('')
       setError(caught instanceof Error ? caught.message : copy.loadError)
-    } finally {
-      event.target.value = ''
     }
+  }
+
+  async function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await processFile(file)
+    event.target.value = ''
   }
 
   /** Snippets depend only on the messages, so one build per chat serves the first
@@ -961,9 +965,8 @@ function App() {
 
             <div className="analytics-hero-actions">
               <button type="button" className="primary-button" onClick={openFilePicker}>
-                {busyMessage || copy.uploadCta}
+                {busyMessage ? busyMessage : copy.uploadCta}
               </button>
-              <CrossButton label={copy.backToLanding} onClick={backToLanding} />
             </div>
           </section>
 
@@ -1053,6 +1056,42 @@ function App() {
                 </div>
               ))}
             </div>
+          </section>
+        </main>
+      ) : user ? (
+        <main className="full-wrapped-layout">
+          <section className="full-wrapped-hero">
+            <div>
+              <p className="eyebrow">{copy.heroCaption}</p>
+              <h1>{copy.metricsTitle}</h1>
+              <p className="lead">{copy.savedTitle}</p>
+            </div>
+          </section>
+
+          <FileUploadZone
+            onFileSelect={processFile}
+            isLoading={Boolean(busyMessage)}
+            loadingMessage={busyMessage}
+          />
+
+          <section className="panel full-wrapped-content">
+            <h2>{copy.savedTitle}</h2>
+            {savedAnalyses.length === 0 ? (
+              <p>{copy.noSaved}</p>
+            ) : (
+              <div className="history-list">
+                {savedAnalyses.map((item) => (
+                  <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
+                    <strong>{item.chatName}</strong>
+                    <span>{item.dateRangeLabel}</span>
+                    <span>
+                      {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
+                    </span>
+                    <em>{copy.openSaved}</em>
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
         </main>
       ) : (
@@ -1202,16 +1241,18 @@ function App() {
             ))}
           </section>
 
-          <section className={`panel upload-strip reveal ${uploadReveal.inView ? 'is-visible' : ''}`} ref={uploadReveal.ref}>
-            <div>
+          <section className={`upload-strip-section reveal ${uploadReveal.inView ? 'is-visible' : ''}`} ref={uploadReveal.ref}>
+            <div className="upload-strip-info">
               <h2>{copy.uploadTitle}</h2>
               <p className="panel-copy">{copy.saveInfo}</p>
               <p className="panel-copy upload-strip-hint">{copy.uploadHint}</p>
             </div>
 
-            <button type="button" className="primary-button" onClick={openFilePicker}>
-              {busyMessage || copy.uploadCta}
-            </button>
+            <FileUploadZone
+              onFileSelect={processFile}
+              isLoading={Boolean(busyMessage)}
+              loadingMessage={busyMessage}
+            />
           </section>
         </main>
       )}
