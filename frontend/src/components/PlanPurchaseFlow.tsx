@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { CardCheckoutBrick, type CardCheckoutBrickCopy } from './CardCheckoutBrick'
+import { useEffect, useState } from 'react'
+import { PaymentBrickCheckout, type PaymentBrickCheckoutCopy } from './PaymentBrickCheckout'
 import { createSubscriptionWithCard } from '../lib/api'
 import type { SubscriptionOverview, SubscriptionPlan } from '../types'
 
@@ -20,7 +20,7 @@ export interface PlanPurchaseFlowCopy {
   paymentsDisabled: string
   cardStepTitle: string
   cardStepBack: string
-  cardCheckout: CardCheckoutBrickCopy
+  cardCheckout: PaymentBrickCheckoutCopy
   submitting: string
   genericError: string
   successTitle: string
@@ -30,11 +30,17 @@ export interface PlanPurchaseFlowCopy {
 }
 
 /**
- * The whole "buy" experience in one reusable piece: plan details, then the Card Payment
- * Brick, then a confirmation — all inline, no navigation. Used both by the full
- * `/suscripcion` page (inside its collapsible plan card) and by the quick popover a
- * locked metric's "Desbloquear VIP" opens; the two differ only in how they wrap it, not
- * in what it does.
+ * The whole "buy" experience in one reusable piece: plan details, then the Payment
+ * Brick, then a confirmation. Used both by the full `/suscripcion` page (inside its
+ * collapsible plan card) and by the quick popover a locked metric's "Desbloquear VIP"
+ * opens.
+ *
+ * On the full page, only the plan-details step renders inline — Santiago wants the
+ * actual payment step to always happen in the same popup, wherever it's triggered
+ * from, so `onRequestExternalCheckout` (when given) replaces the plan step's buy
+ * button with "open that popup" instead of advancing this instance's own `step` to
+ * `'card'`. The popover doesn't pass it, so there the whole flow (plan → card →
+ * success) still runs in place, same as before.
  */
 export function PlanPurchaseFlow({
   copy,
@@ -45,6 +51,8 @@ export function PlanPurchaseFlow({
   trialDeniedReason,
   onSuccess,
   onDone,
+  onRequestExternalCheckout,
+  onStepChange,
 }: {
   copy: PlanPurchaseFlowCopy
   token: string
@@ -54,11 +62,24 @@ export function PlanPurchaseFlow({
   trialDeniedReason: string | null
   onSuccess: (overview: SubscriptionOverview) => void
   onDone?: () => void
+  /** When provided, the buy button opens that flow elsewhere instead of showing the
+   * Payment Brick inline in this instance — see the component doc comment above. */
+  onRequestExternalCheckout?: () => void
+  /** Lets a wrapper (the popover) react to which step is showing — e.g. widen itself
+   * only for the card step, where the Payment Brick needs more room. */
+  onStepChange?: (step: 'plan' | 'card' | 'success') => void
 }) {
   const [step, setStep] = useState<'plan' | 'card' | 'success'>('plan')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [result, setResult] = useState<SubscriptionOverview | null>(null)
+
+  useEffect(() => {
+    onStepChange?.(step)
+    // onStepChange intentionally excluded: callers pass an inline setter, and
+    // re-running this because that function identity changed would defeat the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
 
   async function handleToken(cardTokenId: string) {
     setIsSubmitting(true)
@@ -117,7 +138,7 @@ export function PlanPurchaseFlow({
         <h3>{copy.cardStepTitle}</h3>
 
         {plan ? (
-          <CardCheckoutBrick
+          <PaymentBrickCheckout
             copy={copy.cardCheckout}
             amount={plan.amount}
             payerEmail={userEmail}
@@ -160,7 +181,11 @@ export function PlanPurchaseFlow({
       </div>
 
       {plan?.providerConfigured ? (
-        <button type="button" className="primary-button plan-card-cta" onClick={() => setStep('card')}>
+        <button
+          type="button"
+          className="primary-button plan-card-cta"
+          onClick={onRequestExternalCheckout ?? (() => setStep('card'))}
+        >
           {trialAvailable ? copy.buyTrialCta : copy.buyCta}
         </button>
       ) : (

@@ -1386,6 +1386,11 @@ h3 {
   gap: 14px;
 }
 
+.google-login-wrap {
+  display: flex;
+  justify-content: center;
+}
+
 .metric-modal {
   display: grid;
   gap: 18px;
@@ -3449,6 +3454,26 @@ h3 {
   color: #94a3b8;
 }
 
+.payment-brick-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #00b1ea;
+  letter-spacing: 0.01em;
+}
+
+.payment-brick-surface {
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  padding: 6px;
+  border: 1px solid rgba(0, 158, 227, 0.35);
+  box-shadow: 0 0 0 3px rgba(0, 158, 227, 0.08);
+}
+
 .plan-flow-submitting {
   margin: 10px 0 0;
   font-size: 0.85rem;
@@ -3510,6 +3535,13 @@ h3 {
   gap: 16px;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
+}
+
+/* Only the card/payment step gets the extra room (+40px each side) — the plan step
+   keeps the width above as-is. The `max-width: 640px` media query rule further below
+   still wins on narrow screens since it targets .vip-popover directly. */
+.vip-popover-wide {
+  width: min(700px, 100%);
 }
 
 .vip-popover-plan-head {

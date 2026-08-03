@@ -1,4 +1,4 @@
-import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
+import { type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 import './App.css'
 import { AiConsentModal } from './components/AiConsentModal'
@@ -9,6 +9,7 @@ import { FileUploadZone } from './components/FileUploadZone'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { MetricCard } from './components/MetricCard'
 import { MetricModal } from './components/MetricModal'
+import { ResponsiveGoogleLogin } from './components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from './components/SubscriptionPage'
 import { VipBadge } from './components/VipBadge'
 import { VipUnlockPopover } from './components/VipUnlockPopover'
@@ -241,12 +242,13 @@ const shellCopy = {
         device_used: 'Ya se usó desde este dispositivo.',
         country_not_allowed: 'No está disponible en tu país.',
       },
-      cardStepTitle: 'Datos de la tarjeta',
+      cardStepTitle: 'Método de pago',
       cardStepBack: 'Volver',
       cardCheckout: {
         missingKey: 'Los pagos todavía no están configurados en el servidor.',
         loading: 'Cargando el formulario de pago...',
-        tokenMissing: 'No pudimos procesar la tarjeta. Probá de nuevo.',
+        tokenMissing: 'Por ahora las suscripciones solo funcionan con tarjeta de crédito o débito — elegí esa opción para continuar.',
+        securedBy: 'Pago procesado de forma segura por Mercado Pago',
       },
       submitting: 'Confirmando con Mercado Pago...',
       genericError: 'No pudimos procesar el pago. Probá de nuevo.',
@@ -497,12 +499,13 @@ const shellCopy = {
         device_used: 'It was already used from this device.',
         country_not_allowed: 'It is not available in your country.',
       },
-      cardStepTitle: 'Card details',
+      cardStepTitle: 'Payment method',
       cardStepBack: 'Back',
       cardCheckout: {
         missingKey: 'Payments are not configured on the server yet.',
         loading: 'Loading the payment form...',
-        tokenMissing: "We couldn't process the card. Please try again.",
+        tokenMissing: 'Subscriptions only work with a credit or debit card for now — pick that option to continue.',
+        securedBy: 'Payment securely processed by Mercado Pago',
       },
       submitting: 'Confirming with Mercado Pago...',
       genericError: "We couldn't process the payment. Please try again.",
@@ -1388,6 +1391,7 @@ function App() {
           error={subscriptionError}
           onBack={() => navigateTo('/')}
           onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+          onStartPurchase={openVipPopover}
           onPurchaseSuccess={(overview) => {
             void handlePurchaseSuccess(overview)
           }}
@@ -1785,7 +1789,7 @@ function App() {
 
             <p className="panel-copy">{activeChat ? copy.loginAfterUpload : copy.saveInfo}</p>
             {hasGoogleClientId ? (
-              <GoogleLogin
+              <ResponsiveGoogleLogin
                 onSuccess={(credentialResponse) => {
                   void handleGoogleSuccess(credentialResponse)
                 }}

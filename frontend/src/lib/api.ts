@@ -155,8 +155,8 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
 }
 
 /**
- * Creates the subscription from a card the Card Payment Brick already tokenized in the
- * browser (see `components/CardCheckoutBrick.tsx`) — the card itself never passes
+ * Creates the subscription from a card the Payment Brick already tokenized in the
+ * browser (see `components/PaymentBrickCheckout.tsx`) — the card itself never passes
  * through this function or this backend, only the one-time token. Unlike a redirect
  * checkout, this call's response already reflects the outcome: it either resolves with
  * the subscription now trialing/active, or rejects with why Mercado Pago declined it.

@@ -296,7 +296,31 @@ npm run dev
 
 La app queda disponible en:
 
-- `http://localhost:5173`
+- `https://localhost:5173` si existe un certificado local (ver abajo)
+- `http://localhost:5173` si no
+
+### HTTPS local (opcional, recomendado)
+
+Sin esto la app funciona igual, pero Chrome muestra un aviso de "autocompletado
+deshabilitado" en el Payment Brick porque el check de autofill de pagos exige `https://`
+literal (a diferencia de casi todo lo demás, no le alcanza con que `localhost` cuente
+como "contexto seguro"). Es solo estético — la tarjeta la sigue manejando el iframe de
+Mercado Pago, que ya es HTTPS — y en producción con un dominio real desaparece solo.
+
+Para sacarlo también en local:
+
+```powershell
+winget install -e --id FiloSottile.mkcert
+mkcert -install
+cd frontend
+mkdir .cert
+mkcert -key-file .cert/localhost-key.pem -cert-file .cert/localhost-cert.pem localhost 127.0.0.1 ::1
+```
+
+`vite.config.ts` detecta esos archivos solos y sirve HTTPS si existen — no hace falta
+tocar nada más. `.cert/` está en `.gitignore`: el certificado es local a cada máquina, no
+se comparte. `mkcert -install` pide confirmar un diálogo de seguridad de Windows (instala
+una autoridad certificadora local) — es un paso que solo un humano puede aceptar.
 
 ## Cómo entrar con el usuario VIP
 

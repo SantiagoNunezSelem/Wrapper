@@ -61,7 +61,9 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
  * visual language is deliberately calmer than the rest of the app: solid panels, no
  * gradients on headings, no confetti.
  *
- * Buying happens inline here too — see `PlanPurchaseFlow` — never a redirect.
+ * Plan details render inline here, but buying itself always happens in the same popup
+ * "Desbloquear VIP" opens (`onStartPurchase` — see `App.tsx`'s `openVipPopover`), so the
+ * payment step never appears inline on this page. Never a redirect either way.
  */
 export function SubscriptionPage({
   language,
@@ -73,6 +75,7 @@ export function SubscriptionPage({
   error,
   onBack,
   onLanguageToggle,
+  onStartPurchase,
   onPurchaseSuccess,
   onCancel,
   onRefresh,
@@ -87,6 +90,7 @@ export function SubscriptionPage({
   error: string
   onBack: () => void
   onLanguageToggle: () => void
+  onStartPurchase: () => void
   onPurchaseSuccess: (overview: SubscriptionOverview) => void
   onCancel: () => void
   onRefresh: () => void
@@ -162,6 +166,7 @@ export function SubscriptionPage({
             plan={plan}
             overview={overview}
             onSuccess={onPurchaseSuccess}
+            onStartPurchase={onStartPurchase}
           />
         ) : null}
 
@@ -351,6 +356,7 @@ function PlansSection({
   plan,
   overview,
   onSuccess,
+  onStartPurchase,
 }: {
   copy: SubscriptionPageCopy
   token: string
@@ -358,6 +364,7 @@ function PlansSection({
   plan: SubscriptionOverview['plan'] | null
   overview: SubscriptionOverview | null
   onSuccess: (overview: SubscriptionOverview) => void
+  onStartPurchase: () => void
 }) {
   const [isOpen, setIsOpen] = useState(true)
 
@@ -385,6 +392,7 @@ function PlansSection({
               trialAvailable={Boolean(overview?.trialAvailable)}
               trialDeniedReason={overview?.trialDeniedReason ?? null}
               onSuccess={onSuccess}
+              onRequestExternalCheckout={onStartPurchase}
             />
           </div>
         ) : null}

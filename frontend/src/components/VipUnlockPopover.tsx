@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CrossButton } from './IconButton'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type { SubscriptionOverview, SubscriptionPlan, UserProfile } from '../types'
@@ -35,9 +36,17 @@ export function VipUnlockPopover({
   onSignIn: () => void
   onSuccess: (overview: SubscriptionOverview) => void
 }) {
+  // The card step needs more room for the Payment Brick's fields than the plan step's
+  // details/benefits list does — Santiago wants the popover wider only there, not on
+  // the plan step he already likes as-is.
+  const [flowStep, setFlowStep] = useState<'plan' | 'card' | 'success'>('plan')
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card vip-popover" onClick={(event) => event.stopPropagation()}>
+      <section
+        className={`modal-card vip-popover ${flowStep === 'card' ? 'vip-popover-wide' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+      >
         <CrossButton label={copy.close} onClick={onClose} className="close-button" />
 
         <p className="eyebrow">{copy.eyebrow}</p>
@@ -68,6 +77,7 @@ export function VipUnlockPopover({
             trialDeniedReason={overview?.trialDeniedReason ?? null}
             onSuccess={onSuccess}
             onDone={onClose}
+            onStepChange={setFlowStep}
           />
         )}
       </section>
