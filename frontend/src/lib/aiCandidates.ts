@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types'
-import { aiMetricIds, matchAiKeyword, normalizeForMatch, type AiMetricId } from './metrics'
+import { aiMetricIds, matchAiKeywordExplicit, matchAiKeywordGeneral, normalizeForMatch, type AiMetricId } from './metrics'
 
 // ---------------------------------------------------------------------------
 // Turning keyword hits into the smallest prompt that can still be judged well.
@@ -64,15 +64,42 @@ export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId)
 
   const candidates: AiCandidate[] = []
   const byRendering = new Map<string, AiCandidate>()
+  const usedIndices = new Set<number>()
 
+  // Explicit-tier hits first — the words most tightly tied to the metric are the best
+  // use of the AI budget. Only if that tier alone doesn't fill the batch do we widen the
+  // net to the general/everyday dictionary, so a chat that's light on the most explicit
+  // phrasing still gets a full batch of candidates for the AI to judge (see metrics.ts's
+  // matchAiKeywordExplicit/matchAiKeywordGeneral for the two-tier dictionaries).
+  collectCandidates(pool, metricId, matchAiKeywordExplicit, candidates, byRendering, usedIndices)
+  if (candidates.length < MAX_CANDIDATES_PER_METRIC) {
+    collectCandidates(pool, metricId, matchAiKeywordGeneral, candidates, byRendering, usedIndices)
+  }
+
+  return candidates
+}
+
+function collectCandidates(
+  pool: ChatMessage[],
+  metricId: AiMetricId,
+  matchKeyword: (metricId: AiMetricId, text: string) => string | null,
+  candidates: AiCandidate[],
+  byRendering: Map<string, AiCandidate>,
+  usedIndices: Set<number>,
+): void {
   for (let index = 0; index < pool.length && candidates.length < MAX_CANDIDATES_PER_METRIC; index += 1) {
+    if (usedIndices.has(index)) {
+      continue
+    }
+
     const message = pool[index]
-    const keyword = matchAiKeyword(metricId, message.contentText)
+    const keyword = matchKeyword(metricId, message.contentText)
 
     if (!keyword) {
       continue
     }
 
+    usedIndices.add(index)
     const text = renderSnippet(pool, index, keyword)
     const dedupeKey = `${keyword}\n${text}`
     const existing = byRendering.get(dedupeKey)
@@ -94,8 +121,6 @@ export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId)
     candidates.push(candidate)
     byRendering.set(dedupeKey, candidate)
   }
-
-  return candidates
 }
 
 /**
