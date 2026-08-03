@@ -113,76 +113,198 @@ function buildRepeatedEmojiPattern(emojis: string[], minCount: number): RegExp {
   return new RegExp(`(?:${emojis.map(escapeRegExp).join('|')}){${minCount},}`, 'u')
 }
 
+interface TieredWordMatch {
+  word: string
+  isExplicit: boolean
+}
+
+/**
+ * One phrase list split into two priority tiers, per metric/category: `explicitWords`
+ * are the ones most tightly tied to the topic — these are what `buildAiCandidates`
+ * reaches for first to fill the batch sent to the AI. `generalWords` is a much wider,
+ * everyday-phrasing net that always counts toward the raw keyword score/chart, and
+ * only becomes an AI-candidate source itself when the explicit tier alone doesn't
+ * turn up enough hits to fill the batch (see `matchAiKeywordGeneral`).
+ */
+interface TieredDictionary {
+  entries: { word: string; isExplicit: boolean; pattern: RegExp }[]
+  hasAny(text: string): boolean
+  matchAny(text: string): TieredWordMatch | null
+  matchExplicit(text: string): string | null
+  matchGeneral(text: string): string | null
+}
+
+function buildTieredDictionary(explicitWords: string[], generalWords: string[]): TieredDictionary {
+  const explicitSet = new Set(explicitWords)
+  const explicitPattern = toBoundaryPattern(explicitWords)
+  const generalPattern = toBoundaryPattern(generalWords)
+  const anyPattern = toBoundaryPattern([...explicitWords, ...generalWords])
+  const entries = [...explicitWords, ...generalWords].map((word) => ({
+    word,
+    isExplicit: explicitSet.has(word),
+    pattern: new RegExp(`\\b${escapeRegExp(word)}\\b`),
+  }))
+
+  return {
+    entries,
+    hasAny: (text) => anyPattern.test(normalizeForMatch(text)),
+    // Explicit tier wins when a message matches both — the more topic-relevant word
+    // is the more useful one to surface (headings, "most used words", etc).
+    matchAny: (text) => {
+      const normalized = normalizeForMatch(text)
+      let generalMatch: string | null = null
+      for (const { word, isExplicit, pattern } of entries) {
+        if (!pattern.test(normalized)) continue
+        if (isExplicit) return { word, isExplicit: true }
+        generalMatch ??= word
+      }
+      return generalMatch ? { word: generalMatch, isExplicit: false } : null
+    },
+    matchExplicit: (text) => explicitPattern.exec(normalizeForMatch(text))?.[0] ?? null,
+    matchGeneral: (text) => generalPattern.exec(normalizeForMatch(text))?.[0] ?? null,
+  }
+}
+
 interface RedFlagCategory {
   weight: number
   labelEs: string
   labelEn: string
-  pattern: RegExp
+  dict: TieredDictionary
 }
 
 // Categorized so one ambiguous word (like a plain "perdón"/"sorry") never taints the
 // score by itself — each category groups phrases that, together, actually read as a
-// real relationship-tension pattern rather than everyday politeness.
+// real relationship-tension pattern rather than everyday politeness. Each category is
+// itself split into an explicit tier (the phrases most tightly tied to the category,
+// prioritized for the AI) and a general tier (a much wider net of everyday phrasing —
+// friends casually insulting each other, milder jealousy, etc.) that always counts
+// toward the score/chart regardless of whether the AI ever saw it.
 const redFlagCategories: RedFlagCategory[] = [
   {
     weight: 4,
     labelEs: 'Celos y control',
     labelEn: 'Jealousy & control',
-    pattern: toBoundaryPattern([
-      'celos', 'celoso', 'celosa', 'celosito', 'celosita', 'jealous', 'controlador', 'controladora',
-      'me controlas', 'manipulador', 'manipuladora', 'manipulacion', 'toxico', 'toxica', 'toxic',
-      'no confio en ti', 'no confio en vos', 'no te creo nada', 'no te creo', 'estas mintiendo',
-      'me estas mintiendo', 'me estas ignorando', 'me ignoras', 'con quien estas', 'con quien andas',
-      'con quien hablabas', 'quien es el', 'quien es ese', 'quien es esa', 'revisa tu celular',
-      'revisa tu telefono', 'muestrame tu celular', 'me dejaste en visto', 'me dejas en visto',
-      'me tienes en visto', 'me tenes en visto', 'que escondes', 'que escondés', 'estas escondiendo algo',
-      'estás escondiendo algo', 'no podes hablar con', 'no puedes hablar con', 'prohibido hablarle',
-      'who is he', 'who is she', 'who were you with', "you're always with him", "you're always with her",
-      'check your phone', 'let me see your phone', "you're hiding something", 'borra esa conversacion',
-      'borra esa conversación', 'con quien chateas', 'con quien chateás',
-    ]),
+    dict: buildTieredDictionary(
+      [
+        'celos', 'celoso', 'celosa', 'celosito', 'celosita', 'jealous', 'controlador', 'controladora',
+        'me controlas', 'manipulador', 'manipuladora', 'manipulacion', 'toxico', 'toxica', 'toxic',
+        'no confio en ti', 'no confio en vos', 'no te creo nada', 'no te creo', 'estas mintiendo',
+        'me estas mintiendo', 'me estas ignorando', 'me ignoras', 'con quien estas', 'con quien andas',
+        'con quien hablabas', 'quien es el', 'quien es ese', 'quien es esa', 'revisa tu celular',
+        'revisa tu telefono', 'muestrame tu celular', 'me dejaste en visto', 'me dejas en visto',
+        'me tienes en visto', 'me tenes en visto', 'que escondes', 'estas escondiendo algo',
+        'no podes hablar con', 'no puedes hablar con', 'prohibido hablarle',
+        'who is he', 'who is she', 'who were you with', "you're always with him", "you're always with her",
+        'check your phone', 'let me see your phone', "you're hiding something", 'borra esa conversacion',
+        'con quien chateas',
+      ],
+      [
+        'estas celoso', 'estas celosa', 'sos posesivo', 'sos posesiva', 'posesivo', 'posesiva', 'me asfixias',
+        'me ahogas', 'no me dejas respirar', 'siempre desconfiando', 'me revisas el celular',
+        'me revisas el whatsapp', 'me estas stalkeando', 'me controlas todo', 'controlas todo lo que hago',
+        'quien te escribio', 'quien te llamo', 'con quien saliste', 'con quien estuviste', 'a donde fuiste',
+        'adonde fuiste', 'me tenes que avisar todo', 'me tienes que avisar todo', 'me pedis explicaciones',
+        'me pides explicaciones', 'desconfiado', 'desconfiada', 'sos un paranoico', 'sos una paranoica',
+        'sos muy celoso', 'sos muy celosa', 'no me dejas salir', 'no me dejas tener amigos',
+        'me haces sentir vigilada', 'me haces sentir vigilado',
+        "you're so jealous", "you're controlling", 'stop controlling me', "you're suffocating me",
+        "you're smothering me", 'let me breathe', "why don't you trust me", 'stop checking my phone',
+        "you're spying on me", 'stalking me', 'who texted you', 'who called you', 'where were you',
+        'where did you go', 'you need to explain yourself', 'paranoid', 'so possessive', 'overprotective',
+        "you're insecure", "you don't let me have friends", "you never let me out", "you always assume the worst",
+      ],
+    ),
   },
   {
     weight: 3,
     labelEs: 'Culpa y reproches',
     labelEn: 'Guilt-tripping',
-    pattern: toBoundaryPattern([
-      'siempre haces lo mismo', 'siempre lo mismo', 'nunca me escuchas', 'nunca estas', 'es tu culpa',
-      'todo es tu culpa', 'por tu culpa', 'your fault', 'no te importa nada', "you don't care about me",
-      'me tienes abandonada', 'me tienes abandonado', 'me tenes abandonada', 'me tenes abandonado',
-      'eres el problema', 'sos el problema', 'arruinas todo', 'arruinás todo', 'nunca haces nada bien',
-      "you never do anything right", "you ruin everything", 'siempre arruinas todo',
-    ]),
+    dict: buildTieredDictionary(
+      [
+        'siempre haces lo mismo', 'siempre lo mismo', 'nunca me escuchas', 'nunca estas', 'es tu culpa',
+        'todo es tu culpa', 'por tu culpa', 'your fault', 'no te importa nada', "you don't care about me",
+        'me tienes abandonada', 'me tienes abandonado', 'me tenes abandonada', 'me tenes abandonado',
+        'eres el problema', 'sos el problema', 'arruinas todo', 'nunca haces nada bien',
+        "you never do anything right", "you ruin everything", 'siempre arruinas todo',
+      ],
+      [
+        'siempre la cago', 'siempre hago todo mal', 'nada de lo que hago te alcanza', 'nunca es suficiente',
+        'nunca te alcanza', 'siempre encontras algo para criticar', 'todo lo que hago esta mal',
+        'me haces sentir mal', 'me haces sentir culpable', 'me culpas de todo', 'me echas la culpa',
+        'me tiras la culpa', 'siempre soy el malo', 'siempre soy la mala', 'nunca hago nada bien para vos',
+        'nunca hago nada bien para ti', 'te decepcione', 'te falle', 'soy un fracaso para vos',
+        'no doy la talla', 'nunca estoy a la altura', 'siempre te fallo', 'siempre arruino todo para vos',
+        'no valgo nada para vos', 'no valgo nada para ti', 'me haces sentir inutil', 'me haces sentir menos',
+        'siempre soy el culpable', 'siempre soy la culpable', 'todo lo malo es mi culpa',
+        "i can never do anything right", "nothing i do is ever enough", "you always find something to blame me for",
+        "you make me feel guilty", "you always blame me", "it's always my fault", 'i disappointed you again',
+        'i let you down', "i'm never good enough for you", 'you make me feel like a failure',
+        'why do i always mess up', 'i always ruin everything for you', "it's my fault again", 'i always screw up',
+        "you never think i'm good enough", "i'm always the one who's wrong", 'you make me feel worthless',
+        "i can't do anything right for you", 'everything is always my fault', "you never give me credit",
+      ],
+    ),
   },
   {
     weight: 5,
     labelEs: 'Insultos',
     labelEn: 'Insults',
-    pattern: toBoundaryPattern([
-      'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica', 'asqueroso',
-      'asquerosa', 'das asco', 'me das asco', 'te odio', 'i hate you', 'sos un desastre',
-      'eres un desastre', "you're pathetic", "you're an idiot", 'sos una basura', 'eres una basura',
-      'sos basura', 'eres basura', 'sos un fracasado', 'eres un fracasado', 'sos una fracasada',
-      'eres una fracasada', 'no servis para nada', 'no sirves para nada', 'sos una vergüenza',
-      'eres una vergüenza', 'sos un perdedor', 'eres un perdedor', 'sos ridiculo', 'sos ridicula',
-      'eres ridiculo', 'eres ridicula', 'no vales nada', 'no valés nada', 'sos un desgraciado',
-      'eres un desgraciado', 'callate la boca', 'cállate la boca', "you're trash", "you're garbage",
-      "you're worthless", "you're a loser", 'shut up', 'screw you', "you're disgusting",
-      'you make me sick', "you're a joke", "you're useless", "you're stupid", 'sos un inutil',
-      'eres un inutil',
-    ]),
+    dict: buildTieredDictionary(
+      [
+        'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica', 'asqueroso',
+        'asquerosa', 'das asco', 'me das asco', 'te odio', 'i hate you', 'sos un desastre',
+        'eres un desastre', "you're pathetic", "you're an idiot", 'sos una basura', 'eres una basura',
+        'sos basura', 'eres basura', 'sos un fracasado', 'eres un fracasado', 'sos una fracasada',
+        'eres una fracasada', 'no servis para nada', 'no sirves para nada', 'sos una verguenza',
+        'eres una verguenza', 'sos un perdedor', 'eres un perdedor', 'sos ridiculo', 'sos ridicula',
+        'eres ridiculo', 'eres ridicula', 'no vales nada', 'sos un desgraciado',
+        'eres un desgraciado', 'callate la boca', "you're trash", "you're garbage",
+        "you're worthless", "you're a loser", 'shut up', 'screw you', "you're disgusting",
+        'you make me sick', "you're a joke", "you're useless", "you're stupid", 'sos un inutil',
+        'eres un inutil',
+      ],
+      [
+        'boludo', 'boluda', 'pelotudo', 'pelotuda', 'huevon', 'gil', 'gila', 'tarado', 'tarada',
+        'forro', 'forra', 'tonto', 'tonta', 'menso', 'mensa', 'baboso', 'babosa', 'zopenco', 'zopenca',
+        'bobo', 'boba', 'anormal', 'pendejo', 'pendeja', 'nabo', 'sorete', 'mogolico', 'mogolica',
+        'infeliz', 'sinverguenza',
+        'idiot', 'moron', 'dumbass', 'jerk', 'asshole', 'jackass', 'loser', 'dumbo', 'airhead', 'nitwit',
+        'dimwit', 'numbskull', 'knucklehead', 'meathead', 'blockhead', 'wanker', 'douche', 'douchebag',
+        'scumbag', 'lowlife', 'dumb ass', 'piss off', 'get lost', 'you suck', "you're an embarrassment",
+        "you're a clown", "you're gross", "you're annoying", "you're so dumb", 'such an idiot',
+      ],
+    ),
   },
   {
     weight: 5,
     labelEs: 'Amenazas de ruptura',
     labelEn: 'Breakup threats',
-    pattern: toBoundaryPattern([
-      'terminamos', 'se acabo', 'quiero terminar', 'quiero cortar', 'ya no te quiero', 'ya no te amo',
-      'no te amo mas', 'romper contigo', 'no quiero verte mas', 'no quiero saber nada de ti',
-      'no quiero saber nada de vos', 'breaking up with you', "we're done", "i'm done with you",
-      'hasta aca llegamos', 'hasta acá llegamos', 'chau para siempre', 'this is over', 'i want out',
-      'quiero salir de esto', 'no doy mas con esto', 'no doy más con esto',
-    ]),
+    dict: buildTieredDictionary(
+      [
+        'terminamos', 'se acabo', 'quiero terminar', 'quiero cortar', 'ya no te quiero', 'ya no te amo',
+        'no te amo mas', 'romper contigo', 'no quiero verte mas', 'no quiero saber nada de ti',
+        'no quiero saber nada de vos', 'breaking up with you', "we're done", "i'm done with you",
+        'hasta aca llegamos', 'chau para siempre', 'this is over', 'i want out',
+        'quiero salir de esto', 'no doy mas con esto',
+      ],
+      [
+        'ya no aguanto mas', 'no doy mas', 'estoy cansado de esto', 'estoy cansada de esto',
+        'necesito un tiempo', 'necesitamos un tiempo', 'quiero un tiempo', 'me quiero ir', 'no se si seguir',
+        'no se si aguanto', 'esto no da para mas', 'ya no puedo mas', 'estoy pensando en dejarlo',
+        'estoy pensando en dejarte', 'quiero parar esto', 'quiero pausar esto', 'no le veo futuro a esto',
+        'ya no se que hacer con esto', 'no se si vale la pena seguir', 'esto ya no funciona',
+        'estoy al limite', 'no aguanto mas esta relacion', 'no doy mas con vos', 'no doy mas contigo',
+        'quiero terminar con esto',
+        "i can't do this anymore", 'i need space', 'i need a break', 'i need time apart',
+        "i don't know if i can keep going", "this isn't working anymore", "i don't see a future in this",
+        "i'm exhausted from this", "i'm done trying", 'maybe we should take a break', 'i think we need space',
+        "i'm tired of this relationship", "i don't know if i want this anymore", "we might not make it",
+        "i'm losing hope in this", 'this is exhausting me', "i don't know what we're doing anymore",
+        'i need to think about us', "maybe this isn't meant to be", "i can't keep doing this",
+        'this relationship is draining me', "i'm not happy anymore", "i don't think i can keep fighting for this",
+        'we need to talk about ending this', "i'm at my limit",
+      ],
+    ),
   },
 ]
 
@@ -210,12 +332,12 @@ const cutesySpamPattern = buildRepeatedEmojiPattern(
 )
 
 // Heuristic dictionary for "El Tono Picante" — not a claim of accuracy, just candidate
-// bait; the AI pass (see applyAiVerdicts) is what actually decides which candidates are
-// real. Split into two tiers so the *display* — which examples and which words in the
-// "most used" list get shown first — can favor the explicit, attention-grabbing tier
-// over vaguer everyday-language hits ("hot", "sexy") once both have already cleared the
-// AI's judgment. Tiering never affects which candidates get sent or accepted; it only
-// changes what surfaces first among messages already confirmed genuinely spicy.
+// bait; the AI pass (see applyAiVerdicts) is what actually decides which candidates get
+// shown as detailed examples. Split into the same two tiers as the red-flag categories
+// above: the explicit tier is what `buildAiCandidates` reaches for first, and the
+// general tier is a much wider net that always counts toward the score/chart/word
+// list, and only becomes an AI-candidate source when the explicit tier alone doesn't
+// fill the batch.
 const flirtyExplicitWords = [
   'pene', 'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong', 'shaft',
   'culo', 'orto', 'nalgas', 'pompis', 'ass', 'butt', 'botty', 'teta', 'tetas', 'pecho', 'pechos',
@@ -230,18 +352,20 @@ const flirtyEverydayWords = [
   'apasionado', 'apasionada', 'travieso', 'traviesa', 'me calentas', 'me prendes',
   'ganas de vos', 'ganas de ti', 'fantasia', 'fantasias', 'hot', 'turned on', 'sexting', 'flirty',
   'naughty', 'teasing',
+  'me tienes loco', 'me tenes loco', 'me tienes loca', 'me tenes loca', 'me muero por vos',
+  'me muero por ti', 'quiero tocarte', 'me pones caliente', 'me excitas', 'excitado', 'excitada',
+  'excitante', 'lujuria', 'lujurioso', 'lujuriosa', 'deseo', 'te deseo', 'te deseo tanto',
+  'ven a mi cama', 'en mi cama', 'quitate la ropa', 'sacate la ropa', 'sin ropa', 'morboso', 'morbosa',
+  'picante', 'para comerte', 'estas para comerte', 'antojo de vos', 'antojo de ti',
+  'aroused', 'arousal', 'desire', 'i desire you', 'craving you', 'lust', 'lusting', 'i want you so bad',
+  'take me', 'in bed', 'my bed', 'your bed', 'undress', 'undressing', 'seduce', 'seducing', 'seduction',
+  'seductive', 'moan', 'moaning', 'pleasure', 'pleasuring', 'kinky', 'i need you', 'so hot for you',
 ]
-// Explicit tier first: when a message matches more than one word, `matchAiKeyword`
-// (which just takes the first regex match) ends up tagging it with the explicit one —
-// the more attention-grabbing label — rather than an incidental vaguer word alongside it.
-const flirtyWords = [...flirtyExplicitWords, ...flirtyEverydayWords]
+// Explicit tier first: when a message matches more than one word, `flirtyDict.matchAny`
+// tags it with the explicit one — the more attention-grabbing label — rather than an
+// incidental vaguer word alongside it.
 const flirtyExplicitWordSet = new Set(flirtyExplicitWords)
-const flirtyPattern = toBoundaryPattern(flirtyWords)
-const flirtyWordPatterns = flirtyWords.map((word) => ({
-  word,
-  isExplicit: flirtyExplicitWordSet.has(word),
-  pattern: new RegExp(`\\b${escapeRegExp(word)}\\b`),
-}))
+const flirtyDict = buildTieredDictionary(flirtyExplicitWords, flirtyEverydayWords)
 
 // ---------------------------------------------------------------------------
 // AI-assisted metrics
@@ -264,21 +388,41 @@ export function isAiMetricId(metricId: string): metricId is AiMetricId {
 
 /**
  * The exact dictionary phrase that made this message a candidate for an AI-backed
- * metric, or null when the message isn't a candidate at all. The phrase travels with
- * the snippet so the model knows which word to weigh — and so a long message can be
- * cropped around it instead of blindly from the start.
+ * metric, restricted to the explicit tier — the words most tightly tied to the topic.
+ * `buildAiCandidates` calls this first, since the explicit tier is what should fill the
+ * AI batch whenever there are enough hits for it. The phrase travels with the snippet
+ * so the model knows which word to weigh, and so a long message can be cropped around
+ * it instead of blindly from the start.
  */
-export function matchAiKeyword(metricId: AiMetricId, text: string): string | null {
-  const normalized = normalizeForMatch(text)
-
+export function matchAiKeywordExplicit(metricId: AiMetricId, text: string): string | null {
   if (metricId === 'tonopicante') {
-    return matchedFlirtyWord(text)?.word ?? null
+    return flirtyDict.matchExplicit(text)
   }
 
   for (const category of redFlagCategories) {
-    const match = category.pattern.exec(normalized)
+    const match = category.dict.matchExplicit(text)
     if (match) {
-      return match[0]
+      return match
+    }
+  }
+
+  return null
+}
+
+/**
+ * Same as `matchAiKeywordExplicit`, but restricted to the general tier — the much
+ * wider, everyday-phrasing dictionary. `buildAiCandidates` only reaches for this one to
+ * top up the AI batch when the explicit tier alone didn't produce enough candidates.
+ */
+export function matchAiKeywordGeneral(metricId: AiMetricId, text: string): string | null {
+  if (metricId === 'tonopicante') {
+    return flirtyDict.matchGeneral(text)
+  }
+
+  for (const category of redFlagCategories) {
+    const match = category.dict.matchGeneral(text)
+    if (match) {
+      return match
     }
   }
 
@@ -1352,15 +1496,15 @@ function metricWordcloud(ctx: MetricContext): MetricResult {
 function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
   const { chatMessages, textMessages, language } = ctx
 
-  // Only the keyword side of this metric goes through the AI — deletions and long
-  // silences are structural facts about the chat, with no wording to misread.
+  // Every keyword hit — explicit or general tier — counts toward the score, chart, and
+  // breakdown below, regardless of whether the AI ever got to look at it: the AI verdict
+  // only decides which of these hits get shown as a detailed, real-message example (see
+  // momentsById further down), it never shrinks the overall tally. Deletions and long
+  // silences never go through the AI at all — they're structural facts about the chat,
+  // with no wording to misread.
   const categoryHits = redFlagCategories.map((category) => ({
     category,
-    messages: textMessages.filter(
-      (message) =>
-        category.pattern.test(normalizeForMatch(message.contentText)) &&
-        (!accepted || accepted.has(message.id)),
-    ),
+    messages: textMessages.filter((message) => category.dict.hasAny(message.contentText)),
   }))
   const deletions = chatMessages.filter((message) => message.isDeleted)
   // 48h matches the threshold "Rachas de Inactividad" already uses for a "long
@@ -1393,12 +1537,18 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
   const byKeywordSender = countBySender(categoryHits.flatMap((entry) => entry.messages))
 
   // Examples worth reading: keyword hits (celos, insultos, culpa, rupturas) and long
-  // silences, each rendered with the real conversation around them. Deletions still
-  // count toward the score and the breakdown chart above, but a "this message got
-  // deleted" example has no actual text to show — so, on purpose, they never appear here.
+  // silences, each rendered with the real conversation around them. Unlike the score
+  // above, an example is only shown once the AI has actually confirmed it — accepted
+  // undefined means the verdict hasn't run yet, so nothing is filtered out (this pass
+  // isn't shown to a real user until the card unlocks anyway). Deletions still count
+  // toward the score and the breakdown chart above, but a "this message got deleted"
+  // example has no actual text to show — so, on purpose, they never appear here.
   const momentsById = new Map<string, { message: ChatMessage; heading: string }>()
   for (const entry of categoryHits) {
     for (const message of entry.messages) {
+      if (accepted && !accepted.has(message.id)) {
+        continue
+      }
       if (!momentsById.has(message.id)) {
         momentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
       }
@@ -1777,13 +1927,11 @@ function metricDramatico(ctx: MetricContext): MetricResult {
 
 function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
   const { textMessages, participants, language } = ctx
-  // `accepted` is the AI's verdict: keep only the candidates it confirmed really are
-  // suggestive. Undefined means the verdict hasn't run, so every keyword hit counts —
-  // that raw version is never shown to a user (see gateAnalysis), it just keeps the
-  // metric computable before and independently of the AI pass.
-  const flagged = textMessages.filter(
-    (message) => hasFlirtyWord(message.contentText) && (!accepted || accepted.has(message.id)),
-  )
+  // Every keyword hit — explicit or general tier — counts toward the score, chart,
+  // hour heatmap, and word list below, regardless of whether the AI ever got to look
+  // at it: the AI verdict only decides which hits get shown as a detailed, real-message
+  // example (see eligibleForExamples further down), it never shrinks the overall tally.
+  const flagged = textMessages.filter((message) => flirtyDict.hasAny(message.contentText))
 
   if (flagged.length === 0) {
     return { hasData: false }
@@ -1797,22 +1945,27 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
 
   for (const message of flagged) {
     const normalized = normalizeForMatch(message.contentText)
-    for (const { word, pattern } of flirtyWordPatterns) {
+    for (const { word, pattern } of flirtyDict.entries) {
       if (pattern.test(normalized)) {
         termCounts.set(word, (termCounts.get(word) ?? 0) + 1)
       }
     }
   }
 
+  // An example is only shown once the AI has actually confirmed it — accepted undefined
+  // means the verdict hasn't run yet, so nothing is filtered out (this pass isn't shown
+  // to a real user until the card unlocks anyway).
+  const eligibleForExamples = flagged.filter((message) => !accepted || accepted.has(message.id))
+
   // Explicit-tier hits lead, both here and in the word list below — Santiago wants the
   // attention-grabbing matches surfaced, not buried under five milder ones a participant
   // happened to send earlier in the chat. Frequency/chronology only break ties within a tier.
   const groupsList: MessageGroup[] = []
   for (const name of participants) {
-    const ownMatches = flagged
+    const ownMatches = eligibleForExamples
       .filter((message) => message.sender === name)
       .flatMap((message) => {
-        const match = matchedFlirtyWord(message.contentText)
+        const match = flirtyDict.matchAny(message.contentText)
         return match ? [{ message, match }] : []
       })
       .sort((left, right) => Number(right.match.isExplicit) - Number(left.match.isExplicit))
@@ -2515,32 +2668,6 @@ function hasCringeWord(text: string): boolean {
     return true
   }
   return cringePattern.test(normalizeForMatch(text))
-}
-
-function hasFlirtyWord(text: string): boolean {
-  return flirtyPattern.test(normalizeForMatch(text))
-}
-
-/** Which flirty word matched, and whether it's the explicit tier — checked in tier
- * order so a message containing both an explicit and an everyday word (e.g. "estabas
- * sexy... y tu pene...") is tagged with the explicit one, not whichever happens to sit
- * first in the raw text. Purely a display-priority signal (see the tiered lists above);
- * it never affects which candidates get sent to or accepted by the AI. */
-function matchedFlirtyWord(text: string): { word: string; isExplicit: boolean } | null {
-  const normalized = normalizeForMatch(text)
-  let everydayMatch: string | null = null
-
-  for (const { word, isExplicit, pattern } of flirtyWordPatterns) {
-    if (!pattern.test(normalized)) {
-      continue
-    }
-    if (isExplicit) {
-      return { word, isExplicit: true }
-    }
-    everydayMatch ??= word
-  }
-
-  return everydayMatch ? { word: everydayMatch, isExplicit: false } : null
 }
 
 // Home-row letters that a "jaja"/"jsjs" laugh naturally spills onto when someone's
