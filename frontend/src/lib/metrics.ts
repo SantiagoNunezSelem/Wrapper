@@ -609,11 +609,72 @@ export function createMetricContext(messages: ChatMessage[], language: Language)
   return { chatMessages, textMessages, participants, language, messageIndex }
 }
 
+interface MetricEntry {
+  id: string
+  tier: 'free' | 'vip'
+  accent: string
+  compute: (ctx: MetricContext) => MetricResult
+}
+
+const freeMetricEntries: MetricEntry[] = [
+  { id: 'spammer', tier: 'free', accent: 'tier-purple', compute: metricSpammer },
+  { id: 'monologuista', tier: 'free', accent: 'tier-pink', compute: metricMonologuista },
+  { id: 'reloj', tier: 'free', accent: 'tier-orange', compute: metricReloj },
+  { id: 'rompehielo', tier: 'free', accent: 'tier-blue', compute: metricRompehielo },
+  { id: 'emojis', tier: 'free', accent: 'tier-cyan', compute: metricEmojis },
+  { id: 'racha-dias', tier: 'free', accent: 'tier-lime', compute: metricRachaDias },
+  { id: 'testamento', tier: 'free', accent: 'tier-gold', compute: metricTestamento },
+  { id: 'multimedia', tier: 'free', accent: 'tier-rose', compute: metricMultimedia },
+  { id: 'top-dias', tier: 'free', accent: 'tier-indigo', compute: metricTopDias },
+  { id: 'velocista', tier: 'free', accent: 'tier-mint', compute: metricVelocista },
+  { id: 'heatmap-anual', tier: 'free', accent: 'tier-teal', compute: metricHeatmapAnual },
+  { id: 'termometro', tier: 'free', accent: 'tier-violet', compute: metricTermometro },
+]
+
+const vipMetricEntries: MetricEntry[] = [
+  { id: 'clavavistos', tier: 'vip', accent: 'tier-purple', compute: metricClavavistos },
+  { id: 'inactividad', tier: 'vip', accent: 'tier-slate', compute: metricInactividad },
+  { id: 'wordcloud', tier: 'vip', accent: 'tier-cyan', compute: metricWordcloud },
+  { id: 'redflags', tier: 'vip', accent: 'tier-red', compute: metricRedflags },
+  { id: 'cringe', tier: 'vip', accent: 'tier-orange', compute: metricCringe },
+  { id: 'arrepentido', tier: 'vip', accent: 'tier-rose', compute: metricArrepentido },
+  { id: 'poliglota', tier: 'vip', accent: 'tier-green', compute: metricPoliglota },
+  { id: 'jajaja', tier: 'vip', accent: 'tier-yellow', compute: metricJajaja },
+  { id: 'metralleta', tier: 'vip', accent: 'tier-blue', compute: metricMetralleta },
+  { id: 'interrogador', tier: 'vip', accent: 'tier-indigo', compute: metricInterrogador },
+  { id: 'dramatico', tier: 'vip', accent: 'tier-gold', compute: metricDramatico },
+  { id: 'tonopicante', tier: 'vip', accent: 'tier-magenta', compute: metricTonoPicante },
+  { id: 'curador', tier: 'vip', accent: 'tier-sky', compute: metricCurador },
+]
+
+/** Computes one tier's cards metric-by-metric (instead of one synchronous batch),
+ * yielding to the browser after each so a progress bar actually gets a chance to
+ * paint between steps — see `onProgress` below. */
+async function buildMetrics(entries: MetricEntry[], ctx: MetricContext, onStep: () => void): Promise<MetricCard[]> {
+  const cards: MetricCard[] = []
+
+  for (const entry of entries) {
+    cards.push(createMetric(entry.id, ctx.language, entry.tier, entry.accent, entry.compute(ctx)))
+    onStep()
+    await yieldToBrowser()
+  }
+
+  return cards
+}
+
+/** Total metric count (free + VIP) computed for every chat regardless of the
+ * viewer's tier — gating happens downstream in `gateAnalysis`, so this is also
+ * the right denominator for a "chat analysis" progress bar. */
+export const totalMetricCount = freeMetricEntries.length + vipMetricEntries.length
+
 export async function computeAnalysisCore(
   chatName: string,
   messages: ChatMessage[],
   language: Language,
   sourceHash: string,
+  /** Called once per metric as it finishes, `completed` out of `totalMetricCount` —
+   * the source for the analyzing screen's progress bar. */
+  onProgress?: (completed: number, total: number) => void,
 ): Promise<AnalysisCore> {
   const ctx = createMetricContext(messages, language)
   const { chatMessages, participants } = ctx
@@ -634,9 +695,14 @@ export async function computeAnalysisCore(
     }
   }
 
-  const rawFreeMetrics = buildFreeMetrics(ctx).filter((card) => card.hasData)
-  await yieldToBrowser()
-  const rawVipMetrics = buildVipMetrics(ctx).filter((card) => card.hasData)
+  let completed = 0
+  const tick = () => {
+    completed += 1
+    onProgress?.(completed, totalMetricCount)
+  }
+
+  const rawFreeMetrics = (await buildMetrics(freeMetricEntries, ctx, tick)).filter((card) => card.hasData)
+  const rawVipMetrics = (await buildMetrics(vipMetricEntries, ctx, tick)).filter((card) => card.hasData)
 
   return {
     chatName,
@@ -722,43 +788,6 @@ export async function buildAnalysis(
 ): Promise<AnalysisBundle> {
   const core = await computeAnalysisCore(chatName, messages, language, sourceHash)
   return gateAnalysis(core, hasVipAccess)
-}
-
-function buildFreeMetrics(ctx: MetricContext): MetricCard[] {
-  const { language } = ctx
-  return [
-    createMetric('spammer', language, 'free', 'tier-purple', metricSpammer(ctx)),
-    createMetric('monologuista', language, 'free', 'tier-pink', metricMonologuista(ctx)),
-    createMetric('reloj', language, 'free', 'tier-orange', metricReloj(ctx)),
-    createMetric('rompehielo', language, 'free', 'tier-blue', metricRompehielo(ctx)),
-    createMetric('emojis', language, 'free', 'tier-cyan', metricEmojis(ctx)),
-    createMetric('racha-dias', language, 'free', 'tier-lime', metricRachaDias(ctx)),
-    createMetric('testamento', language, 'free', 'tier-gold', metricTestamento(ctx)),
-    createMetric('multimedia', language, 'free', 'tier-rose', metricMultimedia(ctx)),
-    createMetric('top-dias', language, 'free', 'tier-indigo', metricTopDias(ctx)),
-    createMetric('velocista', language, 'free', 'tier-mint', metricVelocista(ctx)),
-    createMetric('heatmap-anual', language, 'free', 'tier-teal', metricHeatmapAnual(ctx)),
-    createMetric('termometro', language, 'free', 'tier-violet', metricTermometro(ctx)),
-  ]
-}
-
-function buildVipMetrics(ctx: MetricContext): MetricCard[] {
-  const { language } = ctx
-  return [
-    createMetric('clavavistos', language, 'vip', 'tier-purple', metricClavavistos(ctx)),
-    createMetric('inactividad', language, 'vip', 'tier-slate', metricInactividad(ctx)),
-    createMetric('wordcloud', language, 'vip', 'tier-cyan', metricWordcloud(ctx)),
-    createMetric('redflags', language, 'vip', 'tier-red', metricRedflags(ctx)),
-    createMetric('cringe', language, 'vip', 'tier-orange', metricCringe(ctx)),
-    createMetric('arrepentido', language, 'vip', 'tier-rose', metricArrepentido(ctx)),
-    createMetric('poliglota', language, 'vip', 'tier-green', metricPoliglota(ctx)),
-    createMetric('jajaja', language, 'vip', 'tier-yellow', metricJajaja(ctx)),
-    createMetric('metralleta', language, 'vip', 'tier-blue', metricMetralleta(ctx)),
-    createMetric('interrogador', language, 'vip', 'tier-indigo', metricInterrogador(ctx)),
-    createMetric('dramatico', language, 'vip', 'tier-gold', metricDramatico(ctx)),
-    createMetric('tonopicante', language, 'vip', 'tier-magenta', metricTonoPicante(ctx)),
-    createMetric('curador', language, 'vip', 'tier-sky', metricCurador(ctx)),
-  ]
 }
 
 function createMetric(

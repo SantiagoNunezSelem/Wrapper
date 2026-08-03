@@ -1,0 +1,125 @@
+using System.Net;
+using System.Security.Claims;
+using backend.Data;
+using backend.Models;
+using backend.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+
+namespace backend.Endpoints;
+
+/// <summary>
+/// Local development conveniences, chiefly the VIP switch that makes the paid
+/// experience testable without pushing real money through Mercado Pago.
+///
+/// Two independent gates, because either one alone eventually fails: the routes are only
+/// mapped when the app runs in the Development environment, and every call additionally
+/// has to arrive from the loopback address. Shipping a build with ASPNETCORE_ENVIRONMENT
+/// misconfigured therefore still does not hand out free Pro over the internet.
+/// </summary>
+public static class DevEndpoints
+{
+    public static void MapDevEndpoints(this WebApplication app)
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            return;
+        }
+
+        var group = app.MapGroup("/api/dev");
+
+        group.MapGet("/status", (HttpContext http) =>
+            IsLoopback(http)
+                ? Results.Ok(new { devToolsEnabled = true })
+                : Results.NotFound());
+
+        // Grants or removes a fake Pro subscription. It is a real row with
+        // IsDevSimulated set, not a client-side flag, so the backend's own Pro gate on
+        // the AI routes sees exactly what a paying customer's would.
+        group.MapPost("/subscription/toggle", [Authorize] async (
+            HttpContext http,
+            ClaimsPrincipal principal,
+            AppDbContext db,
+            CancellationToken cancellationToken) =>
+        {
+            if (!IsLoopback(http))
+            {
+                return Results.NotFound();
+            }
+
+            var userId = principal.GetRequiredUserId();
+            var user = await db.Users
+                .Include(candidate => candidate.Subscriptions)
+                .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var simulated = user.Subscriptions.FirstOrDefault(item => item.IsDevSimulated);
+            var isActive = simulated is not null && SubscriptionAccessEvaluator.HasVipAccess(simulated);
+
+            if (isActive)
+            {
+                // Removed outright rather than marked cancelled: a cancelled subscription
+                // deliberately keeps access until the period ends, which is the opposite
+                // of what a "turn it off now" test switch should do.
+                db.Subscriptions.Remove(simulated!);
+                user.Subscriptions.Remove(simulated!);
+            }
+            else
+            {
+                if (simulated is not null)
+                {
+                    db.Subscriptions.Remove(simulated);
+                    user.Subscriptions.Remove(simulated);
+                }
+
+                var subscription = new Subscription
+                {
+                    UserId = user.Id,
+                    Status = "activa",
+                    PlanType = "mensual",
+                    PaymentProvider = "dev",
+                    SubscriptionStartsAtUtc = DateTime.UtcNow,
+                    NextBillingAtUtc = DateTime.UtcNow.AddMonths(1),
+                    IsDevSimulated = true,
+                    Amount = 0m,
+                };
+
+                db.Subscriptions.Add(subscription);
+                user.Subscriptions.Add(subscription);
+
+                db.SubscriptionEvents.Add(new SubscriptionEvent
+                {
+                    SubscriptionId = subscription.Id,
+                    UserId = user.Id,
+                    Topic = "dev",
+                    Action = "activate",
+                    ResultingStatus = "activa",
+                    Notes = "Simulated Pro access granted from the local dev toggle.",
+                });
+            }
+
+            user.UpdatedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                simulatedSubscriptionActive = !isActive,
+                hasVipAccess = SubscriptionAccessEvaluator.HasVipAccess(user),
+                subscriptionState = SubscriptionAccessEvaluator.GetVisibleState(user),
+            });
+        });
+    }
+
+    private static bool IsLoopback(HttpContext http)
+    {
+        var address = http.Connection.RemoteIpAddress;
+        return address is not null &&
+               (IPAddress.IsLoopback(address) ||
+                // A dual-stack socket reports an IPv4 loopback client as ::ffff:127.0.0.1.
+                (address.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(address.MapToIPv4())));
+    }
+}

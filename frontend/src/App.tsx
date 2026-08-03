@@ -1,26 +1,35 @@
-import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
+import { type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 import './App.css'
 import { AiConsentModal } from './components/AiConsentModal'
 import type { AiPanelProps } from './components/AiStatePanel'
+import { DevToolbar } from './components/DevToolbar'
 import { CrossButton } from './components/IconButton'
 import { FileUploadZone } from './components/FileUploadZone'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { MetricCard } from './components/MetricCard'
 import { MetricModal } from './components/MetricModal'
+import { ResponsiveGoogleLogin } from './components/ResponsiveGoogleLogin'
+import { SubscriptionPage } from './components/SubscriptionPage'
 import { VipBadge } from './components/VipBadge'
+import { VipUnlockPopover } from './components/VipUnlockPopover'
 import { toAcceptedMessageIds, type AiCandidateSet } from './lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from './lib/analysisClient'
 import {
   analyzeAiMetrics,
   ApiError,
+  cancelSubscription,
   getCurrentUser,
+  getSubscription,
   grantAiConsent,
   listAnalyses,
   loginWithGoogle,
   retryAiMetrics,
   saveAnalysis,
+  syncSubscription,
+  toggleDevSubscription,
 } from './lib/api'
+import { isAiDisabled as readAiDisabled, isLocalhost, setAiDisabled } from './lib/devFlags'
 import { getLandingPreviewCards } from './lib/landingPreview'
 import {
   aiMetricIds,
@@ -40,6 +49,7 @@ import type {
   Language,
   MetricCard as MetricCardData,
   SavedAnalysis,
+  SubscriptionOverview,
   UserProfile,
 } from './types'
 
@@ -89,10 +99,8 @@ const shellCopy = {
     demoTag: 'Ejemplo',
     setupWarning:
       'Falta configurar VITE_GOOGLE_CLIENT_ID en el frontend o GoogleAuth:AllowedAudience en el backend.',
-    loginHeadline: 'Iniciá sesión para guardar tu Wrapped y desbloquear el usuario VIP',
+    loginHeadline: 'Iniciá sesión para guardar tu Wrapped y desbloquear las métricas Pro',
     loginAfterUpload: 'Tu análisis ya está listo. Si querés guardarlo y ver tu historial, iniciá sesión ahora.',
-    vipUpsellNote:
-      'La suscripción VIP todavía no se puede activar desde acá. Iniciá sesión con la cuenta configurada como admin para probarla en este entorno.',
     uploadTitle: 'Subí un .txt o .zip exportado desde WhatsApp',
     uploadHint: 'Podés subir primero y loguearte después. El procesamiento sigue siendo local.',
     saveInfo: 'El backend guarda solo el JSON agregado del análisis, nunca el texto crudo del chat.',
@@ -149,6 +157,132 @@ const shellCopy = {
       accept: 'Activar y analizar',
       decline: 'Ahora no',
       working: 'Activando...',
+    },
+    manageSubscription: 'Gestionar suscripción',
+    vipPopover: {
+      eyebrow: 'Métricas Pro',
+      title: 'Desbloqueá VIP',
+      close: 'Cerrar',
+      signInPrompt: 'Iniciá sesión con tu cuenta de Google para suscribirte.',
+      signInCta: 'Iniciar sesión',
+    },
+    subscriptionPage: {
+      eyebrow: 'Cuenta',
+      title: 'Suscripción',
+      lead: 'Gestioná tu plan Pro: beneficios, facturación y cancelación.',
+      backToApp: 'Volver a Vistazo',
+      signInPrompt: 'Iniciá sesión con tu cuenta de Google para suscribirte y ver el estado de tu cuenta.',
+      signInCta: 'Iniciar sesión',
+      close: 'Cerrar',
+      statuses: {
+        pendiente: 'Pendiente de pago',
+        trial: 'Prueba gratis',
+        activa: 'Activa',
+        pago_fallido: 'Pago rechazado',
+        pausada: 'Pausada',
+        cancelada: 'Cancelada',
+        inactiva: 'Sin suscripción',
+      },
+      statusHints: {
+        pendiente: 'Falta completar el pago en Mercado Pago. Podés retomarlo cuando quieras.',
+        trial: 'Tenés acceso Pro completo. Si cancelás antes de que termine, no se te cobra nada.',
+        activa: 'Se renueva sola todos los meses. La podés cancelar cuando quieras.',
+        pago_fallido: 'No pudimos cobrar tu tarjeta. Mercado Pago va a reintentar; mientras tanto mantenés el acceso.',
+        pausada: 'No se van a hacer cobros nuevos. Conservás el acceso hasta que termine el período pago.',
+        cancelada: 'No se renueva más. Conservás el acceso hasta que termine el período que ya pagaste.',
+        inactiva: 'No tenés una suscripción activa.',
+      },
+      currentPlanTitle: 'Tu plan',
+      perMonth: 'por mes',
+      freeTrialBadge: '7 días gratis',
+      trialEndsOn: 'La prueba termina el',
+      renewsOn: 'Próximo cobro',
+      endsOn: 'Acceso hasta el',
+      graceUntil: 'Acceso garantizado hasta el',
+      paymentMethod: 'Medio de pago',
+      startedOn: 'Comenzó el',
+      lastPayment: 'Último pago',
+      cancelCta: 'Cancelar renovación',
+      cancelConfirmTitle: '¿Cancelar la renovación automática?',
+      cancelConfirmBody:
+        'No se te vuelve a cobrar. Mantenés el acceso Pro hasta el {date}, y podés volver a suscribirte cuando quieras.',
+      cancelConfirmYes: 'Sí, cancelar',
+      cancelConfirmNo: 'Volver',
+      refreshCta: 'Actualizar estado',
+      refreshing: 'Actualizando...',
+      cancelling: 'Cancelando...',
+      billedBy: 'Renovación automática',
+      autoRenewOn: 'Activada',
+      autoRenewOff: 'Desactivada',
+      adminNote: 'Tenés acceso Pro por ser administrador, no por una suscripción paga.',
+      devNote: 'Suscripción simulada desde el panel local. No corresponde a un pago real.',
+      paymentsDisabled: 'Los pagos todavía no están configurados en el servidor.',
+      plansTitle: 'Planes disponibles',
+      planName: 'Plan mensual',
+      planDurationLabel: 'Duración',
+      planDurationValue: 'Se renueva automáticamente cada mes',
+      planAccessLabel: 'Acceso',
+      planAccessValue: 'Todas las métricas Pro, activo apenas se confirma el pago',
+      planTrialNote:
+        '✨ Tu primera suscripción incluye 7 días de prueba gratis. Cancelá antes de que termine y no se te cobra nada.',
+      planBenefitsLabel: 'Qué incluye',
+      planBenefits: [
+        'Detector de Red Flags y Tono Picante, verificados con IA',
+        'Sentimiento, reloj biológico y el resto de las métricas Pro',
+        'Desglose completo por integrante en cada tarjeta',
+        'Historial ilimitado de chats guardados',
+      ],
+      buyCta: 'Comprar',
+      buyTrialCta: 'Empezar con 7 días gratis',
+      trialUnavailable: 'La semana gratis ya fue usada.',
+      trialReasons: {
+        account_used: 'Esta cuenta ya la aprovechó.',
+        ip_used: 'Ya se usó desde esta conexión.',
+        network_used: 'Ya se usó desde esta red.',
+        device_used: 'Ya se usó desde este dispositivo.',
+        country_not_allowed: 'No está disponible en tu país.',
+      },
+      cardStepTitle: 'Método de pago',
+      cardStepBack: 'Volver',
+      cardCheckout: {
+        missingKey: 'Los pagos todavía no están configurados en el servidor.',
+        loading: 'Cargando el formulario de pago...',
+        tokenMissing: 'Por ahora las suscripciones solo funcionan con tarjeta de crédito o débito — elegí esa opción para continuar.',
+        securedBy: 'Pago procesado de forma segura por Mercado Pago',
+      },
+      submitting: 'Confirmando con Mercado Pago...',
+      genericError: 'No pudimos procesar el pago. Probá de nuevo.',
+      successTitle: '¡Listo!',
+      successTrialBody: 'Arrancó tu semana gratis. Te avisamos antes del primer cobro.',
+      successActiveBody: 'Tu suscripción Pro ya está activa.',
+      successCta: 'Entendido',
+      invoicesTitle: 'Historial de pagos',
+      noInvoices: 'Todavía no hay cobros registrados.',
+      invoiceStatuses: {
+        aprobado: 'Aprobado',
+        rechazado: 'Rechazado',
+        pendiente: 'Pendiente',
+        reintentando: 'Reintentando',
+        devuelto: 'Devuelto',
+      },
+      invoicePeriod: 'Período {from} — {to}',
+      invoiceAttempt: 'Intento {n}',
+      historyTitle: 'Historial de suscripciones',
+      noHistory: 'Todavía no hay suscripciones registradas.',
+      eventsTitle: 'Actividad de la cuenta',
+      noEvents: 'Sin movimientos registrados.',
+    },
+    dev: {
+      badge: 'local',
+      aiOn: 'IA activada',
+      aiOff: 'IA desactivada',
+      aiOnHint: 'Se consultan las métricas con IA al importar un chat. Click para desactivar y no gastar tokens.',
+      aiOffHint: 'No se consulta la IA al importar un chat. Click para volver a activarla.',
+      vipOn: 'Activar suscripción',
+      vipOff: 'Desactivar suscripción',
+      vipHint: 'Simula una suscripción Pro sin pasar por Mercado Pago.',
+      signInFirst: 'Iniciá sesión para usar este atajo.',
+      dragHint: 'Arrastrá para mover · doble click para volver a la esquina',
     },
     account: 'Cuenta',
     subscription: 'Suscripción',
@@ -222,10 +356,8 @@ const shellCopy = {
     demoTag: 'Example',
     setupWarning:
       'VITE_GOOGLE_CLIENT_ID in the frontend or GoogleAuth:AllowedAudience in the backend is still missing.',
-    loginHeadline: 'Sign in to save your Wrapped and unlock the VIP admin user',
+    loginHeadline: 'Sign in to save your Wrapped and unlock the Pro metrics',
     loginAfterUpload: 'Your analysis is ready. Sign in now if you want to save it and keep a history.',
-    vipUpsellNote:
-      "VIP subscriptions can't be activated from here yet. Sign in with the account configured as admin to try it in this environment.",
     uploadTitle: 'Upload a WhatsApp-exported .txt or .zip',
     uploadHint: 'You can upload first and sign in later. Processing still happens locally.',
     saveInfo: 'The backend stores only aggregated JSON results, never the raw chat text.',
@@ -282,6 +414,132 @@ const shellCopy = {
       accept: 'Turn on and analyze',
       decline: 'Not now',
       working: 'Turning on...',
+    },
+    manageSubscription: 'Manage subscription',
+    vipPopover: {
+      eyebrow: 'Pro metrics',
+      title: 'Unlock VIP',
+      close: 'Close',
+      signInPrompt: 'Sign in with Google to subscribe.',
+      signInCta: 'Sign in',
+    },
+    subscriptionPage: {
+      eyebrow: 'Account',
+      title: 'Subscription',
+      lead: 'Manage your Pro plan: benefits, billing, and cancellation.',
+      backToApp: 'Back to Vistazo',
+      signInPrompt: 'Sign in with Google to subscribe and see your account status.',
+      signInCta: 'Sign in',
+      close: 'Close',
+      statuses: {
+        pendiente: 'Payment pending',
+        trial: 'Free trial',
+        activa: 'Active',
+        pago_fallido: 'Payment declined',
+        pausada: 'Paused',
+        cancelada: 'Cancelled',
+        inactiva: 'No subscription',
+      },
+      statusHints: {
+        pendiente: 'The payment has not been completed on Mercado Pago yet. You can pick it up any time.',
+        trial: "You have full Pro access. Cancel before it ends and you won't be charged a thing.",
+        activa: 'It renews automatically every month. You can cancel whenever you want.',
+        pago_fallido: "We couldn't charge your card. Mercado Pago will retry; you keep access meanwhile.",
+        pausada: 'No new charges will be made. You keep access until the paid period ends.',
+        cancelada: "It won't renew. You keep access until the period you already paid for ends.",
+        inactiva: "You don't have an active subscription.",
+      },
+      currentPlanTitle: 'Your plan',
+      perMonth: 'per month',
+      freeTrialBadge: '7 days free',
+      trialEndsOn: 'Trial ends on',
+      renewsOn: 'Next charge',
+      endsOn: 'Access until',
+      graceUntil: 'Access guaranteed until',
+      paymentMethod: 'Payment method',
+      startedOn: 'Started on',
+      lastPayment: 'Last payment',
+      cancelCta: 'Cancel renewal',
+      cancelConfirmTitle: 'Cancel automatic renewal?',
+      cancelConfirmBody:
+        "You won't be charged again. You keep Pro access until {date}, and you can resubscribe any time.",
+      cancelConfirmYes: 'Yes, cancel',
+      cancelConfirmNo: 'Go back',
+      refreshCta: 'Refresh status',
+      refreshing: 'Refreshing...',
+      cancelling: 'Cancelling...',
+      billedBy: 'Automatic renewal',
+      autoRenewOn: 'On',
+      autoRenewOff: 'Off',
+      adminNote: 'You have Pro access as an administrator, not through a paid subscription.',
+      devNote: 'Subscription simulated from the local panel. It does not correspond to a real payment.',
+      paymentsDisabled: 'Payments are not configured on the server yet.',
+      plansTitle: 'Available plans',
+      planName: 'Monthly plan',
+      planDurationLabel: 'Duration',
+      planDurationValue: 'Renews automatically every month',
+      planAccessLabel: 'Access',
+      planAccessValue: 'Every Pro metric, active as soon as the payment is confirmed',
+      planTrialNote:
+        "✨ Your first subscription includes a 7-day free trial. Cancel before it ends and you won't be charged anything.",
+      planBenefitsLabel: "What's included",
+      planBenefits: [
+        'Red Flag Detector and Spicy Tone, verified with AI',
+        'Sentiment, body clock, and every other Pro metric',
+        'Full per-participant breakdown on every card',
+        'Unlimited saved chat history',
+      ],
+      buyCta: 'Buy',
+      buyTrialCta: 'Start with 7 days free',
+      trialUnavailable: 'The free week has already been used.',
+      trialReasons: {
+        account_used: 'This account already took it.',
+        ip_used: 'It was already used from this connection.',
+        network_used: 'It was already used from this network.',
+        device_used: 'It was already used from this device.',
+        country_not_allowed: 'It is not available in your country.',
+      },
+      cardStepTitle: 'Payment method',
+      cardStepBack: 'Back',
+      cardCheckout: {
+        missingKey: 'Payments are not configured on the server yet.',
+        loading: 'Loading the payment form...',
+        tokenMissing: 'Subscriptions only work with a credit or debit card for now — pick that option to continue.',
+        securedBy: 'Payment securely processed by Mercado Pago',
+      },
+      submitting: 'Confirming with Mercado Pago...',
+      genericError: "We couldn't process the payment. Please try again.",
+      successTitle: "You're in!",
+      successTrialBody: "Your free week just started. We'll warn you before the first charge.",
+      successActiveBody: 'Your Pro subscription is now active.',
+      successCta: 'Got it',
+      invoicesTitle: 'Payment history',
+      noInvoices: 'No charges recorded yet.',
+      invoiceStatuses: {
+        aprobado: 'Approved',
+        rechazado: 'Declined',
+        pendiente: 'Pending',
+        reintentando: 'Retrying',
+        devuelto: 'Refunded',
+      },
+      invoicePeriod: 'Period {from} — {to}',
+      invoiceAttempt: 'Attempt {n}',
+      historyTitle: 'Subscription history',
+      noHistory: 'No subscriptions recorded yet.',
+      eventsTitle: 'Account activity',
+      noEvents: 'No activity recorded.',
+    },
+    dev: {
+      badge: 'local',
+      aiOn: 'AI on',
+      aiOff: 'AI off',
+      aiOnHint: 'AI metrics run when a chat is imported. Click to turn them off and stop spending tokens.',
+      aiOffHint: 'The AI is not called when a chat is imported. Click to turn it back on.',
+      vipOn: 'Activate subscription',
+      vipOff: 'Deactivate subscription',
+      vipHint: 'Simulates a Pro subscription without going through Mercado Pago.',
+      signInFirst: 'Sign in to use this shortcut.',
+      dragHint: 'Drag to move · double-click to snap back to the corner',
     },
     account: 'Account',
     subscription: 'Subscription',
@@ -348,6 +606,11 @@ function App() {
   const [isReplay, setIsReplay] = useState(false)
   const [pendingPersist, setPendingPersist] = useState(false)
   const [busyMessage, setBusyMessage] = useState<string>('')
+  // Non-null only while the worker is computing a chat's metrics — the one busy
+  // state with real per-step progress to show. Every other busy state (upload
+  // parsing, saving, login, the AI pass) leaves this null, which is what keeps
+  // LoadingOverlay on its plain ring spinner for those.
+  const [analysisProgress, setAnalysisProgress] = useState<number | null>(null)
   const [error, setError] = useState<string>('')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null)
@@ -355,6 +618,26 @@ function App() {
   const [aiStates, setAiStates] = useState<AiCardStates>({})
   const [isAiBusy, setIsAiBusy] = useState(false)
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false)
+
+  const [subscription, setSubscription] = useState<SubscriptionOverview | null>(null)
+  const [subscriptionAction, setSubscriptionAction] = useState<'cancel' | 'refresh' | null>(null)
+  const [subscriptionError, setSubscriptionError] = useState('')
+  // The "Desbloquear VIP" popover — plan info and the Card Payment Brick, inline, no
+  // navigation. Separate from `route`, which only ever points at the full account page.
+  const [isVipPopoverOpen, setIsVipPopoverOpen] = useState(false)
+
+  // Minimal client-side router: the subscription screen is its own full-page route
+  // (`/suscripcion`), not a modal — everything else in the app still lives at `/`. Two
+  // routes don't justify pulling in a router library.
+  const [route, setRoute] = useState<'app' | 'subscription'>(() =>
+    window.location.pathname === '/suscripcion' ? 'subscription' : 'app',
+  )
+
+  // Dev-only switches. `showDevTools` is resolved once from the hostname so a production
+  // build never even renders the toolbar.
+  const showDevTools = useMemo(() => isLocalhost(), [])
+  const [devAiDisabled, setDevAiDisabled] = useState(() => readAiDisabled())
+  const [isDevBusy, setIsDevBusy] = useState(false)
 
   const copy = shellCopy[language]
   const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
@@ -410,7 +693,9 @@ function App() {
       return {}
     }
 
-    if (!user?.aiEnabled) {
+    // Local switch off: the cards read as "IA no disponible", which is exactly what they
+    // are right now, rather than falling back to the unverified keyword numbers.
+    if (devAiDisabled || !user?.aiEnabled) {
       return everyAiMetric('unavailable')
     }
 
@@ -419,7 +704,7 @@ function App() {
     }
 
     return aiStates
-  }, [hasVipAccess, user?.aiEnabled, user?.hasAiConsent, aiStates])
+  }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, aiStates])
 
   // Either a live upload (gated on the fly, so VIP or an AI verdict landing mid-session
   // costs nothing to reflect) or a bundle replayed from history exactly as it was saved.
@@ -436,6 +721,24 @@ function App() {
     void hydrateSession(token)
   }, [token])
 
+  // Keeps `route` in sync with the back/forward buttons — pushState alone only updates
+  // the address bar, not this state.
+  useEffect(() => {
+    function handlePopState() {
+      setRoute(window.location.pathname === '/suscripcion' ? 'subscription' : 'app')
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  function navigateTo(path: string) {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path)
+    }
+    setRoute(path === '/suscripcion' ? 'subscription' : 'app')
+  }
+
   // Recompute locally whenever the underlying chat or language changes. VIP
   // entitlement is deliberately *not* a dependency: gating happens downstream in
   // `gateAnalysis`, so unlocking VIP re-gates an already-computed core still held in
@@ -451,6 +754,7 @@ function App() {
 
     if (cached) {
       setBusyMessage('')
+      setAnalysisProgress(null)
       setCore(cached)
       return
     }
@@ -458,9 +762,15 @@ function App() {
     // Guard against setting stale results if activeChat or language changes again
     // before the worker responds.
     let cancelled = false
+    let settled = false
     setBusyMessage(copy.analyzing)
+    setAnalysisProgress(0)
 
-    analyzeInWorker(activeChat.chatName, activeChat.messages, language, activeChat.sourceHash)
+    analyzeInWorker(activeChat.chatName, activeChat.messages, language, activeChat.sourceHash, (completed, total) => {
+      if (!cancelled) {
+        setAnalysisProgress(completed / total)
+      }
+    })
       .then((computed) => {
         if (cancelled) {
           return
@@ -476,13 +786,24 @@ function App() {
         setError(caught instanceof Error ? caught.message : copy.loadError)
       })
       .finally(() => {
+        settled = true
         if (!cancelled) {
           setBusyMessage('')
+          setAnalysisProgress(null)
         }
       })
 
     return () => {
       cancelled = true
+      // The worker never got to its own .finally() (e.g. the user navigated away
+      // mid-analysis), so it will never clear the overlay it opened — do it here
+      // instead of leaving busyMessage/analysisProgress stuck. If the call had
+      // already settled, a later effect (AI phase, saving, ...) may own busyMessage
+      // by now, so leave it alone.
+      if (!settled) {
+        setBusyMessage('')
+        setAnalysisProgress(null)
+      }
     }
   }, [activeChat, language])
 
@@ -493,6 +814,12 @@ function App() {
   // reaches this effect, which is what keeps their upload from spending a single token.
   useEffect(() => {
     if (!activeChat || !core || !token) {
+      return
+    }
+
+    // The local kill switch is checked here, before anything is built or sent: importing
+    // a chat with it on must cost exactly zero tokens.
+    if (devAiDisabled) {
       return
     }
 
@@ -507,12 +834,12 @@ function App() {
 
     aiAttemptedFor.current = runKey
     void runAiPhase(token, activeChat, core, { retry: false })
-  }, [activeChat, core, token, language, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
+  }, [activeChat, core, token, language, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   // Asked once per session, and only where it's actionable: a Pro viewer looking at a
   // chat whose spicy/red-flag cards are waiting on exactly this permission.
   useEffect(() => {
-    if (consentPrompted.current || !core) {
+    if (consentPrompted.current || !core || devAiDisabled) {
       return
     }
 
@@ -522,7 +849,7 @@ function App() {
 
     consentPrompted.current = true
     setIsConsentModalOpen(true)
-  }, [core, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
+  }, [core, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   useEffect(() => {
     if (!pendingPersist || !analysis) {
@@ -557,6 +884,16 @@ function App() {
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [isAccountMenuOpen])
 
+  // Localhost only: the VIP switch has to know which way it is currently pointing, and
+  // that lives in the subscription overview. One extra call, never in production.
+  useEffect(() => {
+    if (!showDevTools || !token) {
+      return
+    }
+
+    void loadSubscription(token)
+  }, [showDevTools, token])
+
   async function hydrateSession(authToken: string) {
     try {
       const [currentUser, analyses] = await Promise.all([
@@ -571,6 +908,131 @@ function App() {
       localStorage.removeItem(authTokenKey)
       setToken(null)
       setUser(null)
+    }
+  }
+
+  /** Loads the account screen's data. Kept separate from `hydrateSession` so signing in
+   * does not pay for a subscription round trip nobody asked to see yet. */
+  async function loadSubscription(authToken: string) {
+    try {
+      setSubscription(await getSubscription(authToken))
+    } catch (caught) {
+      console.error(caught)
+      setSubscriptionError(caught instanceof Error ? caught.message : copy.loadError)
+    }
+  }
+
+  function goToSubscriptionPage() {
+    setIsAccountMenuOpen(false)
+    setSubscriptionError('')
+    navigateTo('/suscripcion')
+
+    if (token) {
+      void loadSubscription(token)
+    }
+  }
+
+  /** "Desbloquear VIP" on a locked card: a quick popover, not a page — see
+   * VipUnlockPopover. Loads the plan/eligibility data it needs if signed in. */
+  function openVipPopover() {
+    setSubscriptionError('')
+    setIsVipPopoverOpen(true)
+
+    if (token) {
+      void loadSubscription(token)
+    }
+  }
+
+  /** Shared by both purchase surfaces (the popover and the full account page): the
+   * Brick already finished and Mercado Pago already authorized the subscription by the
+   * time this runs, so it is just reconciling local state with what the backend
+   * returned — never a second network attempt at the purchase itself. */
+  async function handlePurchaseSuccess(overview: SubscriptionOverview) {
+    setSubscription(overview)
+
+    if (token) {
+      try {
+        setUser(await getCurrentUser(token))
+      } catch (caught) {
+        console.error(caught)
+      }
+    }
+  }
+
+  async function handleCancelSubscription() {
+    if (!token) {
+      return
+    }
+
+    setSubscriptionError('')
+    setSubscriptionAction('cancel')
+
+    try {
+      setSubscription(await cancelSubscription(token))
+      setUser(await getCurrentUser(token))
+    } catch (caught) {
+      console.error(caught)
+      setSubscriptionError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setSubscriptionAction(null)
+    }
+  }
+
+  async function handleRefreshSubscription() {
+    if (!token) {
+      return
+    }
+
+    setSubscriptionError('')
+    setSubscriptionAction('refresh')
+
+    try {
+      setSubscription(await syncSubscription(token))
+      setUser(await getCurrentUser(token))
+    } catch (caught) {
+      console.error(caught)
+      setSubscriptionError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setSubscriptionAction(null)
+    }
+  }
+
+  function handleToggleDevAi() {
+    setDevAiDisabled((current) => {
+      const next = !current
+      setAiDisabled(next)
+
+      if (next) {
+        // Drop any verdicts already on screen so the cards match the switch instead of
+        // showing results from before it was flipped.
+        setAiStates({})
+      }
+
+      aiAttemptedFor.current = ''
+      return next
+    })
+  }
+
+  async function handleToggleDevSubscription() {
+    if (!token) {
+      return
+    }
+
+    setIsDevBusy(true)
+
+    try {
+      await toggleDevSubscription(token)
+      // Re-read rather than assume: the toggle's effect on access is the backend's call.
+      // Both requests matter here, not just when the modal happens to be open — the
+      // toolbar button's own on/off color reads `subscription.current`, not `user`, so
+      // skipping this left the button looking frozen after a successful toggle.
+      const [nextUser] = await Promise.all([getCurrentUser(token), loadSubscription(token)])
+      setUser(nextUser)
+    } catch (caught) {
+      console.error(caught)
+      setError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setIsDevBusy(false)
     }
   }
 
@@ -615,6 +1077,9 @@ function App() {
     setError('')
     setIsAccountMenuOpen(false)
     setAiStates({})
+    setSubscription(null)
+    setSubscriptionError('')
+    setIsVipPopoverOpen(false)
     aiAttemptedFor.current = ''
   }
 
@@ -622,8 +1087,9 @@ function App() {
     fileInputRef.current?.click()
   }
 
+  /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover. */
   function requestUnlock() {
-    setIsAuthModalOpen(true)
+    openVipPopover()
   }
 
   async function processFile(file: File) {
@@ -900,6 +1366,45 @@ function App() {
         }}
       />
 
+      {showDevTools ? (
+        <DevToolbar
+          copy={copy.dev}
+          isAiDisabled={devAiDisabled}
+          isVipSimulated={Boolean(subscription?.current?.isDevSimulated && subscription.current.hasAccess)}
+          canToggleVip={Boolean(token)}
+          isBusy={isDevBusy}
+          onToggleAi={handleToggleDevAi}
+          onToggleVip={() => {
+            void handleToggleDevSubscription()
+          }}
+        />
+      ) : null}
+
+      {route === 'subscription' ? (
+        <SubscriptionPage
+          language={language}
+          copy={copy.subscriptionPage}
+          user={user}
+          token={token}
+          overview={subscription}
+          busyAction={subscriptionAction}
+          error={subscriptionError}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+          onStartPurchase={openVipPopover}
+          onPurchaseSuccess={(overview) => {
+            void handlePurchaseSuccess(overview)
+          }}
+          onCancel={() => {
+            void handleCancelSubscription()
+          }}
+          onRefresh={() => {
+            void handleRefreshSubscription()
+          }}
+          onSignIn={() => setIsAuthModalOpen(true)}
+        />
+      ) : (
+        <>
       <header className="topbar">
         <button type="button" className="brand-mark" onClick={backToLanding}>
           <span className="brand-orb" />
@@ -936,9 +1441,14 @@ function App() {
                   <p className="account-name">{user.displayName}</p>
                   <p>{user.email}</p>
                   <p>
-                    {copy.subscription}: <strong>{user.subscriptionState}</strong>
+                    {copy.subscription}:{' '}
+                    <strong>{translateStatus(copy.subscriptionPage.statuses, user.subscriptionState)}</strong>
                   </p>
                   <VipBadge active={user.hasVipAccess} label={user.hasVipAccess ? copy.vipOn : copy.vipOff} compact />
+
+                  <button type="button" className="account-menu-action" onClick={goToSubscriptionPage}>
+                    {copy.manageSubscription}
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -1267,6 +1777,8 @@ function App() {
           © {new Date().getFullYear()} Vistazo · {copy.footerRights}
         </p>
       </footer>
+        </>
+      )}
 
       {isAuthModalOpen ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsAuthModalOpen(false)}>
@@ -1275,23 +1787,35 @@ function App() {
             <p className="eyebrow">Google Login</p>
             <h2>{copy.loginHeadline}</h2>
 
-            {user ? (
-              <p className="panel-copy">{copy.vipUpsellNote}</p>
-            ) : (
-              <>
-                <p className="panel-copy">{activeChat ? copy.loginAfterUpload : copy.saveInfo}</p>
-                {hasGoogleClientId ? (
-                  <GoogleLogin
-                    onSuccess={(credentialResponse) => {
-                      void handleGoogleSuccess(credentialResponse)
-                    }}
-                    onError={() => setError(copy.loadError)}
-                  />
-                ) : null}
-              </>
-            )}
+            <p className="panel-copy">{activeChat ? copy.loginAfterUpload : copy.saveInfo}</p>
+            {hasGoogleClientId ? (
+              <ResponsiveGoogleLogin
+                onSuccess={(credentialResponse) => {
+                  void handleGoogleSuccess(credentialResponse)
+                }}
+                onError={() => setError(copy.loadError)}
+              />
+            ) : null}
           </section>
         </div>
+      ) : null}
+
+      {isVipPopoverOpen ? (
+        <VipUnlockPopover
+          copy={{ ...copy.subscriptionPage, ...copy.vipPopover }}
+          user={user}
+          token={token}
+          plan={subscription?.plan ?? null}
+          overview={subscription}
+          onClose={() => setIsVipPopoverOpen(false)}
+          onSignIn={() => {
+            setIsVipPopoverOpen(false)
+            setIsAuthModalOpen(true)
+          }}
+          onSuccess={(overview) => {
+            void handlePurchaseSuccess(overview)
+          }}
+        />
       ) : null}
 
       {selectedMetric ? (
@@ -1322,7 +1846,9 @@ function App() {
         />
       ) : null}
 
-      {busyMessage ? <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} /> : null}
+      {busyMessage ? (
+        <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
+      ) : null}
     </div>
   )
 }
@@ -1349,6 +1875,12 @@ function Stat({ label, value }: { label: string; value: string }) {
  * of them at once (no key on the server, no consent, request never landed). */
 function everyAiMetric(status: AiMetricStatus): AiCardStates {
   return Object.fromEntries(aiMetricIds.map((metricId) => [metricId, { status }])) as AiCardStates
+}
+
+/** The backend sends the subscription status as a plain string, while the copy tables are
+ * `as const` literals — this is the widening step between the two. */
+function translateStatus(statuses: Record<string, string>, status: string): string {
+  return statuses[status] ?? status
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

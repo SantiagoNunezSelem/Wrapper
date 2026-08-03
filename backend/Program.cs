@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using backend.Data;
+using backend.Endpoints;
 using backend.Models;
 using backend.Options;
 using backend.Services;
@@ -17,6 +18,8 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));
 builder.Services.Configure<AdminSeedOptions>(builder.Configuration.GetSection(AdminSeedOptions.SectionName));
 builder.Services.Configure<GoogleAiOptions>(builder.Configuration.GetSection(GoogleAiOptions.SectionName));
+builder.Services.Configure<MercadoPagoOptions>(builder.Configuration.GetSection(MercadoPagoOptions.SectionName));
+builder.Services.Configure<TrialGuardOptions>(builder.Configuration.GetSection(TrialGuardOptions.SectionName));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -26,6 +29,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddHttpClient<GoogleAiClient>();
 builder.Services.AddScoped<AiMetricService>();
+builder.Services.AddHttpClient<MercadoPagoClient>();
+builder.Services.AddSingleton<MercadoPagoSignatureValidator>();
+builder.Services.AddSingleton<ClientFingerprint>();
+builder.Services.AddScoped<TrialEligibilityService>();
+builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddOpenApi();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -174,7 +182,8 @@ app.MapPost("/api/auth/google", async (
     await db.SaveChangesAsync(cancellationToken);
 
     var aiOptions = configuration.GetSection(GoogleAiOptions.SectionName).Get<GoogleAiOptions>() ?? new GoogleAiOptions();
-    var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured);
+    var paymentOptions = configuration.GetSection(MercadoPagoOptions.SectionName).Get<MercadoPagoOptions>() ?? new MercadoPagoOptions();
+    var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured, paymentOptions.IsConfigured);
     return Results.Ok(response);
 });
 
@@ -182,6 +191,7 @@ app.MapGet("/api/auth/me", [Authorize] async (
     ClaimsPrincipal principal,
     AppDbContext db,
     IOptions<GoogleAiOptions> googleAi,
+    IOptions<MercadoPagoOptions> mercadoPago,
     CancellationToken cancellationToken) =>
 {
     var userId = principal.GetRequiredUserId();
@@ -191,7 +201,7 @@ app.MapGet("/api/auth/me", [Authorize] async (
 
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured));
+        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
 });
 
 app.MapGet("/api/analyses", [Authorize] async (ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken) =>
@@ -274,6 +284,7 @@ app.MapPost("/api/ai/consent", [Authorize] async (
     ClaimsPrincipal principal,
     AppDbContext db,
     IOptions<GoogleAiOptions> googleAi,
+    IOptions<MercadoPagoOptions> mercadoPago,
     CancellationToken cancellationToken) =>
 {
     var userId = principal.GetRequiredUserId();
@@ -290,7 +301,7 @@ app.MapPost("/api/ai/consent", [Authorize] async (
     user.UpdatedAtUtc = DateTime.UtcNow;
     await db.SaveChangesAsync(cancellationToken);
 
-    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured));
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
 });
 
 app.MapGet("/api/ai/metrics", [Authorize] async (
@@ -379,7 +390,46 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
     return Results.Ok(new AiMetricsResponse(results));
 });
 
+app.MapSubscriptionEndpoints();
+app.MapDevEndpoints();
+
+LogPaymentsConfiguration(app);
+
 app.Run();
+
+// Says plainly, on every boot, whether real payments can be taken. The failure mode
+// otherwise is silent: the checkout button simply errors and it is not obvious that a
+// single missing setting is the cause.
+static void LogPaymentsConfiguration(WebApplication app)
+{
+    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Payments");
+    var mercadoPago = app.Configuration.GetSection(MercadoPagoOptions.SectionName).Get<MercadoPagoOptions>() ?? new MercadoPagoOptions();
+
+    if (!mercadoPago.IsConfigured)
+    {
+        logger.LogWarning(
+            "Mercado Pago is not configured — checkout is disabled. Set MercadoPago:AccessToken " +
+            "(dotnet user-secrets set \"MercadoPago:AccessToken\" \"APP_USR-...\") to enable it.");
+        return;
+    }
+
+    logger.LogInformation(
+        "Mercado Pago ready ({Mode} credentials): {Amount} {Currency} every {Frequency} {FrequencyType}, {TrialFrequency} {TrialFrequencyType} free trial.",
+        mercadoPago.IsTestCredential ? "test" : "production",
+        mercadoPago.TransactionAmount,
+        mercadoPago.CurrencyId,
+        mercadoPago.Frequency,
+        mercadoPago.FrequencyType,
+        mercadoPago.TrialFrequency,
+        mercadoPago.TrialFrequencyType);
+
+    if (string.IsNullOrWhiteSpace(mercadoPago.WebhookSecret))
+    {
+        logger.LogWarning(
+            "MercadoPago:WebhookSecret is empty — every incoming notification will be rejected, so " +
+            "subscriptions will never activate. Copy the secret shown when registering the webhook URL.");
+    }
+}
 
 record GoogleLoginRequest(string IdToken);
 
@@ -468,14 +518,19 @@ record CurrentUserResponse(
     bool HasVipAccess,
     string SubscriptionState,
     bool HasAiConsent,
-    bool AiEnabled)
+    bool AiEnabled,
+    bool PaymentsEnabled)
 {
     /// <param name="aiEnabled">
     /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
     /// the AI flow entirely instead of showing a retry button for what is really a
     /// server-side misconfiguration.
     /// </param>
-    public static CurrentUserResponse FromUser(User user, bool aiEnabled) =>
+    /// <param name="paymentsEnabled">
+    /// Whether Mercado Pago credentials are present. Same idea: without them the upsell
+    /// explains that checkout is not available yet rather than opening a doomed flow.
+    /// </param>
+    public static CurrentUserResponse FromUser(User user, bool aiEnabled, bool paymentsEnabled) =>
         new(
             user.Id,
             user.Email,
@@ -486,13 +541,14 @@ record CurrentUserResponse(
             SubscriptionAccessEvaluator.HasVipAccess(user),
             SubscriptionAccessEvaluator.GetVisibleState(user),
             user.AiConsentAtUtc is not null,
-            aiEnabled);
+            aiEnabled,
+            paymentsEnabled);
 }
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {
-    public static AuthResponse Create(string token, User user, bool aiEnabled) =>
-        new(token, CurrentUserResponse.FromUser(user, aiEnabled));
+    public static AuthResponse Create(string token, User user, bool aiEnabled, bool paymentsEnabled) =>
+        new(token, CurrentUserResponse.FromUser(user, aiEnabled, paymentsEnabled));
 }
 
 static class ClaimsPrincipalExtensions
