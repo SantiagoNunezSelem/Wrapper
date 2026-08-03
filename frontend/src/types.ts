@@ -13,6 +13,103 @@ export interface UserProfile {
   hasAiConsent: boolean
   /** Whether the backend has a Google AI Studio key configured at all. */
   aiEnabled: boolean
+  /** Whether the backend has Mercado Pago credentials. Without them the upsell says so
+   * instead of opening a checkout that cannot complete. */
+  paymentsEnabled: boolean
+}
+
+/**
+ * Subscription lifecycle, mirroring the backend's Spanish status vocabulary:
+ * - `pendiente`: checkout opened, the payer has not authorized it yet.
+ * - `trial`: inside the free week; nothing charged.
+ * - `activa`: paid and current.
+ * - `pago_fallido`: a charge was rejected; access survives the grace window.
+ * - `pausada`: debits suspended, card kept.
+ * - `cancelada`: no renewal; access lasts until the paid period ends.
+ * - `inactiva`: no access.
+ */
+export type SubscriptionStatus =
+  | 'pendiente'
+  | 'trial'
+  | 'activa'
+  | 'pago_fallido'
+  | 'pausada'
+  | 'cancelada'
+  | 'inactiva'
+
+export interface SubscriptionPlan {
+  amount: number
+  currencyId: string
+  frequency: number
+  frequencyType: string
+  trialFrequency: number
+  trialFrequencyType: string
+  name: string
+  /** Whether Mercado Pago credentials are configured on the server — without them
+   * "Comprar" cannot complete, since the Brick has no subscription to create against. */
+  providerConfigured: boolean
+}
+
+export interface SubscriptionRecord {
+  id: string
+  status: SubscriptionStatus
+  planType: string
+  amount: number
+  currencyId: string
+  paymentProvider: string | null
+  paymentMethodLabel: string | null
+  externalSubscriptionId: string | null
+  trialStartsAtUtc: string | null
+  trialEndsAtUtc: string | null
+  subscriptionStartsAtUtc: string | null
+  nextBillingAtUtc: string | null
+  lastPaymentAtUtc: string | null
+  cancelledAtUtc: string | null
+  graceEndsAtUtc: string | null
+  trialWasApplied: boolean
+  isDevSimulated: boolean
+  hasAccess: boolean
+  createdAtUtc: string
+}
+
+export interface SubscriptionInvoice {
+  id: string
+  amount: number
+  currencyId: string
+  /** `aprobado` | `rechazado` | `pendiente` | `reintentando` | `devuelto` */
+  status: string
+  paymentMethodLabel: string | null
+  periodStartUtc: string | null
+  periodEndUtc: string | null
+  paidAtUtc: string | null
+  debitScheduledAtUtc: string | null
+  attemptNumber: number
+  createdAtUtc: string
+}
+
+export interface SubscriptionEvent {
+  id: string
+  topic: string
+  action: string | null
+  resultingStatus: string | null
+  notes: string | null
+  createdAtUtc: string
+}
+
+export interface SubscriptionOverview {
+  plan: SubscriptionPlan
+  current: SubscriptionRecord | null
+  hasVipAccess: boolean
+  isAdmin: boolean
+  /** Access granted by the admin override rather than by a purchase — nothing to cancel. */
+  accessFromAdminOverride: boolean
+  trialAvailable: boolean
+  /** `account_used` | `ip_used` | `network_used` | `device_used` | `country_not_allowed` */
+  trialDeniedReason: string | null
+  history: SubscriptionRecord[]
+  invoices: SubscriptionInvoice[]
+  events: SubscriptionEvent[]
+  warning: string | null
 }
 
 /**

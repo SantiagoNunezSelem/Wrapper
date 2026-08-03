@@ -1,5 +1,15 @@
 # Monetización y Suscripciones
 
+> **Nota de implementación (2026-08-02).** Este documento es la especificación original. Lo
+> que finalmente se implementó difiere en dos puntos, por decisión de producto:
+>
+> - **Planes:** un único plan **mensual de $7.900 ARS**, en vez de semanal + anual.
+> - **Pasarela:** solo **Mercado Pago** (Argentina). Stripe/PayPal quedaron pendientes.
+>
+> El resto —trial de 1 semana con medio de pago cargado, conversión automática, anti-abuso,
+> estados del ciclo de vida y webhooks— se implementó como está descrito acá, con una capa
+> extra de anti-abuso (IP y dispositivo, no solo cuenta). Ver el README para la operación.
+
 Este documento detalla el modelo de negocio, el mecanismo de trial, los precios y el ciclo de vida de las suscripciones. Es un desprendimiento de `02_Arquitectura_Tecnica.md` por la complejidad e importancia de acertar en esta lógica (errores acá significan cobrar de más, de menos, o dar acceso PRO gratis indebidamente).
 
 ## 1. Modelo de negocio

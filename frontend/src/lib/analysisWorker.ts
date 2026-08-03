@@ -29,6 +29,9 @@ export type WorkerResponse =
   /** The worker no longer holds this chat's messages — the client should resend them. */
   | { requestId: number; type: 'cacheMiss' }
   | { requestId: number; type: 'error'; message: string }
+  /** Fired mid-`analyze`, ahead of the final response for the same `requestId` — the
+   * client keeps `requestId` pending until that final message arrives. */
+  | { requestId: number; type: 'progress'; completed: number; total: number }
 
 // Typed as a plain object instead of relying on the "webworker" lib: this project's
 // tsconfig already targets "DOM" for the main thread, and layering "webworker" on
@@ -81,6 +84,7 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
       request.messages,
       request.language,
       request.sourceHash,
+      (completed, total) => workerScope.postMessage({ requestId, type: 'progress', completed, total }),
     )
 
     return { requestId, type: 'analyze', core }

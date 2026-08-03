@@ -44,6 +44,158 @@ public static class SchemaUpgrades
             cancellationToken);
 
         await AddColumnIfMissingAsync(db, "Users", "AiConsentAtUtc", "TEXT NULL", cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // Subscriptions / Mercado Pago
+        // ---------------------------------------------------------------------
+
+        foreach (var (column, definition) in new (string, string)[]
+                 {
+                     ("ExternalPlanId", "TEXT NULL"),
+                     ("ExternalPayerId", "TEXT NULL"),
+                     ("Amount", "REAL NOT NULL DEFAULT 0"),
+                     ("CurrencyId", "TEXT NULL"),
+                     ("PaymentMethodLabel", "TEXT NULL"),
+                     ("LastPaymentAtUtc", "TEXT NULL"),
+                     ("GraceEndsAtUtc", "TEXT NULL"),
+                     ("TrialWasApplied", "INTEGER NOT NULL DEFAULT 0"),
+                     ("LastSyncedAtUtc", "TEXT NULL"),
+                     ("IsDevSimulated", "INTEGER NOT NULL DEFAULT 0"),
+                 })
+        {
+            await AddColumnIfMissingAsync(db, "Subscriptions", column, definition, cancellationToken);
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_Subscriptions_ExternalSubscriptionId"
+                ON "Subscriptions" ("ExternalSubscriptionId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SubscriptionInvoices" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SubscriptionInvoices" PRIMARY KEY,
+                "SubscriptionId" TEXT NOT NULL,
+                "UserId" TEXT NOT NULL,
+                "ExternalPaymentId" TEXT NULL,
+                "ExternalTransactionId" TEXT NULL,
+                "Amount" REAL NOT NULL DEFAULT 0,
+                "CurrencyId" TEXT NULL,
+                "Status" TEXT NULL,
+                "RawStatus" TEXT NULL,
+                "PaymentMethodLabel" TEXT NULL,
+                "PeriodStartUtc" TEXT NULL,
+                "PeriodEndUtc" TEXT NULL,
+                "PaidAtUtc" TEXT NULL,
+                "DebitScheduledAtUtc" TEXT NULL,
+                "AttemptNumber" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "UpdatedAtUtc" TEXT NOT NULL,
+                CONSTRAINT "FK_SubscriptionInvoices_Subscriptions_SubscriptionId" FOREIGN KEY ("SubscriptionId")
+                    REFERENCES "Subscriptions" ("Id") ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SubscriptionInvoices_ExternalPaymentId"
+                ON "SubscriptionInvoices" ("ExternalPaymentId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_SubscriptionInvoices_UserId"
+                ON "SubscriptionInvoices" ("UserId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SubscriptionEvents" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SubscriptionEvents" PRIMARY KEY,
+                "SubscriptionId" TEXT NULL,
+                "UserId" TEXT NULL,
+                "ExternalSubscriptionId" TEXT NULL,
+                "Topic" TEXT NULL,
+                "Action" TEXT NULL,
+                "ExternalEventId" TEXT NULL,
+                "ResultingStatus" TEXT NULL,
+                "PayloadJson" TEXT NULL,
+                "Notes" TEXT NULL,
+                "CreatedAtUtc" TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
+
+        // SQLite treats NULLs as distinct in a unique index, which is exactly what this
+        // needs: locally-raised events (checkout, cancel) carry no provider event id and
+        // must not collide with each other.
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SubscriptionEvents_ExternalEventId"
+                ON "SubscriptionEvents" ("ExternalEventId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_SubscriptionEvents_UserId"
+                ON "SubscriptionEvents" ("UserId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "TrialClaims" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_TrialClaims" PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "IpHash" TEXT NULL,
+                "SubnetHash" TEXT NULL,
+                "DeviceHash" TEXT NULL,
+                "CountryCode" TEXT NULL,
+                "SubscriptionId" TEXT NULL,
+                "ClaimedAtUtc" TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_TrialClaims_IpHash" ON "TrialClaims" ("IpHash");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_TrialClaims_SubnetHash" ON "TrialClaims" ("SubnetHash");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_TrialClaims_DeviceHash" ON "TrialClaims" ("DeviceHash");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS "IX_TrialClaims_UserId" ON "TrialClaims" ("UserId");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "AppSettings" (
+                "Key" TEXT NOT NULL CONSTRAINT "PK_AppSettings" PRIMARY KEY,
+                "Value" TEXT NULL,
+                "UpdatedAtUtc" TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
     }
 
     private static async Task AddColumnIfMissingAsync(

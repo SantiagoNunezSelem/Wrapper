@@ -1,4 +1,11 @@
-import type { AiMetricState, AuthResponse, SavedAnalysis, UserProfile } from '../types'
+import type {
+  AiMetricState,
+  AuthResponse,
+  SavedAnalysis,
+  SubscriptionOverview,
+  UserProfile,
+} from '../types'
+import { getDeviceId } from './deviceId'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5175'
 
@@ -126,6 +133,63 @@ export async function getAiMetrics(token: string, sourceHash: string): Promise<A
 
 export async function grantAiConsent(token: string): Promise<UserProfile> {
   return request<UserProfile>('/api/ai/consent', { method: 'POST' }, token)
+}
+
+// ---------------------------------------------------------------------------
+// Subscriptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the account screen needs in one call: current plan, entitlement, trial
+ * eligibility, billing history and the audit trail.
+ *
+ * The device id travels with it because trial eligibility is part of the answer — the
+ * screen has to know whether to offer "7 días gratis" or go straight to the paid price.
+ */
+export async function getSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>(
+    `/api/subscription?deviceId=${encodeURIComponent(getDeviceId())}`,
+    { method: 'GET' },
+    token,
+  )
+}
+
+/**
+ * Creates the subscription from a card the Card Payment Brick already tokenized in the
+ * browser (see `components/CardCheckoutBrick.tsx`) — the card itself never passes
+ * through this function or this backend, only the one-time token. Unlike a redirect
+ * checkout, this call's response already reflects the outcome: it either resolves with
+ * the subscription now trialing/active, or rejects with why Mercado Pago declined it.
+ */
+export async function createSubscriptionWithCard(token: string, cardTokenId: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>(
+    '/api/subscription/checkout',
+    {
+      method: 'POST',
+      body: JSON.stringify({ cardTokenId, deviceId: getDeviceId() }),
+    },
+    token,
+  )
+}
+
+/** Stops automatic renewal. Access continues until the end of the paid period. */
+export async function cancelSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/cancel', { method: 'POST' }, token)
+}
+
+/** Re-reads the subscription from Mercado Pago. Used on return from checkout, where the
+ * redirect normally beats the webhook, and as a manual "no aparece mi pago" escape. */
+export async function syncSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/sync', { method: 'POST' }, token)
+}
+
+/** Local dev only; the backend refuses this outside Development + loopback. */
+export async function toggleDevSubscription(token: string): Promise<{ simulatedSubscriptionActive: boolean }> {
+  return request<{ simulatedSubscriptionActive: boolean }>(
+    '/api/dev/subscription/toggle',
+    { method: 'POST' },
+    token,
+  )
 }
 
 export async function saveAnalysis(

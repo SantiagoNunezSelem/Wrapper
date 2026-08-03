@@ -1471,6 +1471,65 @@ h3 {
   line-height: 1.5;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Analyzing-chat loading state — the blob spinner + progress bar shown     */
+/* only while a chat's metrics are being computed (see LoadingOverlay's     */
+/* `progress` prop). Every other busy state keeps the plain ring spinner    */
+/* above, untouched.                                                       */
+/* ---------------------------------------------------------------------- */
+
+.loading-blob-wrap {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-blob {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #c084fc, #22d3ee 60%, #f472b6);
+  box-shadow: 0 0 26px rgba(192, 132, 252, 0.35);
+  animation: blobMorph 3.4s ease-in-out infinite, blobSpin 7s linear infinite;
+}
+
+.loading-progress-track {
+  width: min(260px, 70vw);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.loading-progress-fill {
+  position: relative;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c084fc, #22d3ee);
+  transition: width 260ms ease-out;
+  overflow: hidden;
+}
+
+/* The sweep highlight keeps the bar feeling alive between progress ticks,
+   not just when its width actually changes. */
+.loading-progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: progressSweep 1.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-blob,
+  .loading-progress-fill::after {
+    animation: none;
+  }
+}
+
 .series-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1664,21 +1723,25 @@ h3 {
 /* Chart primitives                                                       */
 /* ---------------------------------------------------------------------- */
 
+/* A grid (not flex-per-row) on purpose: the label/track/value columns need to
+   line up across every row of one metric — .chart-bar-row below is `display:
+   contents` so its 3 children become direct items of this grid instead of a
+   nested grid of their own. That's what lets the label column auto-size to
+   the widest label *in this metric* (see .chart-bar-row) while every row's
+   bar still starts at that same shared X. */
 .chart-bar-ranking {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: minmax(min-content, 128px) 1fr auto;
+  align-items: center;
+  gap: 9px 8px;
 }
 
 .chart-bar-ranking.is-compact {
-  gap: 6px;
+  gap: 6px 8px;
 }
 
 .chart-bar-row {
-  display: grid;
-  grid-template-columns: minmax(72px, 128px) 1fr auto;
-  align-items: center;
-  gap: 8px;
+  display: contents;
   font-size: 0.82rem;
 }
 
@@ -1702,11 +1765,13 @@ h3 {
   overflow: hidden;
 }
 
+/* Always full — every bar in a metric reads as the same size; the number
+   alongside it (.chart-bar-value) is what carries the actual value. */
 .chart-bar-fill {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 999px;
-  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chart-bar-value {
@@ -1714,6 +1779,7 @@ h3 {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: left;
 }
 
 .chart-donut {
@@ -2284,6 +2350,31 @@ h3 {
   }
 }
 
+@keyframes blobMorph {
+  0%,
+  100% {
+    border-radius: 42% 58% 65% 35% / 45% 45% 55% 55%;
+  }
+  34% {
+    border-radius: 62% 38% 40% 60% / 60% 42% 58% 40%;
+  }
+  67% {
+    border-radius: 38% 62% 55% 45% / 35% 62% 38% 65%;
+  }
+}
+
+@keyframes blobSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progressSweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @keyframes float {
   0%,
   100% {
@@ -2612,7 +2703,838 @@ h3 {
     max-width: none;
   }
 
-  .chart-bar-row {
-    grid-template-columns: minmax(60px, 108px) 1fr auto;
+  .chart-bar-ranking {
+    grid-template-columns: minmax(min-content, 108px) 1fr auto;
+  }
+}
+
+/* ==========================================================================
+   Shared bits still used outside the subscription page
+   ========================================================================== */
+
+.success-banner {
+  width: 100%;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+}
+
+.account-menu-action {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  border-radius: 14px;
+  background: rgba(192, 132, 252, 0.14);
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.account-menu-action:hover {
+  background: rgba(192, 132, 252, 0.26);
+  border-color: rgba(192, 132, 252, 0.6);
+}
+
+.danger-button {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+}
+
+.primary-button.danger-button {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+/* Sits above whatever page opened it (the subscription page's cancel-confirm dialog). */
+.nested-backdrop {
+  z-index: 40;
+}
+
+.confirm-card {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+/* ==========================================================================
+   Subscription page (/suscripcion)
+
+   Deliberately calmer than the rest of the app: this is the one screen that
+   plays the role of a menu — plan, price, billing, cancellation — rather than
+   the playful "Wrapped" experience, so gradients are limited to small accents,
+   headings are solid, and cards use a tighter radius than the app's chunky 28px.
+   ========================================================================== */
+
+.subpage {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 48px);
+  animation: subpageIn 260ms ease;
+}
+
+@keyframes subpageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.subpage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.subpage-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 4px;
+  transition: color 140ms ease;
+}
+
+.subpage-back:hover {
+  color: #f8fafc;
+}
+
+.subpage-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.subpage-account-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.82rem;
+  color: #e2e8f0;
+}
+
+.subpage-content {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 12px 4px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.subpage-hero {
+  padding-top: 8px;
+}
+
+.subpage-eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a78bfa;
+}
+
+.subpage-hero h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.subpage-lead {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 1rem;
+  max-width: 52ch;
+}
+
+.subpage-notice,
+.subpage-error {
+  margin: 0;
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.subpage-notice {
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.subpage-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.subpage-signin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.subpage-signin p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.subpage-section {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: grid;
+  gap: 14px;
+}
+
+.subpage-section-muted {
+  background: transparent;
+  border-style: dashed;
+}
+
+.subpage-section h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: -0.005em;
+}
+
+.subpage-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.subpage-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.subpage-current {
+  display: grid;
+  gap: 10px;
+}
+
+.subpage-current-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.subpage-status {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+}
+
+.subpage-status.status-activa,
+.subpage-status.status-trial {
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+}
+
+.subpage-status.status-pago_fallido {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+}
+
+.subpage-status.status-pendiente,
+.subpage-status.status-pausada {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.subpage-trial-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(192, 132, 252, 0.16);
+  color: #e9d5ff;
+}
+
+.subpage-price {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.subpage-price small {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.subpage-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.subpage-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
+.subpage-fact {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.subpage-fact dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.subpage-fact dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+  color: #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.subpage-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---- Plan picker: an expandable card, so a second/third plan can slot in
+   later without a redesign, even though only one exists today. ---- */
+
+.plan-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.plan-card-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms ease;
+}
+
+.plan-card-summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.plan-card-name {
+  font-weight: 700;
+  color: #f8fafc;
+  flex: 1;
+}
+
+.plan-card-price {
+  font-weight: 800;
+  color: #f8fafc;
+  font-size: 1.05rem;
+}
+
+.plan-card-price small {
+  font-weight: 500;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.plan-card-chevron {
+  flex-shrink: 0;
+  color: #94a3b8;
+  transition: transform 200ms ease;
+}
+
+.plan-card-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.plan-card-body {
+  padding: 4px 18px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: grid;
+  gap: 16px;
+}
+
+.plan-card-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.plan-card-facts dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.plan-card-facts dd {
+  margin: 3px 0 0;
+  font-weight: 600;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+}
+
+.plan-card-trial {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: rgba(192, 132, 252, 0.1);
+  border: 1px solid rgba(192, 132, 252, 0.22);
+  color: #e9d5ff;
+  font-size: 0.85rem;
+}
+
+.plan-card-benefits-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.plan-card-benefits ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.plan-card-benefits li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #d4d9e2;
+  font-size: 0.88rem;
+}
+
+.plan-card-benefits li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #4ade80;
+}
+
+.plan-card-cta {
+  width: 100%;
+  text-align: center;
+}
+
+.plan-card-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* ---- Payment history / subscription history / activity ---- */
+
+.subpage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.subpage-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.subpage-list li p {
+  margin: 4px 0 0;
+}
+
+.subpage-muted {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.subpage-list li p.subpage-muted {
+  white-space: normal;
+}
+
+.subpage-muted-copy {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.88rem;
+}
+
+.subpage-events strong {
+  font-size: 0.85rem;
+}
+
+.invoice-status {
+  margin-left: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+}
+
+.invoice-status.invoice-aprobado {
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+}
+
+.invoice-status.invoice-rechazado {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+}
+
+.invoice-status.invoice-pendiente,
+.invoice-status.invoice-reintentando {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+@media (max-width: 640px) {
+  .subpage-content {
+    padding: 8px 2px 48px;
+    gap: 20px;
+  }
+
+  .subpage-hero h1 {
+    font-size: 1.6rem;
+  }
+
+  .subpage-section {
+    padding: 18px 16px;
+  }
+
+  .plan-card-summary {
+    flex-wrap: wrap;
+  }
+
+  .subpage-list li {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .subpage-muted {
+    white-space: normal;
+  }
+}
+
+/* ==========================================================================
+   Local dev toolbar (localhost only — see lib/devFlags.ts)
+   ========================================================================== */
+
+.dev-toolbar {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  /* Above the sticky topbar and the modals' backdrop, so it stays reachable
+     while a modal is open. */
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+}
+
+/* Dragging swaps to fixed left/top (set inline by DevToolbar.tsx), so the blur/shadow
+   transition is suppressed while active — animating those every pointermove is what
+   makes a dragged element feel laggy instead of stuck to the cursor. */
+.dev-toolbar.is-dragging {
+  transition: none;
+  user-select: none;
+}
+
+.dev-toolbar-grip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(148, 163, 184, 0.18);
+  color: #94a3b8;
+  cursor: grab;
+  /* Own axis for the drag gesture: without this, a touch-drag also scrolls the page
+     underneath the toolbar. */
+  touch-action: none;
+  user-select: none;
+}
+
+.dev-toolbar-grip:active,
+.dev-toolbar.is-dragging .dev-toolbar-grip {
+  cursor: grabbing;
+}
+
+.dev-toolbar-grip svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.dev-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.dev-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dev-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dev-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dev-toggle.is-on {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
+.dev-toggle.is-off {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+@media (max-width: 720px) {
+  .dev-toolbar {
+    top: auto;
+    bottom: 14px;
+    right: 10px;
+    left: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .subpage-list li {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .subpage-muted {
+    white-space: normal;
+  }
+}
+
+/* ==========================================================================
+   Plan purchase flow (Card Payment Brick) — shared by the /suscripcion plan
+   card and the "Desbloquear VIP" popover.
+   ========================================================================== */
+
+.plan-flow-details {
+  display: grid;
+  gap: 16px;
+}
+
+.plan-flow-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+
+.plan-flow-back:hover:not(:disabled) {
+  color: #e2e8f0;
+}
+
+.plan-flow-back:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plan-flow-card h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.card-brick {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.card-brick-loading {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.plan-flow-submitting {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.plan-flow-error {
+  margin: 10px 0 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+  font-size: 0.85rem;
+}
+
+.plan-flow-success {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 18px 4px 6px;
+  text-align: center;
+}
+
+.plan-flow-success h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #f8fafc;
+}
+
+.plan-flow-success p {
+  margin: 0;
+  color: #cbd5e1;
+  max-width: 42ch;
+}
+
+.plan-flow-success-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+
+.plan-flow-success .primary-button {
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   "Desbloquear VIP" popover — deliberately not the full /suscripcion page:
+   plan info and the card form, right there, no navigation.
+   ========================================================================== */
+
+.vip-popover {
+  width: min(480px, 100%);
+  display: grid;
+  gap: 16px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+.vip-popover-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vip-popover-signin {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.vip-popover-signin p {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .vip-popover {
+    width: 100%;
   }
 }
