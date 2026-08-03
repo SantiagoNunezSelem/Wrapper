@@ -566,6 +566,32 @@ interface MetricContext {
   /** Position of each message (by id) within `chatMessages` — lets any metric find
    * the real message right before/after a highlighted moment, for context. */
   messageIndex: Map<string, number>
+  /** `chatMessages`/`textMessages` grouped by sender, in the same relative order a
+   * `.filter(m => m.sender === name)` per participant would produce. Built once
+   * here instead of letting every per-participant metric re-scan the full array for
+   * each participant — with a large group chat that's the difference between one
+   * pass over the messages and dozens. */
+  chatMessagesBySender: Map<string, ChatMessage[]>
+  textMessagesBySender: Map<string, ChatMessage[]>
+}
+
+/** Single pass grouping — see the `MetricContext` fields above and their per-metric
+ * uses for why this replaces `messages.filter(m => m.sender === name)` inside a
+ * per-participant loop. */
+function groupBySender(messages: ChatMessage[]): Map<string, ChatMessage[]> {
+  const groups = new Map<string, ChatMessage[]>()
+  for (const message of messages) {
+    if (!message.sender) {
+      continue
+    }
+    const list = groups.get(message.sender)
+    if (list) {
+      list.push(message)
+    } else {
+      groups.set(message.sender, [message])
+    }
+  }
+  return groups
 }
 
 /** Hands control back to the browser for a tick. A chat with 100k+ messages can
@@ -605,8 +631,18 @@ export function createMetricContext(messages: ChatMessage[], language: Language)
   const textMessages = chatMessages.filter((message) => !message.isSystemPlaceholder)
   const participants = [...new Set(chatMessages.map((message) => message.sender as string))]
   const messageIndex = new Map(chatMessages.map((message, index) => [message.id, index]))
+  const chatMessagesBySender = groupBySender(chatMessages)
+  const textMessagesBySender = groupBySender(textMessages)
 
-  return { chatMessages, textMessages, participants, language, messageIndex }
+  return {
+    chatMessages,
+    textMessages,
+    participants,
+    language,
+    messageIndex,
+    chatMessagesBySender,
+    textMessagesBySender,
+  }
 }
 
 interface MetricEntry {
@@ -902,8 +938,8 @@ function metricMonologuista(ctx: MetricContext): MetricResult {
           ? 'Rachas más largas de mensajes seguidos, por integrante.'
           : 'Longest back-to-back message streaks, by participant.',
       breakdown: breakdownCount(bySender, language),
-      groups: capGroups(
-        blocks.map((block) => rangeGroup(ctx, block.startMessage, block.endMessage, streakHeading(block, language))),
+      groups: capGroups(blocks).map((block) =>
+        rangeGroup(ctx, block.startMessage, block.endMessage, streakHeading(block, language)),
       ),
       paginatedItemsLabel: language === 'es' ? 'Bloques de mensajes seguidos' : 'Back-to-back message blocks',
     },
@@ -911,7 +947,7 @@ function metricMonologuista(ctx: MetricContext): MetricResult {
 }
 
 function metricReloj(ctx: MetricContext): MetricResult {
-  const { chatMessages, participants, language } = ctx
+  const { chatMessages, participants, chatMessagesBySender, language } = ctx
 
   if (chatMessages.length === 0) {
     return { hasData: false }
@@ -924,7 +960,7 @@ function metricReloj(ctx: MetricContext): MetricResult {
 
   const series: MetricSeriesEntry[] = participants.map((name) => ({
     name,
-    chart: { kind: 'hourHeatmap', hours: hourBuckets(chatMessages.filter((message) => message.sender === name)) },
+    chart: { kind: 'hourHeatmap', hours: hourBuckets(chatMessagesBySender.get(name) ?? []) },
   }))
 
   return {
@@ -975,15 +1011,13 @@ function metricRompehielo(ctx: MetricContext): MetricResult {
           ? 'Quién retoma la charla cada día, con el primer mensaje exacto.'
           : 'Who restarts the conversation each day, with the exact opening message.',
       breakdown: breakdownPercent(byStarter, total),
-      groups: capGroups(
-        openers.map((message) =>
-          momentGroup(
-            ctx,
-            message,
-            language === 'es'
-              ? `${formatDate(message.timestamp, language)} — abrió ${message.sender}`
-              : `${formatDate(message.timestamp, language)} — opened by ${message.sender}`,
-          ),
+      groups: capGroups(openers).map((message) =>
+        momentGroup(
+          ctx,
+          message,
+          language === 'es'
+            ? `${formatDate(message.timestamp, language)} — abrió ${message.sender}`
+            : `${formatDate(message.timestamp, language)} — opened by ${message.sender}`,
         ),
       ),
       paginatedItemsLabel: language === 'es' ? 'Aperturas de conversación' : 'Conversation openers',
@@ -992,7 +1026,7 @@ function metricRompehielo(ctx: MetricContext): MetricResult {
 }
 
 function metricEmojis(ctx: MetricContext): MetricResult {
-  const { chatMessages, participants, language } = ctx
+  const { chatMessages, participants, chatMessagesBySender, language } = ctx
   const overall = getEmojiCounts(chatMessages)
 
   if (overall.size === 0) {
@@ -1004,7 +1038,7 @@ function metricEmojis(ctx: MetricContext): MetricResult {
   const series: MetricSeriesEntry[] = []
 
   for (const name of participants) {
-    const personal = [...getEmojiCounts(chatMessages.filter((message) => message.sender === name)).entries()].sort(
+    const personal = [...getEmojiCounts(chatMessagesBySender.get(name) ?? []).entries()].sort(
       (left, right) => right[1] - left[1],
     )
 
@@ -1089,13 +1123,14 @@ function metricTestamento(ctx: MetricContext): MetricResult {
     return { hasData: false }
   }
 
+  const withContentBySender = groupBySender(withContent)
   const longest = [...withContent].sort((left, right) => right.contentText.length - left.contentText.length)[0]
   const breakdown: ParticipantBreakdownEntry[] = []
   const allTop: { name: string; message: ChatMessage }[] = []
 
   for (const name of participants) {
-    const own = withContent
-      .filter((message) => message.sender === name)
+    const own = (withContentBySender.get(name) ?? [])
+      .slice()
       .sort((left, right) => right.contentText.length - left.contentText.length)
       .slice(0, 10)
 
@@ -1133,15 +1168,13 @@ function metricTestamento(ctx: MetricContext): MetricResult {
     detail: {
       intro: language === 'es' ? 'Los mensajes más extensos de cada integrante.' : "Each participant's longest messages.",
       breakdown,
-      groups: capGroups(
-        allTop.map((item) =>
-          momentGroup(
-            ctx,
-            item.message,
-            language === 'es'
-              ? `${item.name} — ${formatNumber(item.message.wordCount, language)} palabras, ${formatNumber(item.message.contentText.length, language)} caracteres`
-              : `${item.name} — ${formatNumber(item.message.wordCount, language)} words, ${formatNumber(item.message.contentText.length, language)} characters`,
-          ),
+      groups: capGroups(allTop).map((item) =>
+        momentGroup(
+          ctx,
+          item.message,
+          language === 'es'
+            ? `${item.name} — ${formatNumber(item.message.wordCount, language)} palabras, ${formatNumber(item.message.contentText.length, language)} caracteres`
+            : `${item.name} — ${formatNumber(item.message.wordCount, language)} words, ${formatNumber(item.message.contentText.length, language)} characters`,
         ),
       ),
       paginatedItemsLabel: language === 'es' ? 'Mensajes más largos' : 'Longest messages',
@@ -1225,7 +1258,7 @@ function metricTopDias(ctx: MetricContext): MetricResult {
 }
 
 function metricVelocista(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, language } = ctx
+  const { textMessages, participants, textMessagesBySender, language } = ctx
   const stats = getWordAverages(textMessages)
 
   if (stats.length === 0) {
@@ -1237,10 +1270,7 @@ function metricVelocista(ctx: MetricContext): MetricResult {
   const series: MetricSeriesEntry[] = participants
     .map((name) => ({
       name,
-      chart: getLengthBuckets(
-        textMessages.filter((message) => message.sender === name),
-        language,
-      ),
+      chart: getLengthBuckets(textMessagesBySender.get(name) ?? [], language),
     }))
     .filter((entry) => entry.chart.some((bucket) => bucket.value > 0))
     .map((entry) => ({ name: entry.name, chart: { kind: 'histogram', buckets: entry.chart } as ChartData }))
@@ -1271,7 +1301,7 @@ function metricVelocista(ctx: MetricContext): MetricResult {
 }
 
 function metricHeatmapAnual(ctx: MetricContext): MetricResult {
-  const { chatMessages, participants, language } = ctx
+  const { chatMessages, participants, chatMessagesBySender, language } = ctx
   const days = getCalendarDays(chatMessages)
 
   if (days.length === 0) {
@@ -1282,9 +1312,7 @@ function metricHeatmapAnual(ctx: MetricContext): MetricResult {
   const activeDaysBySender = new Map<string, number>()
 
   for (const name of participants) {
-    const ownDays = new Set(
-      chatMessages.filter((message) => message.sender === name).map((message) => dayKey(message.timestamp)),
-    )
+    const ownDays = new Set((chatMessagesBySender.get(name) ?? []).map((message) => dayKey(message.timestamp)))
     activeDaysBySender.set(name, ownDays.size)
   }
 
@@ -1303,10 +1331,7 @@ function metricHeatmapAnual(ctx: MetricContext): MetricResult {
 
   const series: MetricSeriesEntry[] = participants.map((name) => ({
     name,
-    chart: chartFor(
-      chatMessages.filter((message) => message.sender === name),
-      false,
-    ),
+    chart: chartFor(chatMessagesBySender.get(name) ?? [], false),
   }))
 
   return {
@@ -1341,7 +1366,7 @@ function metricHeatmapAnual(ctx: MetricContext): MetricResult {
 }
 
 function metricTermometro(ctx: MetricContext): MetricResult {
-  const { chatMessages, participants, language } = ctx
+  const { chatMessages, participants, chatMessagesBySender, language } = ctx
   const overall = getWeekdayCounts(chatMessages, language)
 
   if (overall.every((axis) => axis.value === 0)) {
@@ -1350,17 +1375,14 @@ function metricTermometro(ctx: MetricContext): MetricResult {
 
   const top = [...overall].sort((left, right) => right.value - left.value)[0]
   const topBySender = participants.map((name) => {
-    const axes = getWeekdayCounts(
-      chatMessages.filter((message) => message.sender === name),
-      language,
-    )
+    const axes = getWeekdayCounts(chatMessagesBySender.get(name) ?? [], language)
     const best = [...axes].sort((left, right) => right.value - left.value)[0]
     return { name, best }
   })
 
   const series: MetricSeriesEntry[] = participants.map((name) => ({
     name,
-    chart: { kind: 'radar', axes: getWeekdayCounts(chatMessages.filter((message) => message.sender === name), language) },
+    chart: { kind: 'radar', axes: getWeekdayCounts(chatMessagesBySender.get(name) ?? [], language) },
   }))
 
   return {
@@ -1401,8 +1423,8 @@ function metricClavavistos(ctx: MetricContext): MetricResult {
     .map(([sender, values]) => ({ sender, average: values.reduce((sum, value) => sum + value, 0) / values.length }))
     .sort((left, right) => right.average - left.average)
 
-  const worst = [...events].sort((left, right) => right.minutes - left.minutes)[0]
   const sortedEvents = [...events].sort((left, right) => right.minutes - left.minutes)
+  const worst = sortedEvents[0]
 
   return {
     hasData: true,
@@ -1430,7 +1452,7 @@ function metricClavavistos(ctx: MetricContext): MetricResult {
         value: Number(item.average.toFixed(1)),
         displayValue: formatDurationMinutes(item.average, language),
       })),
-      groups: capGroups(sortedEvents.map((event) => momentGroup(ctx, event.replyMessage, delayHeading(event, language)))),
+      groups: capGroups(sortedEvents).map((event) => momentGroup(ctx, event.replyMessage, delayHeading(event, language))),
       paginatedItemsLabel: language === 'es' ? 'Peores demoras' : 'Worst delays',
     },
   }
@@ -1475,14 +1497,14 @@ function metricInactividad(ctx: MetricContext): MetricResult {
             }
           : undefined,
       breakdown: totalBreaks > 0 ? breakdownPercent(iceBreakers, totalBreaks) : undefined,
-      groups: capGroups(longSilences.map((gap) => momentGroup(ctx, gap.after, silenceHeading(gap, language)))),
+      groups: capGroups(longSilences).map((gap) => momentGroup(ctx, gap.after, silenceHeading(gap, language))),
       paginatedItemsLabel: language === 'es' ? 'Silencios largos' : 'Long silences',
     },
   }
 }
 
 function metricWordcloud(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, language } = ctx
+  const { textMessages, participants, textMessagesBySender, language } = ctx
   const overall = getWordCounts(textMessages)
 
   if (overall.size === 0) {
@@ -1492,7 +1514,7 @@ function metricWordcloud(ctx: MetricContext): MetricResult {
   const topOverall = [...overall.entries()].sort((left, right) => right[1] - left[1])
   const series: MetricSeriesEntry[] = participants
     .map((name) => {
-      const own = getWordCounts(textMessages.filter((message) => message.sender === name))
+      const own = getWordCounts(textMessagesBySender.get(name) ?? [])
       const words: WordCloudDatum[] = [...own.entries()]
         .sort((left, right) => right[1] - left[1])
         .slice(0, 40)
@@ -1634,7 +1656,7 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
           ? 'No es un diagnóstico: cruza silencios largos, borrados y frases clave agrupadas por categoría (celos, insultos, culpa, rupturas).'
           : 'Not a diagnosis: it combines long silences, deletions, and keyword phrases grouped by category (jealousy, insults, guilt-tripping, breakups).',
       breakdown: totalKeywordHits > 0 ? breakdownPercent(byKeywordSender, totalKeywordHits) : undefined,
-      groups: capGroups(moments.map((moment) => momentGroup(ctx, moment.message, moment.heading))),
+      groups: capGroups(moments).map((moment) => momentGroup(ctx, moment.message, moment.heading)),
       paginatedItemsLabel: language === 'es' ? 'Momentos señalados' : 'Flagged moments',
     },
   }
@@ -1649,10 +1671,11 @@ function metricCringe(ctx: MetricContext): MetricResult {
   }
 
   const bySender = countBySender(hits)
+  const hitsBySender = groupBySender(hits)
   const groupsList: MessageGroup[] = []
 
   for (const name of participants) {
-    const own = hits.filter((message) => message.sender === name).slice(0, 5)
+    const own = (hitsBySender.get(name) ?? []).slice(0, 5)
     for (const message of own) {
       groupsList.push(momentGroup(ctx, message, `${name} — ${formatDate(message.timestamp, language)}`))
     }
@@ -1768,7 +1791,7 @@ function metricPoliglota(ctx: MetricContext): MetricResult {
 }
 
 function metricJajaja(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, language } = ctx
+  const { textMessages, participants, textMessagesBySender, language } = ctx
   const overall = new Map<string, number>()
 
   for (const message of textMessages) {
@@ -1793,7 +1816,7 @@ function metricJajaja(ctx: MetricContext): MetricResult {
 
   for (const name of participants) {
     const styles = new Map<string, number>()
-    for (const message of textMessages.filter((entry) => entry.sender === name)) {
+    for (const message of textMessagesBySender.get(name) ?? []) {
       for (const token of tokenize(message.contentText)) {
         const style = classifyLaugh(token)
         if (style) {
@@ -1867,7 +1890,7 @@ function metricMetralleta(ctx: MetricContext): MetricResult {
           ? 'Los combos de micro-mensajes más grandes, con el bloque literal.'
           : 'The biggest micro-message combos, with the literal block.',
       breakdown: breakdownCount(bestBySender, language),
-      groups: capGroups(bursts.map((burst) => rangeGroup(ctx, burst.startMessage, burst.endMessage, burstHeading(burst, language)))),
+      groups: capGroups(bursts).map((burst) => rangeGroup(ctx, burst.startMessage, burst.endMessage, burstHeading(burst, language))),
       paginatedItemsLabel: language === 'es' ? 'Ráfagas de micro-mensajes' : 'Micro-message bursts',
     },
   }
@@ -1922,11 +1945,12 @@ function metricDramatico(ctx: MetricContext): MetricResult {
 
   const bySender = countBySender(shouted)
   const top = topEntry(bySender)!
+  const shoutedBySender = groupBySender(shouted)
   const groupsList: MessageGroup[] = []
 
   for (const name of participants) {
-    const own = shouted
-      .filter((message) => message.sender === name)
+    const own = (shoutedBySender.get(name) ?? [])
+      .slice()
       .sort((left, right) => right.contentText.length - left.contentText.length)
       .slice(0, 3)
 
@@ -1985,14 +2009,14 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
   // means the verdict hasn't run yet, so nothing is filtered out (this pass isn't shown
   // to a real user until the card unlocks anyway).
   const eligibleForExamples = flagged.filter((message) => !accepted || accepted.has(message.id))
+  const eligibleBySender = groupBySender(eligibleForExamples)
 
   // Explicit-tier hits lead, both here and in the word list below — Santiago wants the
   // attention-grabbing matches surfaced, not buried under five milder ones a participant
   // happened to send earlier in the chat. Frequency/chronology only break ties within a tier.
   const groupsList: MessageGroup[] = []
   for (const name of participants) {
-    const ownMatches = eligibleForExamples
-      .filter((message) => message.sender === name)
+    const ownMatches = (eligibleBySender.get(name) ?? [])
       .flatMap((message) => {
         const match = flirtyDict.matchAny(message.contentText)
         return match ? [{ message, match }] : []
@@ -2201,8 +2225,15 @@ function dayRangeGroup(ctx: MetricContext, day: string, heading: string, maxHigh
   return rangeGroup(ctx, dayMessages[0], dayMessages[dayMessages.length - 1], heading, maxHighlighted)
 }
 
-function capGroups(groups: MessageGroup[]): MessageGroup[] {
-  return groups.slice(0, GROUP_CAP)
+/** Caps to `GROUP_CAP` items. Called on the *source* list before it's mapped into
+ * `MessageGroup`s wherever that source can be large (thousands of events/blocks/
+ * bursts) — `momentGroup`/`rangeGroup` aren't free (date formatting, bubble
+ * building per item), and only the first `GROUP_CAP` of them are ever shown, so
+ * doing that work for everything just to throw most of it away is real, avoidable
+ * cost. Genericized so it applies equally to the pre-map source type and to the
+ * few call sites that still build their `MessageGroup[]` incrementally. */
+function capGroups<T>(items: T[]): T[] {
+  return items.slice(0, GROUP_CAP)
 }
 
 // ---------------------------------------------------------------------------
