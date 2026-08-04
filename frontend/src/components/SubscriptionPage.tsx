@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatMoney } from '../lib/format'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
@@ -474,13 +475,6 @@ function ChevronIcon({ className = '' }: { className?: string }) {
   )
 }
 
-function formatMoney(amount: number, currency: string, locale: string): string {
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
-  } catch {
-    return `${amount} ${currency}`
-  }
-}
 
 function formatDate(value: string | null, locale: string): string {
   if (!value) {

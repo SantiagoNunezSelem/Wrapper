@@ -1,0 +1,1745 @@
+/* ==========================================================================
+   Vistazo — layout de mobile
+   ==========================================================================
+
+   Escrito mobile-first: no hay un solo `@media (max-width: …)` acá porque no
+   hay nada que deshacer. Este archivo sólo se carga cuando `useIsMobile()`
+   monta este shell.
+
+   La tipografía, los botones, los charts y los paneles vienen de
+   styles/base.css — acá sólo se ajusta lo que en una pantalla de 360px pide
+   otro tamaño, y se declara qué es nuevo de este shell.
+   ========================================================================== */
+
+.m-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  /* Deja lugar para la barra fija de abajo más la franja del gesto de inicio
+     de los iPhone; si no, la última fila queda debajo de la barra. */
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ==========================================================================
+   Topbar
+   ========================================================================== */
+
+.m-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-top, 0px));
+  background: rgba(3, 7, 18, 0.82);
+  backdrop-filter: blur(var(--vz-blur));
+  border-bottom: 1px solid var(--vz-hairline);
+}
+
+.m-burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  /* 44px es el mínimo táctil cómodo; el ícono adentro mide 18. */
+  width: 44px;
+  height: 44px;
+  padding: 0 13px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.m-burger i {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--vz-text-muted);
+  transition: background 160ms ease;
+}
+
+.m-burger:active i {
+  background: var(--vz-text-strong);
+}
+
+.m-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* El texto mide 20px de alto, pero el área tocable no puede: 44px es el
+     mínimo con el que un pulgar acierta sin apuntar. */
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--vz-text-strong);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.m-brand-name {
+  font-size: 0.94rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.m-avatar.is-large {
+  width: 42px;
+  height: 42px;
+  font-size: 1.05rem;
+}
+
+.m-signin {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-strong);
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.m-banner {
+  margin: 10px 12px 0;
+  width: auto;
+  font-size: 0.82rem;
+}
+
+/* ==========================================================================
+   Contenido
+   ========================================================================== */
+
+.m-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px 24px;
+}
+
+.m-section-label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--vz-text-faint);
+  padding-top: 4px;
+}
+
+.m-section-split {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.m-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--vz-brand-cyan);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* Contenedor deslizable para lo que es más ancho que la pantalla: heatmaps,
+   chips de participantes, líneas de tiempo. Se desliza en su propia caja, la
+   página nunca se mueve de costado. */
+.m-scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.m-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* ==========================================================================
+   Inicio
+   ========================================================================== */
+
+.m-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 2px 2px;
+}
+
+/* base.css deja h1 en clamp(2.6rem, 5vw, 5rem): en un teléfono la vw no alcanza
+   y quedan 2.6rem, que come media pantalla antes de que se lea una métrica. */
+.m-hero h1 {
+  font-size: 1.72rem;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.m-hero .lead {
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.m-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-trust li {
+  font-size: 0.8rem;
+  color: var(--vz-text-muted);
+  padding: 8px 12px;
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-1);
+}
+
+/* ==========================================================================
+   Zona de subida
+   ========================================================================== */
+
+.m-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 26px 16px;
+  border: 1.5px dashed rgba(var(--vz-brand-violet-rgb), 0.42);
+  border-radius: var(--vz-radius-md);
+  background: rgba(var(--vz-brand-violet-rgb), 0.06);
+  color: var(--vz-text-strong);
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.m-drop:active {
+  transform: scale(0.985);
+  background: rgba(var(--vz-brand-violet-rgb), 0.12);
+  border-color: rgba(var(--vz-brand-violet-rgb), 0.7);
+}
+
+.m-drop:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.m-drop-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--vz-radius-sm);
+  background: rgba(var(--vz-brand-violet-rgb), 0.13);
+  color: var(--vz-brand-violet);
+  margin-bottom: 2px;
+}
+
+.m-drop strong {
+  font-size: 0.98rem;
+  font-weight: 680;
+}
+
+.m-drop > span {
+  font-size: 0.78rem;
+  color: var(--vz-text-faint);
+  line-height: 1.45;
+}
+
+/* Pista de que la zona entera es tocable. No es un botón aparte: sería el
+   mismo gesto dos veces en la misma pantalla. */
+.m-drop-cue {
+  margin-top: 6px;
+  padding: 7px 16px;
+  border: 1px solid rgba(var(--vz-brand-violet-rgb), 0.34);
+  border-radius: var(--vz-radius-pill);
+  background: rgba(var(--vz-brand-violet-rgb), 0.16);
+  color: #e9d5ff;
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+/* ==========================================================================
+   Pasos numerados
+   ========================================================================== */
+
+.m-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+  padding: 9px 2px;
+}
+
+/* Hilo que une los números, para que se lean como una secuencia y no como
+   cuatro items sueltos. */
+.m-steps li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 11.5px;
+  top: 31px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--vz-hairline);
+}
+
+.m-step-n {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(var(--vz-brand-violet-rgb), 0.3);
+  border-radius: var(--vz-radius-pill);
+  background: rgba(var(--vz-brand-violet-rgb), 0.14);
+  color: #d8b4fe;
+  font-size: 0.7rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.m-step-body {
+  min-width: 0;
+}
+
+.m-step-body strong {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 630;
+  color: var(--vz-text-soft);
+  line-height: 1.4;
+}
+
+.m-step-body span {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--vz-text-faint);
+  line-height: 1.5;
+}
+
+/* El paso que la gente saltea: sin esto el .zip llega con las fotos adentro. */
+.m-steps li.is-warn .m-step-n {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fcd34d;
+}
+
+.m-steps li.is-warn .m-step-body strong {
+  color: #fcd34d;
+}
+
+.m-privacy-note {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vz-hairline);
+  font-size: 0.76rem;
+  color: var(--vz-text-faint);
+  line-height: 1.55;
+}
+
+.m-steps-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   Resumen del chat
+   ========================================================================== */
+
+.m-summary {
+  display: flex;
+  gap: 7px;
+}
+
+.m-summary > div {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 11px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-2);
+}
+
+.m-summary strong {
+  font-size: 1.02rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--vz-text-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-summary span {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vz-text-faint);
+}
+
+.m-chips {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+.m-chips .participant-chip {
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Segmento lista / historia
+   ========================================================================== */
+
+.m-segment {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-2);
+}
+
+.m-segment button {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--vz-radius-pill);
+  background: none;
+  color: var(--vz-text-faint);
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.m-segment button.is-active {
+  background: var(--vz-surface-5);
+  color: var(--vz-text-strong);
+}
+
+.m-play {
+  font-size: 0.6rem;
+}
+
+/* ==========================================================================
+   La fila de métrica
+   ========================================================================== */
+
+.m-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-sm);
+  background: var(--vz-surface-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.m-row:active {
+  transform: scale(0.985);
+  background: var(--vz-surface-3);
+}
+
+.m-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.m-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--vz-radius-pill);
+  flex-shrink: 0;
+  /* El color sale del acento de cada métrica, más abajo. */
+  background: var(--vz-text-faint);
+}
+
+.m-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vz-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-row-crown {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #fbbf24;
+}
+
+.m-row-crown.is-locked {
+  color: var(--vz-text-faint);
+}
+
+.m-row-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--vz-text-faint);
+}
+
+/* El valor a lo ancho, no en una columna a la derecha: puede ser "31%" pero
+   también "Madrugadores" o "😂 ×1.243". Ver el comentario de MetricRow.tsx. */
+.m-row-value {
+  display: block;
+  font-size: 1.06rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--vz-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-row-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--vz-text-dim);
+}
+
+/* Bloqueada o esperando a la IA: barras de esqueleto, nunca el valor real
+   difuminado. El blur se revierte desde las herramientas del navegador, y
+   sobre todo insinúa un dato que este usuario no compró. */
+.m-row-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 3px;
+  filter: blur(2.5px);
+  user-select: none;
+}
+
+.m-row-skeleton i {
+  display: block;
+  height: 10px;
+  border-radius: var(--vz-radius-pill);
+  background: linear-gradient(
+    90deg,
+    var(--vz-surface-4) 25%,
+    rgba(255, 255, 255, 0.22) 50%,
+    var(--vz-surface-4) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+.m-row-chip {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px 5px 9px;
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  border-radius: var(--vz-radius-pill);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fcd34d;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* Cyan, igual que `.ai-panel .locked-icon` en desktop: es el color con el que
+   la app dice "esto lo resuelve la IA". En ámbar se leía como advertencia. */
+.m-row-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  padding: 5px 10px;
+  border: 1px solid rgba(var(--vz-brand-cyan-rgb), 0.26);
+  border-radius: var(--vz-radius-xs);
+  background: rgba(var(--vz-brand-cyan-rgb), 0.12);
+  color: #67e8f9;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  max-width: 100%;
+}
+
+.m-row-ai-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Sólo mientras la consulta está en vuelo. El resto de los estados son
+   informativos y no tienen por qué latir. */
+.m-row-ai.is-pending .m-row-ai-icon {
+  animation: mPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.86);
+  }
+}
+
+/* Un fallo o una IA no configurada sí son un problema, y ahí el rojo
+   corresponde. */
+.m-row-ai.is-unavailable,
+.m-row-ai.is-failed {
+  border-color: rgba(239, 68, 68, 0.26);
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}
+
+.m-spin {
+  animation: mSpin 900ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes mSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Un color por métrica, tomado del mismo token que dibuja el anillo de la
+   tarjeta en desktop — así los dos shells pintan la misma métrica igual. */
+.m-row.tier-purple .m-row-dot { background: rgb(var(--vz-tier-purple)); }
+.m-row.tier-pink .m-row-dot { background: rgb(var(--vz-tier-pink)); }
+.m-row.tier-orange .m-row-dot { background: rgb(var(--vz-tier-orange)); }
+.m-row.tier-blue .m-row-dot { background: rgb(var(--vz-tier-blue)); }
+.m-row.tier-cyan .m-row-dot { background: rgb(var(--vz-tier-cyan)); }
+.m-row.tier-lime .m-row-dot { background: rgb(var(--vz-tier-lime)); }
+.m-row.tier-gold .m-row-dot { background: rgb(var(--vz-tier-gold)); }
+.m-row.tier-rose .m-row-dot { background: rgb(var(--vz-tier-rose)); }
+.m-row.tier-indigo .m-row-dot { background: rgb(var(--vz-tier-indigo)); }
+.m-row.tier-mint .m-row-dot { background: rgb(var(--vz-tier-mint)); }
+.m-row.tier-slate .m-row-dot { background: rgb(var(--vz-tier-slate)); }
+.m-row.tier-red .m-row-dot { background: rgb(var(--vz-tier-red)); }
+.m-row.tier-green .m-row-dot { background: rgb(var(--vz-tier-green)); }
+.m-row.tier-yellow .m-row-dot { background: rgb(var(--vz-tier-yellow)); }
+.m-row.tier-teal .m-row-dot { background: rgb(var(--vz-tier-teal)); }
+.m-row.tier-violet .m-row-dot { background: rgb(var(--vz-tier-violet)); }
+.m-row.tier-magenta .m-row-dot { background: rgb(var(--vz-tier-magenta)); }
+.m-row.tier-sky .m-row-dot { background: rgb(var(--vz-tier-sky)); }
+
+/* base.css le da a .tier-* un anillo interior de 1px, pensado para la tarjeta
+   de 460px. En una fila de 68px ese anillo pelea con el borde. */
+.m-row.is-locked,
+.m-row {
+  box-shadow: none;
+}
+
+.m-generated {
+  padding: 6px 2px 2px;
+  font-size: 0.72rem;
+  color: var(--vz-text-faint);
+  text-align: center;
+}
+
+/* ==========================================================================
+   Chats guardados
+   ========================================================================== */
+
+.m-saved {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-sm);
+  background: var(--vz-surface-2);
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.m-saved:active {
+  background: var(--vz-surface-3);
+}
+
+.m-saved-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-3);
+  color: var(--vz-brand-cyan);
+  flex-shrink: 0;
+}
+
+.m-saved-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.m-saved-body strong {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 640;
+  color: var(--vz-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-saved-body span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--vz-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-saved-chevron {
+  display: inline-flex;
+  color: var(--vz-text-faint);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Tarjetas de cuenta y estados vacíos
+   ========================================================================== */
+
+.m-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-sm);
+  background: var(--vz-surface-2);
+  text-align: left;
+  color: inherit;
+}
+
+.m-account-id {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.m-account-id strong {
+  display: block;
+  font-size: 0.94rem;
+  font-weight: 650;
+  color: var(--vz-text-strong);
+}
+
+.m-account-id span {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--vz-text-faint);
+  word-break: break-all;
+}
+
+.m-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.m-card-head strong {
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.m-card-hint {
+  font-size: 0.78rem;
+  color: var(--vz-text-dim);
+  line-height: 1.5;
+}
+
+.m-status {
+  padding: 4px 10px;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.m-status.is-on {
+  border-color: var(--vz-success-border);
+  background: var(--vz-success-bg);
+  color: var(--vz-success-text);
+}
+
+.m-full {
+  width: 100%;
+}
+
+.m-signout {
+  align-items: center;
+  color: var(--vz-danger-text);
+  font-size: 0.86rem;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.m-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 44px 22px;
+  text-align: center;
+}
+
+.m-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-brand-violet);
+}
+
+.m-empty strong {
+  font-size: 1rem;
+  font-weight: 660;
+  color: var(--vz-text-strong);
+}
+
+.m-empty p {
+  font-size: 0.82rem;
+  color: var(--vz-text-dim);
+  line-height: 1.55;
+  max-width: 30ch;
+}
+
+/* ==========================================================================
+   Barra inferior
+   ========================================================================== */
+
+.m-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  padding: 8px 4px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(3, 7, 18, 0.94);
+  backdrop-filter: blur(var(--vz-blur));
+  border-top: 1px solid var(--vz-hairline);
+}
+
+.m-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 0 2px;
+  border: 0;
+  background: none;
+  color: var(--vz-text-faint);
+  font-size: 0.6rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.m-tab-icon {
+  display: inline-flex;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.m-tab.is-active {
+  color: var(--vz-text-strong);
+}
+
+.m-tab.is-active .m-tab-icon {
+  transform: translateY(-1px);
+}
+
+/* Barrita de la pestaña activa, con el degradado de la marca. */
+.m-tab.is-active::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  width: 26px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--vz-brand-sweep);
+}
+
+/* Sin chat cargado el destino existe pero no lleva a nada todavía. */
+.m-tab.is-empty {
+  opacity: 0.42;
+}
+
+/* Gana en especificidad a `.m-tab`, que si no le pisaría el degradado con su
+   `background: none` y lo dejaría como un círculo apagado. */
+.m-tabbar .m-fab {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto -10px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  cursor: pointer;
+  /* La muesca del color del fondo lo despega de la barra y lo hace leer como
+     un botón flotante, no como una quinta pestaña. */
+  box-shadow:
+    0 0 0 5px rgba(3, 7, 18, 0.94),
+    0 6px 22px rgba(var(--vz-brand-cyan-rgb), 0.5);
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.m-tabbar .m-fab:active {
+  transform: scale(0.9);
+}
+
+/* ==========================================================================
+   Capas: menú y hojas
+   ========================================================================== */
+
+.m-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.m-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(2, 6, 23, 0.7);
+  cursor: pointer;
+  animation: mFade 200ms ease;
+}
+
+@keyframes mFade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* --- menú lateral --- */
+
+.m-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(78%, 320px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  background: var(--vz-panel-solid);
+  border-right: 1px solid var(--vz-hairline);
+  animation: mSlideIn 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes mSlideIn {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.m-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px 4px 14px;
+}
+
+.m-drawer-head.is-anon {
+  padding-bottom: 10px;
+}
+
+.m-drawer-id {
+  min-width: 0;
+}
+
+.m-drawer-id strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--vz-text-strong);
+  line-height: 1.35;
+}
+
+.m-drawer-id span {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--vz-text-faint);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.m-drawer-cta {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.m-drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.m-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px;
+  border: 0;
+  border-radius: var(--vz-radius-xs);
+  background: none;
+  color: var(--vz-text-muted);
+  text-align: left;
+  font-size: 0.86rem;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.m-drawer-item:active {
+  background: var(--vz-surface-3);
+}
+
+.m-drawer-item.is-active {
+  background: var(--vz-surface-3);
+  color: var(--vz-text-strong);
+}
+
+.m-drawer-item.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.m-drawer-icon {
+  display: inline-flex;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  color: var(--vz-text-dim);
+}
+
+.m-drawer-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.m-drawer-value {
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: var(--vz-text-faint);
+  flex-shrink: 0;
+}
+
+.m-drawer-value.is-on {
+  color: var(--vz-success-text);
+}
+
+.m-drawer-rule {
+  height: 1px;
+  margin: 7px 4px;
+  border: 0;
+  background: var(--vz-hairline);
+}
+
+/* El texto de privacidad es largo y en desktop vive en el pie. Acá se pliega,
+   así está a un toque sin ocupar media pantalla. */
+.m-privacy summary {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px;
+  border-radius: var(--vz-radius-xs);
+  color: var(--vz-text-muted);
+  font-size: 0.86rem;
+  font-weight: 560;
+  cursor: pointer;
+  list-style: none;
+}
+
+.m-privacy summary::-webkit-details-marker {
+  display: none;
+}
+
+.m-privacy p {
+  padding: 4px 11px 10px;
+  font-size: 0.74rem;
+  color: var(--vz-text-faint);
+  line-height: 1.6;
+}
+
+.m-drawer-foot {
+  margin-top: auto;
+  padding: 14px 6px 0;
+  font-size: 0.68rem;
+  color: var(--vz-text-faint);
+  line-height: 1.5;
+}
+
+/* --- hoja inferior --- */
+
+.m-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 46px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-xl) var(--vz-radius-xl) 0 0;
+  background: var(--vz-panel-solid);
+  overflow: hidden;
+  animation: mSlideUp 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Para contenido corto —el login— la hoja no tiene por qué tapar la pantalla. */
+.m-sheet.is-short {
+  top: auto;
+  max-height: 74dvh;
+}
+
+@keyframes mSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.m-grabber {
+  width: 36px;
+  height: 4px;
+  margin: 9px auto 2px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+.m-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 16px 10px;
+  border-bottom: 1px solid var(--vz-hairline);
+  flex-shrink: 0;
+}
+
+.m-sheet-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.m-sheet-title h2 {
+  font-size: 1.06rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.m-sheet-title p {
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: var(--vz-text-dim);
+  line-height: 1.45;
+}
+
+.m-sheet-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.m-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 20px;
+}
+
+.m-sheet-body.m-center {
+  align-items: center;
+  justify-content: center;
+}
+
+.m-sheet-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.m-sheet-hero strong {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  word-break: break-word;
+}
+
+.m-sheet-hero > span {
+  font-size: 0.84rem;
+  color: var(--vz-text-dim);
+  line-height: 1.45;
+}
+
+.m-sheet-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.m-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m-chart {
+  padding: 10px 0 2px;
+}
+
+/* Los charts anchos —heatmap anual, horario, línea de tiempo— conservan su
+   ancho natural y se deslizan. Encogerlos a 320px los vuelve ilegibles. */
+.m-chart-wide {
+  min-width: 520px;
+}
+
+.m-series {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.m-series-item h4 {
+  margin-bottom: 4px;
+  font-size: 0.84rem;
+  font-weight: 640;
+  color: var(--vz-text-soft);
+}
+
+.m-sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--vz-hairline);
+  background: var(--vz-panel-solid);
+  flex-shrink: 0;
+}
+
+.m-sheet-step {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.m-sheet-step:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.m-flip {
+  display: inline-flex;
+  transform: rotate(180deg);
+}
+
+.m-sheet-count {
+  font-size: 0.74rem;
+  color: var(--vz-text-faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.m-sheet-next {
+  flex: 1 1 auto;
+  padding: 12px 16px;
+  font-size: 0.86rem;
+}
+
+/* ==========================================================================
+   Modo historia
+   ==========================================================================
+
+   Ocupa la pantalla entera, barra de pestañas incluida: mientras dura el
+   recorrido no hay nada más que hacer, y una barra de navegación abajo
+   invitaría a irse justo cuando la idea es quedarse. */
+
+.m-story {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 18px calc(20px + env(safe-area-inset-bottom, 0px));
+  /* Más violeta arriba que el fondo de la app: el recorrido es un momento
+     aparte, no una pantalla más. */
+  background:
+    radial-gradient(circle at 50% 0%, rgba(var(--vz-brand-violet-rgb), 0.3), transparent 52%),
+    linear-gradient(180deg, #1a1033 0%, #0f172a 48%, #030712 100%);
+  /* El swipe horizontal es del recorrido: el navegador no debe leerlo como
+     "volver atrás" ni arrastrar la página de abajo. */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  animation: mFade 240ms ease;
+}
+
+.m-story-bars {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.m-story-bars i {
+  flex: 1 1 0;
+  height: 2.5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 240ms ease;
+}
+
+.m-story-bars i.is-done {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.m-story-bars i.is-now {
+  background: var(--vz-brand-sweep);
+}
+
+/* La cruz flota arriba a la derecha: la barra de encabezado que tenía antes se
+   fue con la ficha, que ahora lleva el nombre y el contador. */
+.m-story-x {
+  position: absolute;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  right: 8px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--vz-text-dim);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Zonas de toque a los costados. z-index bajo a propósito: el pie y la cruz
+   viven por encima, así tocar "Compartir" comparte en vez de avanzar. */
+.m-story-tap {
+  position: absolute;
+  top: 64px;
+  bottom: 92px;
+  width: 32%;
+  z-index: 1;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.m-story-tap.is-left {
+  left: 0;
+}
+
+.m-story-tap.is-right {
+  right: 0;
+}
+
+.m-story-body {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  /* Deja pasar el toque a las zonas de abajo: el texto no es interactivo. */
+  pointer-events: none;
+}
+
+/* La pantalla nueva entra del lado hacia el que se fue el dedo, así el gesto
+   tiene respuesta propia: avanzar y retroceder no se sienten igual. */
+.m-story-body.is-forward {
+  animation: mStoryFwd 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.m-story-body.is-back {
+  animation: mStoryBack 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes mStoryFwd {
+  from {
+    opacity: 0;
+    transform: translateX(38px);
+  }
+}
+
+@keyframes mStoryBack {
+  from {
+    opacity: 0;
+    transform: translateX(-38px);
+  }
+}
+
+/* --- la ficha de la métrica ---
+   Reemplaza al punto de acento suelto: da estructura y deja claro de qué
+   métrica se trata antes de que el ojo llegue al número. */
+.m-story-plate {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  /* Cada métrica trae su acento en `--vz-accent`; sin él cae en el violeta. */
+  --vz-accent: var(--vz-brand-violet-rgb);
+}
+
+.m-story-tile {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border: 1px solid rgba(var(--vz-accent), 0.34);
+  border-radius: var(--vz-radius-sm);
+  background: rgba(var(--vz-accent), 0.16);
+  color: rgb(var(--vz-accent));
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.m-story-plate-text {
+  min-width: 0;
+}
+
+.m-story-kicker {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  color: rgb(var(--vz-accent));
+}
+
+.m-story-count {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--vz-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Se desvanece hacia la derecha en el color de la métrica: cierra la ficha sin
+   trazar una línea dura que parta la pantalla en dos. */
+.m-story-rule {
+  display: block;
+  height: 1px;
+  margin: 2px 0 6px;
+  background: linear-gradient(90deg, rgba(var(--vz-accent), 0.5), transparent);
+}
+
+.m-story-plate.tier-purple { --vz-accent: var(--vz-tier-purple); }
+.m-story-plate.tier-pink { --vz-accent: var(--vz-tier-pink); }
+.m-story-plate.tier-orange { --vz-accent: var(--vz-tier-orange); }
+.m-story-plate.tier-blue { --vz-accent: var(--vz-tier-blue); }
+.m-story-plate.tier-cyan { --vz-accent: var(--vz-tier-cyan); }
+.m-story-plate.tier-lime { --vz-accent: var(--vz-tier-lime); }
+.m-story-plate.tier-gold { --vz-accent: var(--vz-tier-gold); }
+.m-story-plate.tier-rose { --vz-accent: var(--vz-tier-rose); }
+.m-story-plate.tier-indigo { --vz-accent: var(--vz-tier-indigo); }
+.m-story-plate.tier-mint { --vz-accent: var(--vz-tier-mint); }
+.m-story-plate.tier-slate { --vz-accent: var(--vz-tier-slate); }
+.m-story-plate.tier-red { --vz-accent: var(--vz-tier-red); }
+.m-story-plate.tier-green { --vz-accent: var(--vz-tier-green); }
+.m-story-plate.tier-yellow { --vz-accent: var(--vz-tier-yellow); }
+.m-story-plate.tier-teal { --vz-accent: var(--vz-tier-teal); }
+.m-story-plate.tier-violet { --vz-accent: var(--vz-tier-violet); }
+.m-story-plate.tier-magenta { --vz-accent: var(--vz-tier-magenta); }
+.m-story-plate.tier-sky { --vz-accent: var(--vz-tier-sky); }
+
+/* La regla vive fuera de la ficha, así que hereda el acento de su hermana. */
+.m-story-plate.tier-purple ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-purple), 0.5), transparent); }
+.m-story-plate.tier-pink ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-pink), 0.5), transparent); }
+.m-story-plate.tier-orange ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-orange), 0.5), transparent); }
+.m-story-plate.tier-blue ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-blue), 0.5), transparent); }
+.m-story-plate.tier-cyan ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-cyan), 0.5), transparent); }
+.m-story-plate.tier-lime ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-lime), 0.5), transparent); }
+.m-story-plate.tier-gold ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-gold), 0.5), transparent); }
+.m-story-plate.tier-rose ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-rose), 0.5), transparent); }
+.m-story-plate.tier-indigo ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-indigo), 0.5), transparent); }
+.m-story-plate.tier-mint ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-mint), 0.5), transparent); }
+.m-story-plate.tier-slate ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-slate), 0.5), transparent); }
+.m-story-plate.tier-red ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-red), 0.5), transparent); }
+.m-story-plate.tier-green ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-green), 0.5), transparent); }
+.m-story-plate.tier-yellow ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-yellow), 0.5), transparent); }
+.m-story-plate.tier-teal ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-teal), 0.5), transparent); }
+.m-story-plate.tier-violet ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-violet), 0.5), transparent); }
+.m-story-plate.tier-magenta ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-magenta), 0.5), transparent); }
+.m-story-plate.tier-sky ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-sky), 0.5), transparent); }
+
+/* El valor es el protagonista. `anywhere` porque puede ser "Madrugadores" o
+   "😂 ×1.243", no sólo un porcentaje de tres caracteres. */
+.m-story-huge {
+  font-size: clamp(2.8rem, 15vw, 4.2rem);
+  font-weight: 850;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  overflow-wrap: anywhere;
+}
+
+/* Con el nombre ya en la ficha, esta es la línea que describe el número. */
+.m-story-label {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--vz-text-soft);
+  line-height: 1.4;
+}
+
+.m-story-teaser {
+  font-size: 0.88rem;
+  color: var(--vz-text-dim);
+  line-height: 1.55;
+}
+
+/* El detalle va pegado a la información y no en el pie: es otra lectura de lo
+   mismo, mientras que compartir es LA acción de la pantalla. Como enlace pesa
+   lo justo — se ve, pero no le compite al número. */
+.m-story-inline {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* El texto ocupa su ancho, pero el área tocable llega a 44px con el padding
+     vertical: un enlace de 18px de alto no se acierta con el pulgar. */
+  min-height: 44px;
+  padding: 12px 2px;
+  margin-top: 2px;
+  border: 0;
+  background: none;
+  color: var(--vz-brand-cyan);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  /* El cuerpo del recorrido deja pasar los toques; este control los recupera. */
+  pointer-events: auto;
+}
+
+.m-story-inline:active {
+  opacity: 0.6;
+}
+
+.m-story-body .m-story-note {
+  margin-top: 4px;
+  padding: 10px 13px;
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-2);
+  font-style: italic;
+  font-size: 0.84rem;
+  color: var(--vz-text-soft);
+}
+
+/* Un solo botón, todo el ancho: compartir es la acción de esta pantalla y no
+   tiene con qué compartir el espacio. */
+.m-story-foot {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.m-story-foot .primary-button {
+  width: 100%;
+  padding: 15px 18px;
+  font-size: 0.92rem;
+}
+
+/* Latido hacia la derecha: enseña el gesto sin un cartel que lo explique. */
+.m-story-hint {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  z-index: 1;
+  color: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  animation: mNudge 1.9s ease-in-out infinite;
+}
+
+@keyframes mNudge {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.28;
+  }
+  50% {
+    transform: translateX(5px);
+    opacity: 0.6;
+  }
+}
+
+/* ==========================================================================
+   Ajustes a componentes compartidos
+   ==========================================================================
+
+   Los de src/components/ se reusan sin tocarlos; lo único que cambia son las
+   medidas que asumían el ancho de un monitor. */
+
+/* El toolbar de desarrollo (sólo localhost) se ancla arriba a la derecha, donde
+   acá está el avatar, o abajo, donde está la barra de pestañas. Se lo fija
+   encima de la barra. Va acotado a `.m-shell` para no tocar la posición que
+   tiene en desktop, porque mobile.css entra al bundle en los dos casos.
+   Sigue siendo arrastrable: si molesta, se corre. */
+.m-shell .dev-toolbar {
+  top: auto;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  right: 10px;
+  left: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.m-sheet .locked-panel {
+  min-height: 180px;
+}
+
+.m-sheet .modal-chart,
+.m-sheet .metric-chart {
+  padding: 0;
+}
+
+.m-sheet .word-search-input {
+  width: 100%;
+}
+
+.m-sheet .message-group-list {
+  gap: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-drawer,
+  .m-sheet,
+  .m-scrim,
+  .m-story,
+  .m-story-body.is-forward,
+  .m-story-body.is-back {
+    animation: none;
+  }
+
+  /* El spinner y el latido del recorrido son los dos únicos bucles infinitos
+     del shell; con movimiento reducido se apagan del todo. */
+  .m-spin,
+  .m-story-hint,
+  .m-row-ai.is-pending .m-row-ai-icon {
+    animation: none;
+  }
+}
