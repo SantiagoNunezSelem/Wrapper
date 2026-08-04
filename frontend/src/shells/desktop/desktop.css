@@ -1,0 +1,1437 @@
+/* ==========================================================================
+   Vistazo — layout de desktop
+   ==========================================================================
+
+   Sólo la composición para monitor: el shell, la landing, la grilla de
+   tarjetas de 460px, el sidebar de historial y sus breakpoints.
+
+   Lo compartido (tipografía, botones, charts, paneles) está en
+   styles/base.css, que se importa una vez para toda la app.
+   ========================================================================== */
+
+.app-shell {
+  width: min(1640px, 100%);
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+}
+.topbar,
+.panel,
+.landing-visual,
+.account-menu {
+  border: 1px solid var(--vz-hairline);
+  background: var(--vz-panel);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--vz-shadow-panel);
+}
+
+
+#account-info {
+  margin-top: 5px;
+  background: rgb(15, 23, 42);
+}
+
+.topbar {
+  border-radius: var(--vz-radius-xl);
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  position: sticky;
+  top: 16px;
+  z-index: 5;
+  margin-bottom: 18px;
+}
+.brand-mark,
+.history-item {
+  border: 0;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    box-shadow 140ms ease;
+}
+
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--vz-text-strong);
+  background: transparent;
+  text-align: left;
+}
+
+.brand-mark small {
+  display: block;
+  color: var(--vz-text-muted);
+}
+
+.brand-orb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-brand-sweep);
+  box-shadow: 0 0 30px rgba(34, 211, 238, 0.5);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.brand-mark:hover .brand-orb {
+  transform: scale(1.3) rotate(35deg);
+}
+
+.topbar-actions,
+.user-pill,
+.landing-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.analytics-hero-actions {
+  display: flex;
+  gap: 12px;
+  margin: auto 30px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.user-pill {
+  position: relative;
+  padding: 6px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+}
+
+.user-avatar-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--vz-radius-pill);
+  background: rgba(192, 132, 252, 0.2);
+  color: var(--vz-text-strong);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.user-avatar-button:hover,
+.user-avatar-button[aria-expanded='true'] {
+  background: rgba(192, 132, 252, 0.36);
+}
+
+/* Anchored to .user-pill (position: relative above), not the topbar itself —
+   stays pinned to the avatar even though the topbar is a wide, space-between
+   flex row. See handlePointerDown in App.tsx for the click-outside close. */
+.account-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 6;
+  width: 240px;
+  border-radius: 20px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  animation: modalIn 0.22s ease;
+}
+
+.account-menu p {
+  color: var(--vz-text-muted);
+}
+
+.save-prompt {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.16), rgba(34, 211, 238, 0.1));
+  border: 1px solid rgba(192, 132, 252, 0.28);
+}
+
+.save-prompt-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vz-surface-5);
+  color: #e9d5ff;
+}
+
+.save-prompt-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.save-prompt-copy strong {
+  color: var(--vz-text-strong);
+  font-size: 0.98rem;
+}
+
+.save-prompt-copy p {
+  color: var(--vz-text-muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.landing-layout,
+.analytics-main,
+.analytics-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.landing-layout {
+  position: relative;
+}
+
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.landing-copy,
+.landing-visual,
+.analytics-hero {
+  border-radius: 32px;
+  padding: 34px;
+}
+
+.landing-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 560px;
+  background:
+    radial-gradient(circle at top left, rgba(192, 132, 252, 0.28), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.2), transparent 30%),
+    rgba(2, 6, 23, 0.55);
+}
+
+.landing-visual {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  min-height: 560px;
+}
+
+.phone-mockup {
+  width: min(360px, 85%);
+  aspect-ratio: 9 / 18;
+  border-radius: 36px;
+  padding: 12px;
+  background: linear-gradient(180deg, #1e293b, #020617);
+  box-shadow:
+    0 0 0 1px var(--vz-surface-4),
+    0 30px 120px rgba(0, 0, 0, 0.35);
+  animation: float 6s ease-in-out infinite;
+  perspective: 800px;
+}
+
+.phone-screen {
+  height: 100%;
+  border-radius: var(--vz-radius-xl);
+  padding: 20px;
+  background:
+    radial-gradient(circle at top, rgba(192, 132, 252, 0.24), transparent 28%),
+    linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(3, 7, 18, 0.98));
+  display: grid;
+  gap: 14px;
+  align-content: center;
+  position: relative;
+  overflow: hidden;
+  /* Tilt is applied inline (follows the cursor via JS); the transition here
+     only smooths the snap back to neutral on mouse-leave. */
+  transition: transform 320ms ease;
+  transform-style: preserve-3d;
+}
+
+.mockup-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.1));
+  animation: pulseGlow 3.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Floating chips — small emoji badges orbiting the phone mockup at their  */
+/* own pace, purely decorative (aria-hidden), for extra ambient movement.  */
+/* ---------------------------------------------------------------------- */
+
+.floating-chip {
+  position: absolute;
+  font-size: 1.7rem;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
+  animation: chipFloat 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.chip-1 {
+  top: 6%;
+  left: 4%;
+  animation-duration: 6.5s;
+}
+
+.chip-2 {
+  top: 58%;
+  right: 2%;
+  animation-duration: 7.5s;
+  animation-delay: 0.6s;
+}
+
+.chip-3 {
+  bottom: 8%;
+  left: 10%;
+  animation-duration: 5.8s;
+  animation-delay: 1.3s;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ambient background blobs — slow-drifting blurred color washes behind    */
+/* the landing page, for depth without competing with the foreground text. */
+/* ---------------------------------------------------------------------- */
+
+.ambient-blobs {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.32;
+  will-change: transform;
+}
+
+.blob-a {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle, var(--vz-brand-violet), transparent 70%);
+  animation: driftA 22s ease-in-out infinite;
+}
+
+.blob-b {
+  width: 380px;
+  height: 380px;
+  top: 260px;
+  right: -140px;
+  background: radial-gradient(circle, var(--vz-brand-cyan), transparent 70%);
+  animation: driftB 26s ease-in-out infinite;
+}
+
+.blob-c {
+  width: 320px;
+  height: 320px;
+  top: 640px;
+  left: 30%;
+  background: radial-gradient(circle, #f472b6, transparent 70%);
+  animation: driftC 30s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Marquee — an auto-scrolling feature ticker between the hero and the     */
+/* rest of the page; pauses on hover so it never fights with a click.     */
+/* ---------------------------------------------------------------------- */
+
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  padding: 6px 0;
+}
+
+.marquee-track {
+  display: flex;
+  gap: 32px;
+  width: max-content;
+  animation: marqueeScroll 30s linear infinite;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+.marquee-item {
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--vz-text-muted);
+  opacity: 0.85;
+}
+.mockup-stat,
+.why-card,
+.history-item {
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+}
+
+
+.mockup-stat {
+  padding: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--vz-text-strong);
+  position: relative;
+  z-index: 1;
+}
+
+.mockup-stat strong {
+  font-size: 1.6rem;
+  display: block;
+}
+
+.mockup-stat span {
+  color: var(--vz-text-muted);
+  font-size: 0.82rem;
+}
+
+.stat-b {
+  transform: translateX(28px);
+}
+
+.stat-c {
+  transform: translateX(-16px);
+}
+
+.landing-actions {
+  margin-top: 26px;
+}
+
+.trust-strip {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trust-strip li {
+  padding: 8px 14px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  border: 1px solid var(--vz-hairline);
+  color: var(--vz-text-soft);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  transition: transform 200ms ease, background 200ms ease, border-color 200ms ease;
+}
+
+.trust-strip li:hover {
+  transform: translateY(-2px);
+  background: var(--vz-surface-5);
+  border-color: rgba(192, 132, 252, 0.3);
+}
+
+.panel {
+  border-radius: var(--vz-radius-xl);
+  padding: 24px;
+}
+
+.landing-info {
+  display: grid;
+  gap: 18px;
+}
+
+.why-heading {
+  color: var(--vz-text);
+}
+.why-grid,
+.summary-stats {
+  display: grid;
+  gap: 14px;
+}
+
+
+.why-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.why-card {
+  padding: 18px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  border-radius: 20px;
+  background: var(--vz-surface-1);
+  border: 1px solid var(--vz-surface-3);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.why-card:hover {
+  transform: translateY(-2px);
+  background: var(--vz-surface-3);
+}
+
+.why-card h4 {
+  color: var(--vz-text-strong);
+  font-size: 0.98rem;
+  margin-bottom: 4px;
+}
+
+.why-card p {
+  color: var(--vz-text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.why-icon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.24), rgba(34, 211, 238, 0.18));
+  flex: 0 0 auto;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.why-card:hover .why-icon {
+  transform: scale(1.15) rotate(-8deg);
+}
+
+/* ---------------------------------------------------------------------- */
+/* How-it-works — a short numbered walkthrough so the landing page reads   */
+/* as a full product pitch instead of jumping straight from copy to demo. */
+/* ---------------------------------------------------------------------- */
+
+.steps-section {
+  display: grid;
+  gap: 18px;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.step-card {
+  position: relative;
+  padding: 20px 18px;
+  border-radius: 20px;
+  background: var(--vz-surface-1);
+  border: 1px solid var(--vz-surface-3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 200ms ease, border-color 200ms ease, background 200ms ease;
+}
+
+.step-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(192, 132, 252, 0.3);
+  background: var(--vz-surface-2);
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  font-weight: 800;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-size: 0.86rem;
+}
+
+.step-card:hover .step-number {
+  transform: scale(1.15) rotate(8deg);
+}
+
+.step-card h4 {
+  color: var(--vz-text-strong);
+  font-size: 0.96rem;
+}
+
+.step-card p {
+  color: var(--vz-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.examples-section {
+  display: grid;
+  gap: 16px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Landing example cards — a small "Ejemplo/Example" ribbon makes it clear */
+/* the data is fabricated, so nobody mistakes it for a real analysis.     */
+/* ---------------------------------------------------------------------- */
+
+.demo-card-wrapper {
+  position: relative;
+}
+
+.demo-tag {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  z-index: 2;
+  padding: 4px 12px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.upload-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+}
+
+.analytics-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.upload-strip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.upload-strip-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upload-strip-info h2 {
+  font-size: 1.5rem;
+  color: var(--vz-text-strong);
+}
+
+.upload-strip-hint {
+  margin-top: 6px;
+  color: var(--vz-text-dim);
+  font-size: 0.84rem;
+}
+
+/* Hero, the summary/sidebar row, and the metric grid just stack full-width —
+   the only place two columns actually share a row is inside
+   .analytics-summary-row below. */
+.analytics-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.analytics-summary-row {
+  position: relative;
+}
+
+/* Narrowed to leave room for the absolutely positioned sidebar (260px + an
+   18px gap) beside it. */
+.analytics-main {
+  width: calc(100% - 278px);
+}
+
+/* Positioned absolutely — rather than sized via grid/flex stretch — so its
+   own (potentially long) content never influences .analytics-summary-row's
+   height; only .analytics-main's does. top/right/bottom then stretch this to
+   match that height exactly, which .history-panel below treats as a hard
+   cap instead of growing the row to fit a long saved-chats list. */
+.analytics-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 260px;
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.summary-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.participant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.vip-badge.is-compact {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vip-badge.is-compact .vip-badge-circle {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Metric grid — flexbox with flex-basis so an incomplete last row grows  */
+/* to fill the row instead of leaving empty space on the right.          */
+/* ---------------------------------------------------------------------- */
+
+.metric-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Rows are chunked in JS to at most 3 cards each, so — unlike a CSS grid, where
+   an incomplete last row leaves empty tracks — every row here is its own flex
+   container: fewer cards in a row just share it evenly. Leftover space is
+   always consumed, never left blank. */
+.metric-row {
+  display: flex;
+  gap: 16px;
+}
+
+.metric-list-item {
+  flex: 1 1 0;
+  /* A backstop, not a target — with 3 cards per row this rarely binds; it only
+     keeps a lone card in a partial last row from stretching absurdly wide. */
+  max-width: 560px;
+  display: flex;
+}
+
+/* The analytics dashboard's own cards animate in on mount (it's an active
+   workspace, always near the top of the page) — landing-page demo cards use
+   `.reveal-child` instead, gated by scroll position, so the two must not both
+   apply to the same element (a finished `animation …both` would otherwise
+   pin opacity/transform and cancel the scroll-triggered transition). */
+.metric-list-item:not(.reveal-child) {
+  animation: riseIn 0.5s ease both;
+}
+
+.metric-card {
+  width: 100%;
+  height: 460px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  overflow: hidden;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--vz-shadow-card);
+  border-color: var(--vz-hairline-strong);
+}
+
+.metric-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.metric-card-head h3 {
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.metric-tier-dot {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.metric-tier-dot.is-unlocked {
+  background: linear-gradient(135deg, #facc15, #f59e0b);
+  color: #3f2d03;
+}
+
+.metric-tier-dot.is-locked {
+  background: var(--vz-surface-4);
+  color: var(--vz-text-dim);
+}
+
+.metric-description {
+  color: var(--vz-text-muted);
+  line-height: 1.5;
+  font-size: 0.92rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* .history-panel is .analytics-sidebar's only child now (the account panel
+   moved into the topbar's .account-menu dropdown — see App.tsx), so it's free
+   to take up the sidebar's full height. min-height: 0 overrides the flex
+   default (content-based auto), which would otherwise stop it from shrinking
+   below its natural size and defeat the sidebar's height cap (see
+   .analytics-sidebar). overflow: hidden keeps only the inner .history-list's
+   scrollbar visible instead of this panel's own edge. */
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* No fixed cap on desktop: this shrinks to whatever room .history-panel has
+     (itself bounded by the sidebar's height match to .summary-panel — see
+     .analytics-sidebar) and scrolls past that. The narrow-screen breakpoint
+     restores a fixed cap since the two columns stack there and nothing
+     constrains this from outside anymore. */
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(192, 132, 252, 0.4) transparent;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: rgba(192, 132, 252, 0.4);
+  border-radius: var(--vz-radius-pill);
+}
+
+.history-item {
+  text-align: left;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  color: var(--vz-text-strong);
+}
+
+.history-item span,
+.history-item em {
+  color: var(--vz-text-muted);
+}
+
+.account-name {
+  font-size: 1.12rem;
+  color: var(--vz-text-strong) !important;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Footer — present on every screen, not just the landing page, so the app */
+/* never just stops mid-scroll without a privacy reminder and a sign-off. */
+/* ---------------------------------------------------------------------- */
+
+.app-footer {
+  margin-top: 28px;
+  padding: 22px 4px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  border-top: 1px solid var(--vz-surface-3);
+}
+
+.footer-brand {
+  pointer-events: none;
+}
+
+.footer-privacy {
+  max-width: 560px;
+  color: var(--vz-text-dim);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.footer-meta {
+  color: var(--vz-text-faint);
+  font-size: 0.76rem;
+}
+.history-item:hover,
+.brand-mark:hover {
+  transform: translateY(-1px);
+}
+
+
+.chart-bar-ranking.is-compact {
+  gap: 6px 8px;
+}
+
+.chart-word-cloud.is-compact {
+  max-height: 130px;
+  overflow: hidden;
+}
+
+.group-triangle.is-expanded {
+  transform: rotate(180deg);
+  color: var(--vz-brand-violet);
+}
+
+.chat-bubble.is-context {
+  opacity: 0.62;
+}
+
+.chat-bubble.is-highlight {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.22), rgba(34, 211, 238, 0.14));
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+.chat-bubble.is-context .chat-bubble-sender {
+  color: var(--vz-text-dim);
+}
+
+/* ---------------------------------------------------------------------- */
+/* File Upload Zone — drag-and-drop area with dashed border & animations */
+/* ---------------------------------------------------------------------- */
+
+.file-upload-zone {
+  position: relative;
+  border: 2px dashed rgba(192, 132, 252, 0.3);
+  border-radius: var(--vz-radius-xl);
+  padding: 60px 40px;
+  background: radial-gradient(circle at 30% 50%, rgba(192, 132, 252, 0.08), transparent 40%),
+              radial-gradient(circle at 70% 80%, rgba(34, 211, 238, 0.06), transparent 40%),
+              rgba(15, 23, 42, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    border-color 300ms ease,
+    background 300ms ease,
+    box-shadow 300ms ease;
+  min-height: 320px;
+}
+
+.file-upload-zone.is-active {
+  border-color: rgba(34, 211, 238, 0.6);
+  background: radial-gradient(circle at 30% 50%, rgba(192, 132, 252, 0.14), transparent 40%),
+              radial-gradient(circle at 70% 80%, rgba(34, 211, 238, 0.12), transparent 40%),
+              rgba(15, 23, 42, 0.5);
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.2);
+}
+
+.file-upload-zone.is-loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.upload-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.upload-icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.2), rgba(34, 211, 238, 0.15));
+  color: var(--vz-brand-cyan);
+  animation: uploadIconFloat 3s ease-in-out infinite;
+}
+
+.file-upload-zone.is-active .upload-icon {
+  animation: uploadIconPulse 0.6s ease-out;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.3), rgba(192, 132, 252, 0.2));
+}
+
+.upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.upload-heading {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--vz-text-strong);
+}
+
+.upload-subtext {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--vz-text-muted);
+}
+
+.upload-hint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--vz-text-dim);
+}
+
+.upload-zone-border {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed rgba(192, 132, 252, 0.2);
+  border-radius: var(--vz-radius-xl);
+  pointer-events: none;
+  animation: dashAnimation 20s linear infinite;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(192, 132, 252, 0.3) 25%,
+    transparent 50%,
+    rgba(34, 211, 238, 0.3) 75%,
+    transparent 100%);
+  background-size: 200% 100%;
+}
+
+.file-upload-zone.is-active .upload-zone-border {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Full Wrapped Layout — shown to logged-in users with no active analysis */
+/* Displays account history with option to upload a new chat.             */
+/* ---------------------------------------------------------------------- */
+
+.full-wrapped-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.full-wrapped-hero {
+  border-radius: 32px;
+  padding: 40px;
+  background: radial-gradient(circle at top left, rgba(192, 132, 252, 0.12), transparent 40%),
+              radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.1), transparent 40%),
+              rgba(2, 6, 23, 0.4);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 24px;
+}
+
+.full-wrapped-hero div {
+  flex: 1;
+}
+
+.full-wrapped-hero h1 {
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  line-height: 0.97;
+  margin-bottom: 8px;
+  color: var(--vz-text-strong);
+}
+
+.full-wrapped-hero p {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.full-wrapped-hero p.eyebrow {
+  margin-bottom: 8px;
+}
+
+.full-wrapped-hero p.lead {
+  color: #d4d4d8;
+  max-width: 100%;
+  font-size: 0.95rem;
+}
+
+.full-wrapped-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-self: flex-start;
+}
+
+.full-wrapped-content {
+  border-radius: var(--vz-radius-xl);
+  padding: 32px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.full-wrapped-content h2 {
+  margin-bottom: 24px;
+  font-size: 1.3rem;
+  color: var(--vz-text-strong);
+}
+
+.full-wrapped-content p {
+  color: var(--vz-text-muted);
+  text-align: center;
+  padding: 40px 20px;
+  font-size: 0.95rem;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: none;
+}
+
+.history-item {
+  padding: 16px 18px;
+  text-align: left;
+  border-radius: var(--vz-radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--vz-surface-3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.history-item:hover {
+  transform: translateX(4px);
+  background: var(--vz-surface-4);
+  border-color: rgba(192, 132, 252, 0.2);
+}
+
+.history-item strong {
+  color: var(--vz-text-strong);
+  font-size: 0.98rem;
+}
+
+.history-item span {
+  color: var(--vz-text-dim);
+  font-size: 0.84rem;
+}
+
+.history-item em {
+  color: var(--vz-brand-cyan);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+@media (max-width: 1120px) {
+  .landing-hero,
+  .upload-strip,
+  .analytics-hero,
+  .full-wrapped-hero {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .upload-strip-section {
+    gap: 20px;
+  }
+
+  .file-upload-zone {
+    min-height: 240px;
+    padding: 40px 24px;
+  }
+
+  .why-grid,
+  .modal-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .steps-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Below this width the summary panel and sidebar stack instead of sharing a
+     row, so the absolute-positioning trick that makes .analytics-sidebar
+     match .analytics-main's height (see those rules) is switched off — both
+     go back to normal document flow, full width, one above the other. */
+  .analytics-summary-row {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .analytics-main {
+    width: 100%;
+  }
+
+  .analytics-sidebar {
+    position: static;
+    width: 100%;
+  }
+
+  /* .history-panel's cap (see .history-panel / .history-list) came from the
+     sidebar matching the summary panel's height — with that switched off
+     here, restore a fixed cap instead, same value as before this feature
+     (~1.2x a single item's height; item renders at 134px tall, so ≈ 161px). */
+  .history-list {
+    max-height: 161px;
+  }
+
+  .analytics-hero-actions {
+    margin: 0px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 14px 10px 32px;
+  }
+
+  .landing-copy,
+  .landing-visual,
+  .analytics-hero {
+    padding: 20px;
+  }
+
+  .topbar-actions,
+  .landing-actions,
+  .analytics-hero-actions {
+    flex-wrap: wrap;
+    margin: 0px;
+  }
+
+  /* Keep the topbar a single slim row on mobile instead of wrapping into a
+     tall, cluttered block: drop the tagline, shrink the brand mark, and
+     tighten every button/pill that lives inside it. */
+  .topbar {
+    padding: 8px 12px;
+    border-radius: var(--vz-radius-md);
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .brand-mark {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .brand-mark small {
+    display: none;
+  }
+
+  .brand-mark strong {
+    font-size: 0.88rem;
+    white-space: nowrap;
+  }
+
+  .brand-orb {
+    width: 12px;
+    height: 12px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .topbar .ghost-button,
+  .topbar .icon-button {
+    padding: 6px 11px;
+    font-size: 0.76rem;
+  }
+
+  .topbar .icon-only-button {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+
+  .user-pill {
+    padding: 4px;
+    gap: 6px;
+  }
+
+  .user-avatar-button {
+    width: 26px;
+    height: 26px;
+    font-size: 0.78rem;
+  }
+
+  .summary-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-mockup {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  /* On a narrow phone screen the ±28px horizontal offset that makes the stat
+     cards feel dynamic on desktop pushes them right up against — or past —
+     the mockup's own clipped edges. Keep them stacked flush on mobile. */
+  .stat-b,
+  .stat-c {
+    transform: none;
+  }
+
+  .steps-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-row {
+    flex-direction: column;
+  }
+
+  .save-prompt {
+    flex-wrap: wrap;
+  }
+
+  .metric-list-item {
+    max-width: none;
+  }
+
+  .chart-bar-ranking {
+    grid-template-columns: minmax(min-content, 108px) 1fr auto;
+  }
+}
+
+.account-menu-action {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  border-radius: var(--vz-radius-sm);
+  background: rgba(192, 132, 252, 0.14);
+  color: var(--vz-text-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.account-menu-action:hover {
+  background: rgba(192, 132, 252, 0.26);
+  border-color: rgba(192, 132, 252, 0.6);
+}
+
+/* Sits above whatever page opened it (the subscription page's cancel-confirm dialog). */
+.nested-backdrop {
+  z-index: 40;
+}
+
+.confirm-card {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.subpage-status.status-activa,
+.subpage-status.status-trial {
+  background: var(--vz-success-bg);
+  color: var(--vz-success-text);
+}
+
+.subpage-status.status-pago_fallido {
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}
+
+.subpage-status.status-pendiente,
+.subpage-status.status-pausada {
+  background: var(--vz-warning-bg);
+  color: var(--vz-warning-text);
+}
+
+.plan-card-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 640px) {
+  .subpage-content {
+    padding: 8px 2px 48px;
+    gap: 20px;
+  }
+
+  .subpage-hero h1 {
+    font-size: 1.6rem;
+  }
+
+  .subpage-section {
+    padding: 18px 16px;
+  }
+
+  .plan-card-summary {
+    flex-wrap: wrap;
+  }
+
+  .subpage-list li {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .subpage-muted {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 720px) {
+
+  .subpage-list li {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .subpage-muted {
+    white-space: normal;
+  }
+}
+
+/* Only the card/payment step gets the extra room (+40px each side) — the plan step
+   keeps the width above as-is. The `max-width: 640px` media query rule further below
+   still wins on narrow screens since it targets .vip-popover directly. */
+.vip-popover-wide {
+  width: min(700px, 100%);
+}
+
+@media (max-width: 640px) {
+  .vip-popover {
+    width: 100%;
+  }
+}

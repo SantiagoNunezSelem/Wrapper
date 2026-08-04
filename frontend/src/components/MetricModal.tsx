@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ChartData, MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
@@ -6,8 +6,7 @@ import { ChartRenderer } from './charts/ChartRenderer'
 import { CrossButton } from './IconButton'
 import { LockedPanel } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
-
-const PAGE_SIZE = 5
+import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
 
 export interface MetricModalCopy {
   close: string
@@ -16,38 +15,6 @@ export interface MetricModalCopy {
   showMore: string
   unlock: string
   searchPlaceholder: string
-}
-
-/** Paginates one "show more" list with a brief highlight on the freshly-revealed
- * items. Metrics can carry a `groups` list and a `paginatedItems` list at the same
- * time (e.g. spicy messages + spicy words), so each needs its own independent
- * paging state — sharing one counter would make revealing one list jump the other. */
-function usePaginatedReveal(pageSize: number) {
-  const [visibleCount, setVisibleCount] = useState(pageSize)
-  const [revealedFrom, setRevealedFrom] = useState<number | null>(null)
-  const listRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (revealedFrom === null) {
-      return
-    }
-    const target = listRef.current?.children[revealedFrom] as HTMLElement | undefined
-    target?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    const timeout = setTimeout(() => setRevealedFrom(null), 1000)
-    return () => clearTimeout(timeout)
-  }, [revealedFrom])
-
-  return {
-    visibleCount,
-    revealedFrom,
-    setListRef: (node: HTMLElement | null) => {
-      listRef.current = node
-    },
-    showMore: () => {
-      setRevealedFrom(visibleCount)
-      setVisibleCount((count) => count + pageSize)
-    },
-  }
 }
 
 export function MetricModal({

@@ -1,0 +1,140 @@
+/* ==========================================================================
+   Vistazo — design tokens
+   ==========================================================================
+
+   La única fuente de verdad de la marca. Los dos shells (desktop y mobile)
+   toman de acá, así que un cambio de paleta llega a los dos a la vez y
+   ninguno puede derivar del otro.
+
+   Los valores son exactamente los que tenía App.css antes de la extracción:
+   este archivo no cambió ni un color, sólo les puso nombre.
+
+   Qué vive acá: color, degradados, hairlines, radios y tipografía — todo lo
+   que define "cómo se ve Vistazo".
+
+   Qué NO vive acá: spacing, tamaños de fuente y anchos. Eso es layout, y el
+   layout es justamente lo que difiere entre un teléfono y un monitor.
+   Tokenizarlo forzaría una falsa igualdad entre los dos shells.
+   ========================================================================== */
+
+:root {
+  /* --- Marca ------------------------------------------------------------
+     El violeta y el cyan son Vistazo. El degradado entre ambos es la firma:
+     aparece en el orbe, en el botón primario y en el texto destacado. */
+  --vz-brand-violet: #c084fc;
+  --vz-brand-cyan: #22d3ee;
+  --vz-brand-sweep: linear-gradient(135deg, #c084fc, #22d3ee);
+
+  /* Tinta sobre el degradado. Es claro, así que el texto va oscuro. */
+  --vz-on-brand: #0f172a;
+
+  /* Triples RGB para componer alfas propias:
+     rgba(var(--vz-brand-violet-rgb), 0.35) */
+  --vz-brand-violet-rgb: 192, 132, 252;
+  --vz-brand-cyan-rgb: 34, 211, 238;
+
+  /* --- Texto ------------------------------------------------------------
+     Escala de brillo sobre fondo oscuro: cuanto más tenue, menos jerarquía.
+     `strong` es para números y títulos; `faint` para metadatos. */
+  --vz-text-strong: #f8fafc;
+  --vz-text: #f1f5f9;
+  --vz-text-soft: #e2e8f0;
+  --vz-text-muted: #cbd5e1;
+  --vz-text-dim: #94a3b8;
+  --vz-text-faint: #64748b;
+
+  /* La base del body, en index.css. Es un neutro puro, no un slate: por eso
+     no es un escalón más de la escala de arriba. */
+  --vz-text-base: #f4f4f5;
+
+  /* --- Superficies ------------------------------------------------------
+     Velos blancos sobre el fondo oscuro. La escala sube en opacidad, no en
+     color, así que cualquier fondo debajo sigue leyéndose. */
+  --vz-surface-1: rgba(255, 255, 255, 0.03);
+  --vz-surface-2: rgba(255, 255, 255, 0.05);
+  --vz-surface-3: rgba(255, 255, 255, 0.06);
+  --vz-surface-4: rgba(255, 255, 255, 0.08);
+  --vz-surface-5: rgba(255, 255, 255, 0.1);
+  --vz-surface-6: rgba(255, 255, 255, 0.16);
+
+  /* El panel con blur: topbar, tarjetas grandes, modales, menú de cuenta. */
+  --vz-panel: rgba(15, 23, 42, 0.74);
+  --vz-panel-solid: #0f172a;
+  --vz-blur: 20px;
+
+  /* --- Bordes -----------------------------------------------------------
+     Comparten valor con la escala de superficies, pero son otro rol: un
+     borde y un fondo pueden dejar de coincidir sin que eso sea un bug. */
+  --vz-hairline: rgba(255, 255, 255, 0.08);
+  --vz-hairline-strong: rgba(255, 255, 255, 0.16);
+
+  /* --- Semánticos -------------------------------------------------------
+     Estado, no marca. Nunca se usan para decorar. */
+  --vz-success-text: #bbf7d0;
+  --vz-success-bg: rgba(34, 197, 94, 0.16);
+  --vz-success-border: rgba(34, 197, 94, 0.25);
+
+  --vz-danger-text: #fecaca;
+  --vz-danger-bg: rgba(239, 68, 68, 0.16);
+  --vz-danger-border: rgba(239, 68, 68, 0.12);
+
+  --vz-warning-text: #fde68a;
+  --vz-warning-bg: rgba(245, 158, 11, 0.16);
+
+  /* --- Radios -----------------------------------------------------------
+     `pill` es el botón redondo; el resto escala con el tamaño del bloque. */
+  --vz-radius-pill: 999px;
+  --vz-radius-xl: 28px;
+  --vz-radius-lg: 22px;
+  --vz-radius-md: 18px;
+  --vz-radius-sm: 14px;
+  --vz-radius-xs: 12px;
+
+  /* --- Sombras ----------------------------------------------------------- */
+  --vz-shadow-panel: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --vz-shadow-card: 0 16px 40px rgba(0, 0, 0, 0.28);
+  --vz-shadow-brand: 0 12px 36px rgba(34, 211, 238, 0.25);
+
+  /* --- Tipografía -------------------------------------------------------- */
+  --vz-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* --- Fondo de la app ---------------------------------------------------
+     El halo violeta arriba y la caída a casi-negro. */
+  --vz-app-background:
+    radial-gradient(circle at top, rgba(168, 85, 247, 0.3), transparent 35%),
+    linear-gradient(180deg, #0f172a 0%, #111827 50%, #030712 100%);
+}
+
+/* ==========================================================================
+   Acentos por métrica
+   ==========================================================================
+
+   Un color por tarjeta, asignado en metrics.ts (`accent: 'tier-purple'`).
+   Se guardan como triples RGB en vez de colores cerrados porque cada shell
+   los usa con distinta fuerza: desktop dibuja un anillo interior al 24%,
+   mobile necesita además un punto sólido en la fila.
+   ========================================================================== */
+
+:root {
+  --vz-tier-purple: 192, 132, 252;
+  --vz-tier-pink: 244, 114, 182;
+  --vz-tier-orange: 251, 146, 60;
+  --vz-tier-blue: 96, 165, 250;
+  --vz-tier-cyan: 34, 211, 238;
+  --vz-tier-lime: 163, 230, 53;
+  --vz-tier-gold: 250, 204, 21;
+  --vz-tier-rose: 251, 113, 133;
+  --vz-tier-indigo: 129, 140, 248;
+  --vz-tier-mint: 52, 211, 153;
+  --vz-tier-slate: 148, 163, 184;
+  --vz-tier-red: 248, 113, 113;
+  --vz-tier-green: 74, 222, 128;
+  --vz-tier-yellow: 253, 224, 71;
+  --vz-tier-teal: 45, 212, 191;
+  --vz-tier-violet: 167, 139, 250;
+  --vz-tier-magenta: 232, 121, 249;
+  --vz-tier-sky: 56, 189, 248;
+
+  /* La fuerza del anillo interior en la tarjeta de desktop. */
+  --vz-tier-ring-alpha: 0.24;
+}
