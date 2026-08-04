@@ -1,4 +1,7 @@
 @import './styles/tokens.css';
+/* Tipografía y primitivos compartidos: se cargan para toda la app, no por
+   shell, así ninguno de los dos puede quedarse sin ellos. */
+@import './styles/base.css';
 
 :root {
   font-family: var(--vz-font-sans);
