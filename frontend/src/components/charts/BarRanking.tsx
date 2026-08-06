@@ -12,7 +12,7 @@ export function BarRanking({ items, compact = false }: { items: BarDatum[]; comp
         <div className="chart-bar-row" key={item.label}>
           <span className="chart-bar-label">{item.label}</span>
           <span className="chart-bar-track">
-            <span className="chart-bar-fill" style={{ background: colorForIndex(index) }} />
+            <span className="chart-bar-fill" style={{ background: item.color ?? colorForIndex(index) }} />
           </span>
           <span className="chart-bar-value">{item.displayValue}</span>
         </div>

@@ -12,13 +12,13 @@ import type {
   MetricDetail,
   MetricSeriesEntry,
   MetricStat,
-  MonthDatum,
   ParticipantBreakdownEntry,
   RadarDatum,
   StreakRange,
   TimelinePoint,
   WordCloudDatum,
 } from '../types'
+import { colorForIndex } from '../components/charts/palette'
 
 const DETAIL_LIST_CAP = 100
 const GROUP_CAP = 40
@@ -26,12 +26,6 @@ const PER_PARTICIPANT_TOP_LIMIT = 15
 // How many real messages of context to show before/after a highlighted moment,
 // so the user can actually recall the exchange instead of reading it in isolation.
 const CONTEXT_WINDOW = 3
-// Beyond this many days of history, a day-by-day GitHub-style grid turns into an
-// unreadable wall of slivers — switch to a coarser month-by-month view instead.
-const MONTH_VIEW_THRESHOLD_DAYS = 100
-// The compact card view only shows the most recent months so the card doesn't grow
-// huge for a chat with years of history; "Ver más" always shows the full range.
-const CARD_MONTH_LIMIT = 10
 // Every "which day is this" bucket (streaks, heatmaps, icebreaker, top days, weekday
 // radar) treats the day as starting at 6am, not midnight — a 2am message still
 // belongs to the night before, which matches how people actually talk about "today."
@@ -81,6 +75,13 @@ const stopWords = new Set([
   'they', "they're", 'this', 'those', 'through', 'to', 'too', 've', 'very', 'was', "wasn't", 'we',
   "we're", 'were', 'what', 'when', 'where', 'which', 'while', 'who', 'whom', 'why', 'will', 'with',
   "won't", 'would', "wouldn't", 'you', "you're", "you've", 'your', 'yours', 'yourself',
+  // Link/URL debris — most of this is already stripped by `stripUrls` before tokenizing
+  // (see getWordCounts), but a pasted link without the "https://" scheme, or one that
+  // slips past that regex some other way, still tokenizes into fragments like these.
+  // None of them are actual vocabulary, so they'd otherwise dominate any group that
+  // forwards a lot of reels/videos instead of showing what people actually typed.
+  'https', 'http', 'www', 'com', 'org', 'net', 'html', 'instagram', 'igsh', 'reel', 'reels',
+  'youtube', 'youtu', 'tiktok', 'facebook', 'twitter',
 ])
 
 const englishTokenHints = new Set([
@@ -491,8 +492,8 @@ const metricMeta: MetaDictionary = {
     en: { title: 'The Speedster', description: 'Who writes the shortest messages on average.', preview: 'Histogram of short, medium, and long messages.' },
   },
   'heatmap-anual': {
-    es: { title: 'Heatmap Anual', description: 'Los días de mayor actividad de todo el año, estilo GitHub.', preview: 'Un heatmap propio para cada integrante.' },
-    en: { title: 'Yearly Heatmap', description: "The whole year's busiest days, GitHub-contributions style.", preview: "Each participant's own heatmap." },
+    es: { title: 'El Pulso del Chat', description: 'Cómo varió la actividad a lo largo del tiempo.', preview: 'Una curva propia para cada integrante.' },
+    en: { title: "The Chat's Pulse", description: "How the conversation's pace shifted over time.", preview: "Each participant's own curve." },
   },
   termometro: {
     es: { title: 'Termómetro Semanal', description: 'Qué día de la semana concentra más mensajes.', preview: 'Radar semanal individual de cada integrante.' },
@@ -566,6 +567,12 @@ interface MetricContext {
   /** Position of each message (by id) within `chatMessages` — lets any metric find
    * the real message right before/after a highlighted moment, for context. */
   messageIndex: Map<string, number>
+  /** Same idea as `messageIndex`, but positions within `textMessages`. A streak/range
+   * computed over `textMessages` (media excluded) has to walk *those* positions when
+   * rendering its own highlighted body — walking `chatMessages` positions instead
+   * would let an interleaved media message the streak never counted sneak back in
+   * as if it were part of the streak. See `rangeGroup`. */
+  textMessageIndex: Map<string, number>
   /** `chatMessages`/`textMessages` grouped by sender, in the same relative order a
    * `.filter(m => m.sender === name)` per participant would produce. Built once
    * here instead of letting every per-participant metric re-scan the full array for
@@ -623,14 +630,28 @@ export interface AnalysisCore {
   rawVipMetrics: MetricCard[]
 }
 
+/** Senders that show up in a real export but aren't a person in the conversation:
+ * "Meta AI" is WhatsApp's own assistant, appearing as a pseudo-participant the
+ * moment anyone `@`-mentions it in the chat; "ERROR" turns up as a sender on some
+ * exports as a parsing/format artifact, not a contact. Matched case-insensitively
+ * since WhatsApp's own casing has varied across app versions. */
+const EXCLUDED_SENDERS = new Set(['meta ai', 'error'])
+
+function isExcludedSender(sender: string): boolean {
+  return EXCLUDED_SENDERS.has(sender.trim().toLowerCase())
+}
+
 /** Derives the per-metric working set from parsed messages. Cheap next to the metric
  * functions themselves, so the full analysis and the AI re-pass each build one fresh
  * instead of trying to keep a context object alive between them. */
 export function createMetricContext(messages: ChatMessage[], language: Language): MetricContext {
-  const chatMessages = messages.filter((message) => !message.isSystem && message.sender)
+  const chatMessages = messages.filter(
+    (message) => !message.isSystem && message.sender && !isExcludedSender(message.sender),
+  )
   const textMessages = chatMessages.filter((message) => !message.isSystemPlaceholder)
   const participants = [...new Set(chatMessages.map((message) => message.sender as string))]
   const messageIndex = new Map(chatMessages.map((message, index) => [message.id, index]))
+  const textMessageIndex = new Map(textMessages.map((message, index) => [message.id, index]))
   const chatMessagesBySender = groupBySender(chatMessages)
   const textMessagesBySender = groupBySender(textMessages)
 
@@ -640,6 +661,7 @@ export function createMetricContext(messages: ChatMessage[], language: Language)
     participants,
     language,
     messageIndex,
+    textMessageIndex,
     chatMessagesBySender,
     textMessagesBySender,
   }
@@ -690,7 +712,7 @@ async function buildMetrics(entries: MetricEntry[], ctx: MetricContext, onStep: 
   const cards: MetricCard[] = []
 
   for (const entry of entries) {
-    cards.push(createMetric(entry.id, ctx.language, entry.tier, entry.accent, entry.compute(ctx)))
+    cards.push(createMetric(entry.id, ctx.language, entry.tier, entry.accent, entry.compute(ctx), ctx.participants))
     onStep()
     await yieldToBrowser()
   }
@@ -787,10 +809,12 @@ export async function applyAiVerdicts(
   const rawVipMetrics = core.rawVipMetrics
     .map((card) => {
       const result = isAiMetricId(card.id) ? rebuilt.get(card.id) : undefined
+      if (!result) {
+        return card
+      }
 
-      return result
-        ? { ...card, hasData: result.hasData, basic: result.basic, detail: result.detail }
-        : card
+      const colored = colorizeResult(result, ctx.participants)
+      return { ...card, hasData: colored.hasData, basic: colored.basic, detail: colored.detail }
     })
     // The AI only ever removes candidates, so a card can lose all its data here — for
     // instance a chat where every "hot" turned out to be about the weather.
@@ -826,12 +850,66 @@ export async function buildAnalysis(
   return gateAnalysis(core, hasVipAccess)
 }
 
+/** A participant's color is their fixed position in the chat's own participant list
+ * (chronological order of first appearance — see `createMetricContext`), not their
+ * rank within whichever ranking is being drawn right now. Without this, Pablo could
+ * be violet in one metric's top-3 and green in the next just because someone else
+ * out-talked him there — the whole point is that his color never moves. `undefined`
+ * for anything that isn't a real participant (a laugh style, an emoji, a content
+ * type), so those keep the chart's own by-position palette untouched. */
+function colorForParticipant(name: string, participants: string[]): string | undefined {
+  const index = participants.indexOf(name)
+  return index >= 0 ? colorForIndex(index) : undefined
+}
+
+function withParticipantColors(chart: ChartData, participants: string[]): ChartData {
+  if (chart.kind === 'bar') {
+    return { ...chart, items: chart.items.map((item) => ({ ...item, color: colorForParticipant(item.label, participants) })) }
+  }
+  if (chart.kind === 'donut') {
+    return { ...chart, items: chart.items.map((item) => ({ ...item, color: colorForParticipant(item.label, participants) })) }
+  }
+  return chart
+}
+
+/** Stamps participant colors onto a freshly computed result — the one place this
+ * runs, so every path that turns a `MetricResult` into what the UI renders (the
+ * initial build in `createMetric`, and the AI re-pass in `applyAiVerdicts`) gets
+ * the same colors instead of two rules that can drift apart. Only the top-level
+ * chart/breakdown are touched: `detail.series` entries are a participant's *own*
+ * data broken down by something else (hours, words, laugh styles), not a ranking
+ * of participants, so recoloring them would be recoloring the wrong axis. */
+function colorizeResult(result: MetricResult, participants: string[]): MetricResult {
+  if (!result.hasData) {
+    return result
+  }
+
+  return {
+    ...result,
+    basic:
+      result.basic && result.basic.chart
+        ? { ...result.basic, chart: withParticipantColors(result.basic.chart, participants) }
+        : result.basic,
+    detail: result.detail
+      ? {
+          ...result.detail,
+          chart: result.detail.chart ? withParticipantColors(result.detail.chart, participants) : result.detail.chart,
+          breakdown: result.detail.breakdown?.map((entry) => ({
+            ...entry,
+            color: colorForParticipant(entry.name, participants),
+          })),
+        }
+      : result.detail,
+  }
+}
+
 function createMetric(
   id: string,
   language: Language,
   tier: 'free' | 'vip',
   accent: string,
   result: MetricResult,
+  participants: string[],
 ): MetricCard {
   const meta = metricMeta[id]?.[language]
 
@@ -839,15 +917,17 @@ function createMetric(
     throw new Error(`Missing metric metadata for "${id}" in language "${language}".`)
   }
 
+  const colored = colorizeResult(result, participants)
+
   return {
     id,
     title: meta.title,
     description: meta.description,
     tier,
     accent,
-    hasData: result.hasData,
-    basic: result.basic,
-    detail: result.detail,
+    hasData: colored.hasData,
+    basic: colored.basic,
+    detail: colored.detail,
     preview: meta.preview,
   }
 }
@@ -909,10 +989,13 @@ function metricSpammer(ctx: MetricContext): MetricResult {
 }
 
 function metricMonologuista(ctx: MetricContext): MetricResult {
-  // textMessages (not chatMessages) so a burst of media placeholders — photos,
-  // voice notes — never counts as "monologuing"; only actual authored text does.
-  const { textMessages, language } = ctx
-  const blocks = getStreakBlocks(textMessages)
+  // chatMessages (not textMessages): a media placeholder — a photo, a voice note —
+  // must still break the streak, even though it never counts as one of its messages.
+  // Otherwise "sent 12 in a row" could secretly be 6 texts, a voice note, 6 more
+  // texts — which reads as monologuing but is really a back-and-forth in disguise.
+  // See getStreakBlocks.
+  const { chatMessages, textMessages, language } = ctx
+  const blocks = getStreakBlocks(chatMessages)
   const top = blocks[0]
 
   if (!top) {
@@ -929,7 +1012,6 @@ function metricMonologuista(ctx: MetricContext): MetricResult {
         language === 'es'
           ? `mensajes seguidos de ${top.sender} sin respuesta`
           : `messages in a row from ${top.sender} with no reply`,
-      note: top.texts[0] ? `"${truncate(top.texts[0], 90)}"` : undefined,
       chart: { kind: 'bar', items: rankingBars(bySender, language, 8) },
     },
     detail: {
@@ -938,8 +1020,10 @@ function metricMonologuista(ctx: MetricContext): MetricResult {
           ? 'Rachas más largas de mensajes seguidos, por integrante.'
           : 'Longest back-to-back message streaks, by participant.',
       breakdown: breakdownCount(bySender, language),
+      // Streak blocks are built from textMessages (see the note above), so their
+      // highlighted body has to walk that same list — see rangeGroup's doc comment.
       groups: capGroups(blocks).map((block) =>
-        rangeGroup(ctx, block.startMessage, block.endMessage, streakHeading(block, language)),
+        rangeGroup(ctx, block.startMessage, block.endMessage, streakHeading(block, language), 8, textMessages, ctx.textMessageIndex),
       ),
       paginatedItemsLabel: language === 'es' ? 'Bloques de mensajes seguidos' : 'Back-to-back message blocks',
     },
@@ -957,11 +1041,15 @@ function metricReloj(ctx: MetricContext): MetricResult {
   const owls = sumRange(hours, [22, 23, 0, 1, 2, 3, 4])
   const earlyBirds = sumRange(hours, [6, 7, 8, 9, 10, 11])
   const isOwl = owls >= earlyBirds
+  const messageUnit = language === 'es' ? 'mensajes' : 'messages'
 
-  const series: MetricSeriesEntry[] = participants.map((name) => ({
-    name,
-    chart: { kind: 'hourHeatmap', hours: hourBuckets(chatMessagesBySender.get(name) ?? []) },
-  }))
+  const series: MetricSeriesEntry[] = participants.map((name) => {
+    const ownHours = hourBuckets(chatMessagesBySender.get(name) ?? [])
+    return {
+      name,
+      chart: { kind: 'hourHeatmap', hours: ownHours, peakPeriodLabel: peakDayPartLabel(ownHours, language), unit: messageUnit },
+    }
+  })
 
   return {
     hasData: true,
@@ -974,7 +1062,7 @@ function metricReloj(ctx: MetricContext): MetricResult {
         : language === 'es'
           ? `${earlyBirds} mensajes matutinos`
           : `${earlyBirds} morning messages`,
-      chart: { kind: 'hourHeatmap', hours },
+      chart: { kind: 'hourHeatmap', hours, peakPeriodLabel: peakDayPartLabel(hours, language), unit: messageUnit },
     },
     detail: {
       intro:
@@ -1079,6 +1167,18 @@ function metricEmojis(ctx: MetricContext): MetricResult {
   }
 }
 
+// The compact card has room for the podium's top 3 without crowding out the
+// stat above it; "Ver más" gets the fuller top 8 that already existed.
+const CARD_STREAK_LIMIT = 3
+
+function toStreakRanges(streaks: DailyStreak[], language: Language): StreakRange[] {
+  return streaks.map((streak) => ({
+    startLabel: formatDate(streak.startIso, language),
+    endLabel: formatDate(streak.endIso, language),
+    days: streak.days,
+  }))
+}
+
 function metricRachaDias(ctx: MetricContext): MetricResult {
   const { chatMessages, language } = ctx
   const streaks = getDailyStreaks(chatMessages)
@@ -1091,25 +1191,21 @@ function metricRachaDias(ctx: MetricContext): MetricResult {
   const topStreaks = streaks.slice(0, 8)
   const participation = getStreakParticipation(chatMessages, topStreaks)
   const total = [...participation.values()].reduce((sum, value) => sum + value, 0)
-
-  const streakRanges: StreakRange[] = topStreaks.map((streak) => ({
-    startLabel: formatDate(streak.startIso, language),
-    endLabel: formatDate(streak.endIso, language),
-    days: streak.days,
-  }))
+  const dayUnit = language === 'es' ? 'días' : 'days'
 
   return {
     hasData: true,
     basic: {
       value: formatNumber(longest.days, language),
       label: language === 'es' ? 'días seguidos con al menos un mensaje' : 'days in a row with at least one message',
+      chart: { kind: 'calendarStreak', streaks: toStreakRanges(streaks.slice(0, CARD_STREAK_LIMIT), language), unit: dayUnit },
     },
     detail: {
       intro:
         language === 'es'
           ? 'Las rachas más largas de días activos, y quién más aportó en ellas.'
           : 'The longest active-day streaks, and who carried them most.',
-      chart: { kind: 'calendarStreak', streaks: streakRanges },
+      chart: { kind: 'calendarStreak', streaks: toStreakRanges(topStreaks, language), unit: dayUnit },
       breakdown: total > 0 ? breakdownPercent(participation, total) : undefined,
     },
   }
@@ -1182,6 +1278,8 @@ function metricTestamento(ctx: MetricContext): MetricResult {
   }
 }
 
+const MULTIMEDIA_TOP_DAY_LIMIT = 5
+
 function metricMultimedia(ctx: MetricContext): MetricResult {
   const { chatMessages, language } = ctx
   const mediaMessages = chatMessages.filter((message) => message.isMedia)
@@ -1191,6 +1289,15 @@ function metricMultimedia(ctx: MetricContext): MetricResult {
   if (!top) {
     return { hasData: false }
   }
+
+  // A bar per calendar day (the old chart) grows without bound over a chat's whole
+  // history — a year of activity means a year of slivers. Just the busiest days
+  // reads the same story (when the bursts of photos/videos/audios happened) in a
+  // fixed, small amount of space regardless of how long the chat's been going.
+  const topDays = [...countByDay(mediaMessages).entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, MULTIMEDIA_TOP_DAY_LIMIT)
+    .map(([day, count]) => ({ label: formatDate(day, language), value: count, displayValue: formatNumber(count, language) }))
 
   return {
     hasData: true,
@@ -1202,9 +1309,9 @@ function metricMultimedia(ctx: MetricContext): MetricResult {
     detail: {
       intro:
         language === 'es'
-          ? 'Los días con más ráfagas de fotos, videos y audios.'
-          : 'The days with the biggest bursts of photos, videos, and voice notes.',
-      chart: { kind: 'timeline', points: dailyVolume(mediaMessages, language) },
+          ? 'Los 5 días con más fotos, videos y audios enviados.'
+          : 'The 5 days with the most photos, videos, and voice notes sent.',
+      chart: { kind: 'bar', items: topDays },
       breakdown: breakdownPercent(bySender, mediaMessages.length),
     },
   }
@@ -1316,22 +1423,18 @@ function metricHeatmapAnual(ctx: MetricContext): MetricResult {
     activeDaysBySender.set(name, ownDays.size)
   }
 
-  // A day-by-day GitHub-style grid stops being readable once a chat spans several
-  // months — switch to a month-by-month view instead so it stays legible at a glance.
-  const useMonths = daySpan(days) > MONTH_VIEW_THRESHOLD_DAYS
-  const monthRange = useMonths ? monthRangeOf(chatMessages) : null
-
-  const chartFor = (messages: ChatMessage[], compact: boolean): ChartData => {
-    if (useMonths && monthRange) {
-      const months = monthlyCounts(messages, monthRange, language)
-      return { kind: 'monthHeatmap', months: compact ? truncateMonths(months) : months }
-    }
-    return { kind: 'yearHeatmap', days: getCalendarDays(messages) }
-  }
+  // Days read fine for a short chat but turn into noise once the span stretches
+  // into months or years — step up to weeks, then months, so the wave always
+  // resolves into something readable instead of a wall of tiny wiggles.
+  const granularity = activityGranularity(daySpan(days))
+  const chartFor = (messages: ChatMessage[]): ChartData => ({
+    kind: 'activityWave',
+    points: activityPoints(messages, granularity, language),
+  })
 
   const series: MetricSeriesEntry[] = participants.map((name) => ({
     name,
-    chart: chartFor(chatMessagesBySender.get(name) ?? [], false),
+    chart: chartFor(chatMessagesBySender.get(name) ?? []),
   }))
 
   return {
@@ -1342,16 +1445,14 @@ function metricHeatmapAnual(ctx: MetricContext): MetricResult {
         language === 'es'
           ? `mensajes en el día más activo (${formatDate(top.date, language)})`
           : `messages on the most active day (${formatDate(top.date, language)})`,
-      // The card stays compact (recent months only) even for years of history —
-      // the full range is always one tap away in "Ver más".
-      chart: chartFor(chatMessages, true),
+      chart: chartFor(chatMessages),
     },
     detail: {
       intro:
         language === 'es'
-          ? 'El mapa de calor completo, y el propio de cada integrante para comparar quién lideró cada época.'
-          : "The full heatmap, plus each participant's own to compare who led the chat in different stretches.",
-      chart: chartFor(chatMessages, false),
+          ? 'La curva completa, y la propia de cada integrante para comparar quién lideró cada época.'
+          : "The full curve, plus each participant's own to compare who led the chat in different stretches.",
+      chart: chartFor(chatMessages),
       breakdown: [...activeDaysBySender.entries()]
         .sort((left, right) => right[1] - left[1])
         .map(([name, value]) => ({
@@ -1505,34 +1606,34 @@ function metricInactividad(ctx: MetricContext): MetricResult {
 
 function metricWordcloud(ctx: MetricContext): MetricResult {
   const { textMessages, participants, textMessagesBySender, language } = ctx
-  const overall = getWordCounts(textMessages)
+  const unigramCounts = getWordCounts(textMessages)
 
-  if (overall.size === 0) {
+  if (unigramCounts.size === 0) {
     return { hasData: false }
   }
 
-  const topOverall = [...overall.entries()].sort((left, right) => right[1] - left[1])
+  // The headline stat is specifically "the most repeated WORD" — always a single
+  // word, even though the cloud itself (below) also mixes in 2-/3-word combos.
+  const [topWord, topWordCount] = topEntries(unigramCounts, 1)[0]
+  const timesUnit = language === 'es' ? 'veces' : 'times'
   const series: MetricSeriesEntry[] = participants
-    .map((name) => {
-      const own = getWordCounts(textMessagesBySender.get(name) ?? [])
-      const words: WordCloudDatum[] = [...own.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 40)
-        .map(([word, count]) => ({ word, count }))
-      return { name, words }
-    })
+    .map((name) => ({ name, words: buildWordCloud(textMessagesBySender.get(name) ?? []) }))
     .filter((entry) => entry.words.length > 0)
-    .map((entry) => ({ name: entry.name, chart: { kind: 'wordCloud', words: entry.words } as ChartData }))
+    .map((entry) => ({ name: entry.name, chart: { kind: 'wordCloud', words: entry.words, unit: timesUnit } as ChartData }))
 
   return {
     hasData: true,
     basic: {
-      value: topOverall[0][0],
+      value: topWord,
       label:
         language === 'es'
-          ? `la palabra más repetida (${formatNumber(topOverall[0][1], language)} veces)`
-          : `the most repeated word (${formatNumber(topOverall[0][1], language)} times)`,
-      chart: { kind: 'wordCloud', words: topOverall.slice(0, 40).map(([word, count]) => ({ word, count })) },
+          ? `la palabra más repetida (${formatNumber(topWordCount, language)} veces)`
+          : `the most repeated word (${formatNumber(topWordCount, language)} times)`,
+      chart: {
+        kind: 'wordCloud',
+        words: buildWordCloud(textMessages),
+        unit: timesUnit,
+      },
     },
     detail: {
       intro:
@@ -2051,7 +2152,12 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
         language === 'es'
           ? 'Horarios preferidos del grupo, los mensajes exactos de cada integrante y las palabras más usadas.'
           : "The group's preferred hours, each participant's exact messages, and the words used most.",
-      chart: { kind: 'hourHeatmap', hours },
+      chart: {
+        kind: 'hourHeatmap',
+        hours,
+        peakPeriodLabel: peakDayPartLabel(hours, language),
+        unit: language === 'es' ? 'mensajes' : 'messages',
+      },
       breakdown: breakdownPercent(bySender, total),
       groups: capGroups(groupsList),
       groupsLabel: language === 'es' ? 'Los mensajes más picantes de cada uno' : "Each participant's spiciest messages",
@@ -2136,63 +2242,144 @@ function bubbleFor(message: ChatMessage, language: Language, isHighlight: boolea
   }
 }
 
-function dividerBubble(skippedCount: number, language: Language): ChatBubble {
+function dividerBubble(skippedCount: number, language: Language, expandBubbles?: ChatBubble[]): ChatBubble {
   const count = formatNumber(skippedCount, language)
+  // Worded differently from the plain (non-clickable) divider below — "ver" days it's
+  // tappable instead of reading identically to the dead-end one nested inside it.
+  const text = expandBubbles
+    ? language === 'es'
+      ? `Ver ${count} mensajes más`
+      : `Show ${count} more messages`
+    : language === 'es'
+      ? `⋯ ${count} mensajes más ⋯`
+      : `⋯ ${count} more messages ⋯`
+
   return {
     sender: '',
-    text: language === 'es' ? `⋯ ${count} mensajes más ⋯` : `⋯ ${count} more messages ⋯`,
+    text,
     timestampLabel: '',
     isHighlight: false,
     isDivider: true,
+    expand: expandBubbles ? { bubbles: expandBubbles } : undefined,
   }
+}
+
+// A click on a divider dumps its whole gap into the DOM, so a 500-message streak
+// caps what a single click can reveal: 15 real messages off each edge of the gap,
+// plus — if that still leaves a middle unaccounted for — one more (non-clickable)
+// divider for whatever's left. That inner divider has no `expand` of its own, so
+// there's no way to keep drilling into an ever-growing streak.
+const REVEAL_CAP = 30
+const REVEAL_EDGE = 15
+
+function revealedGapBubbles(
+  sourceMessages: ChatMessage[],
+  gapStart: number,
+  gapEnd: number,
+  skippedCount: number,
+  language: Language,
+): ChatBubble[] {
+  if (skippedCount <= REVEAL_CAP) {
+    const bubbles: ChatBubble[] = []
+    for (let index = gapStart; index <= gapEnd; index += 1) {
+      bubbles.push(bubbleFor(sourceMessages[index], language, true))
+    }
+    return bubbles
+  }
+
+  const bubbles: ChatBubble[] = []
+  for (let index = gapStart; index < gapStart + REVEAL_EDGE; index += 1) {
+    bubbles.push(bubbleFor(sourceMessages[index], language, true))
+  }
+  bubbles.push(dividerBubble(skippedCount - REVEAL_CAP, language))
+  for (let index = gapEnd - REVEAL_EDGE + 1; index <= gapEnd; index += 1) {
+    bubbles.push(bubbleFor(sourceMessages[index], language, true))
+  }
+  return bubbles
+}
+
+/** Up to `count` real (non-placeholder) messages immediately before `index`, in
+ * chat order — media/system placeholders are skipped rather than counted against
+ * the window, since they're excluded from the algorithm itself (see `textMessages`)
+ * and showing a bare "Media file" as someone's line of context is just confusing. */
+function precedingContext(ctx: MetricContext, index: number, count: number): ChatBubble[] {
+  const { chatMessages, language } = ctx
+  const bubbles: ChatBubble[] = []
+
+  for (let cursor = index - 1; cursor >= 0 && bubbles.length < count; cursor -= 1) {
+    const candidate = chatMessages[cursor]
+    if (candidate.isSystemPlaceholder) {
+      continue
+    }
+    bubbles.push(bubbleFor(candidate, language, false))
+  }
+
+  return bubbles.reverse()
+}
+
+/** Same as `precedingContext`, looking forward from `index` instead. */
+function followingContext(ctx: MetricContext, index: number, count: number): ChatBubble[] {
+  if (index < 0) {
+    return []
+  }
+
+  const { chatMessages, language } = ctx
+  const bubbles: ChatBubble[] = []
+
+  for (let cursor = index + 1; cursor < chatMessages.length && bubbles.length < count; cursor += 1) {
+    const candidate = chatMessages[cursor]
+    if (candidate.isSystemPlaceholder) {
+      continue
+    }
+    bubbles.push(bubbleFor(candidate, language, false))
+  }
+
+  return bubbles
 }
 
 /** One highlighted message plus the real message right before and after it, so the
  * user can recall the exchange instead of reading an isolated quote. */
 function momentGroup(ctx: MetricContext, message: ChatMessage, heading: string): MessageGroup {
-  const { chatMessages, language, messageIndex } = ctx
+  const { language, messageIndex } = ctx
   const index = messageIndex.get(message.id) ?? -1
-  const bubbles: ChatBubble[] = []
-
-  for (let cursor = index - CONTEXT_WINDOW; cursor < index; cursor += 1) {
-    if (cursor >= 0) {
-      bubbles.push(bubbleFor(chatMessages[cursor], language, false))
-    }
-  }
-  bubbles.push(bubbleFor(message, language, true))
-  for (let cursor = index + 1; cursor <= index + CONTEXT_WINDOW; cursor += 1) {
-    if (index >= 0 && cursor < chatMessages.length) {
-      bubbles.push(bubbleFor(chatMessages[cursor], language, false))
-    }
-  }
+  const bubbles: ChatBubble[] = [
+    ...precedingContext(ctx, index, CONTEXT_WINDOW),
+    bubbleFor(message, language, true),
+    ...followingContext(ctx, index, CONTEXT_WINDOW),
+  ]
 
   return { id: message.id, heading, bubbles }
 }
 
 /** A whole highlighted range (e.g. a streak block), with a few messages of context
  * right before the range started and right after it ended. Caps how many messages
- * inside the range actually render, so a 100-message burst doesn't flood the UI. */
+ * inside the range actually render, so a 100-message burst doesn't flood the UI.
+ *
+ * `startMessage`/`endMessage` are positions within `sourceMessages` (defaulting to
+ * the full `chatMessages`) — the highlighted body and its gap-reveal walk that same
+ * list. A caller whose range was computed over `textMessages` (media excluded, e.g.
+ * el Monologuista's streaks) must pass `ctx.textMessages`/`ctx.textMessageIndex`
+ * too, or a media message the range never counted could still turn up positioned
+ * between two of its `chatMessages` neighbors and render as if it were part of it.
+ * Before/after *context* always comes from the full `chatMessages` regardless —
+ * that's real surrounding chat, not part of the range itself. */
 function rangeGroup(
   ctx: MetricContext,
   startMessage: ChatMessage,
   endMessage: ChatMessage,
   heading: string,
   maxHighlighted = 8,
+  sourceMessages: ChatMessage[] = ctx.chatMessages,
+  sourceIndex: Map<string, number> = ctx.messageIndex,
 ): MessageGroup {
-  const { chatMessages, language, messageIndex } = ctx
-  const startIndex = messageIndex.get(startMessage.id) ?? -1
-  const endIndex = messageIndex.get(endMessage.id) ?? startIndex
-  const bubbles: ChatBubble[] = []
-
-  for (let cursor = startIndex - CONTEXT_WINDOW; cursor < startIndex; cursor += 1) {
-    if (cursor >= 0) {
-      bubbles.push(bubbleFor(chatMessages[cursor], language, false))
-    }
-  }
+  const { language, messageIndex } = ctx
+  const startIndex = sourceIndex.get(startMessage.id) ?? -1
+  const endIndex = sourceIndex.get(endMessage.id) ?? startIndex
+  const bubbles: ChatBubble[] = [...precedingContext(ctx, messageIndex.get(startMessage.id) ?? -1, CONTEXT_WINDOW)]
 
   const highlightEnd = Math.min(endIndex, startIndex + maxHighlighted - 1)
   for (let index = startIndex; index >= 0 && index <= highlightEnd; index += 1) {
-    bubbles.push(bubbleFor(chatMessages[index], language, true))
+    bubbles.push(bubbleFor(sourceMessages[index], language, true))
   }
 
   // Truncated above `maxHighlighted`? Say so, and still show the real last message
@@ -2201,16 +2388,14 @@ function rangeGroup(
   if (endIndex > highlightEnd) {
     const skippedCount = endIndex - highlightEnd - 1
     if (skippedCount > 0) {
-      bubbles.push(dividerBubble(skippedCount, language))
+      const gapStart = highlightEnd + 1
+      const gapEnd = endIndex - 1
+      bubbles.push(dividerBubble(skippedCount, language, revealedGapBubbles(sourceMessages, gapStart, gapEnd, skippedCount, language)))
     }
-    bubbles.push(bubbleFor(chatMessages[endIndex], language, true))
+    bubbles.push(bubbleFor(sourceMessages[endIndex], language, true))
   }
 
-  for (let cursor = endIndex + 1; cursor <= endIndex + CONTEXT_WINDOW; cursor += 1) {
-    if (endIndex >= 0 && cursor < chatMessages.length) {
-      bubbles.push(bubbleFor(chatMessages[cursor], language, false))
-    }
-  }
+  bubbles.push(...followingContext(ctx, messageIndex.get(endMessage.id) ?? -1, CONTEXT_WINDOW))
 
   return { id: startMessage.id, heading, bubbles }
 }
@@ -2405,6 +2590,15 @@ function getStreakBlocks(messages: ChatMessage[]): StreakBlock[] {
       continue
     }
 
+    // A media placeholder ("Media file"/"Media omitted" — a voice note, photo, etc.
+    // sent with no caption) breaks the run rather than extending or starting one:
+    // it has no text to show, but it's still a real message, so silently skipping
+    // over it (the way textMessages would) let a streak span straight across it.
+    if (message.isSystemPlaceholder) {
+      current = null
+      continue
+    }
+
     if (current && current.sender === message.sender) {
       current.count += 1
       current.endMessage = message
@@ -2449,6 +2643,28 @@ function hourBuckets(messages: ChatMessage[]): number[] {
 
 function sumRange(hours: number[], indices: number[]): number {
   return indices.reduce((sum, index) => sum + hours[index], 0)
+}
+
+/** Four even 6-hour slices of the day, each with its own natural-language name — the
+ * hour-by-hour chart is precise but "22h" doesn't read as fast as "por la noche" does. */
+const DAY_PARTS: { es: string; en: string; hours: number[] }[] = [
+  { es: 'de madrugada', en: 'in the early morning', hours: [0, 1, 2, 3, 4, 5] },
+  { es: 'por la mañana', en: 'in the morning', hours: [6, 7, 8, 9, 10, 11] },
+  { es: 'por la tarde', en: 'in the afternoon', hours: [12, 13, 14, 15, 16, 17] },
+  { es: 'por la noche', en: 'at night', hours: [18, 19, 20, 21, 22, 23] },
+]
+
+function peakDayPartLabel(hours: number[], language: Language): string {
+  let best = DAY_PARTS[0]
+  let bestSum = -1
+  for (const part of DAY_PARTS) {
+    const sum = sumRange(hours, part.hours)
+    if (sum > bestSum) {
+      bestSum = sum
+      best = part
+    }
+  }
+  return language === 'es' ? `Más actividad ${best.es}` : `Most active ${best.en}`
 }
 
 /** A message only counts as a genuine "icebreaker" when it starts a new
@@ -2605,37 +2821,100 @@ function daySpan(days: CalendarDay[]): number {
   return (new Date(sorted[sorted.length - 1]).getTime() - new Date(sorted[0]).getTime()) / 86_400_000
 }
 
-function truncateMonths(months: MonthDatum[]): MonthDatum[] {
-  return months.length > CARD_MONTH_LIMIT ? months.slice(-CARD_MONTH_LIMIT) : months
+type ActivityGranularity = 'day' | 'week' | 'month'
+
+// "3 meses de chat" reads fine day-by-day; "2 años de chat" needs months or the
+// wave never resolves into anything but noise. Weeks bridge the gap in between.
+const WEEK_GRANULARITY_THRESHOLD_DAYS = 60
+const MONTH_GRANULARITY_THRESHOLD_DAYS = 270
+
+function activityGranularity(spanDays: number): ActivityGranularity {
+  if (spanDays <= WEEK_GRANULARITY_THRESHOLD_DAYS) {
+    return 'day'
+  }
+  if (spanDays <= MONTH_GRANULARITY_THRESHOLD_DAYS) {
+    return 'week'
+  }
+  return 'month'
 }
 
-function monthRangeOf(messages: ChatMessage[]): { start: string; end: string } {
-  const months = messages.map((message) => message.timestamp.slice(0, 7)).sort()
-  return { start: months[0], end: months[months.length - 1] }
+function toDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function monthlyCounts(messages: ChatMessage[], range: { start: string; end: string }, language: Language): MonthDatum[] {
+/** Monday of the week `timestamp` falls in, using the chat's own "day" (see
+ * `dayKey`) rather than the raw timestamp — weeks always start Monday regardless
+ * of locale, so bucket boundaries don't shift if the viewer toggles es/en. */
+function weekKey(timestamp: string): string {
+  const date = new Date(`${dayKey(timestamp)}T00:00:00`)
+  const isoDow = (date.getDay() + 6) % 7
+  date.setDate(date.getDate() - isoDow)
+  return toDateKey(date)
+}
+
+function formatWeekLabel(weekStartKey: string, language: Language): string {
+  const start = new Date(`${weekStartKey}T00:00:00`)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  const formatter = new Intl.DateTimeFormat(language === 'es' ? 'es-AR' : 'en-US', { day: '2-digit', month: 'short' })
+  return `${formatter.format(start)}–${formatter.format(end)}`
+}
+
+/** One point per day/week/month across the whole span, zero-filled for anything
+ * quiet — a two-week vacation has to show as a dip in the wave, not vanish and
+ * silently compress the timeline around it. */
+function activityPoints(messages: ChatMessage[], granularity: ActivityGranularity, language: Language): TimelinePoint[] {
   const counts = new Map<string, number>()
+  const keyOf =
+    granularity === 'day'
+      ? (message: ChatMessage) => dayKey(message.timestamp)
+      : granularity === 'week'
+        ? (message: ChatMessage) => weekKey(message.timestamp)
+        : (message: ChatMessage) => message.timestamp.slice(0, 7)
+
   for (const message of messages) {
-    const key = message.timestamp.slice(0, 7)
+    const key = keyOf(message)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
 
-  const result: MonthDatum[] = []
-  let [year, month] = range.start.split('-').map(Number)
-  const [endYear, endMonth] = range.end.split('-').map(Number)
-
-  while (year < endYear || (year === endYear && month <= endMonth)) {
-    const key = `${year}-${String(month).padStart(2, '0')}`
-    result.push({ monthLabel: formatMonthLabel(key, language), count: counts.get(key) ?? 0 })
-    month += 1
-    if (month > 12) {
-      month = 1
-      year += 1
-    }
+  const sortedKeys = [...counts.keys()].sort()
+  if (sortedKeys.length === 0) {
+    return []
   }
 
-  return result
+  const unit = language === 'es' ? 'mensajes' : 'messages'
+  const points: TimelinePoint[] = []
+
+  if (granularity === 'month') {
+    let [year, month] = sortedKeys[0].split('-').map(Number)
+    const [endYear, endMonth] = sortedKeys[sortedKeys.length - 1].split('-').map(Number)
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      const key = `${year}-${String(month).padStart(2, '0')}`
+      const value = counts.get(key) ?? 0
+      points.push({ dateLabel: formatMonthLabel(key, language), label: `${formatNumber(value, language)} ${unit}`, value })
+      month += 1
+      if (month > 12) {
+        month = 1
+        year += 1
+      }
+    }
+    return points
+  }
+
+  const stepDays = granularity === 'week' ? 7 : 1
+  const cursor = new Date(`${sortedKeys[0]}T00:00:00`)
+  const end = new Date(`${sortedKeys[sortedKeys.length - 1]}T00:00:00`)
+  while (cursor <= end) {
+    const key = toDateKey(cursor)
+    const value = counts.get(key) ?? 0
+    points.push({
+      dateLabel: granularity === 'week' ? formatWeekLabel(key, language) : formatDate(key, language),
+      label: `${formatNumber(value, language)} ${unit}`,
+      value,
+    })
+    cursor.setDate(cursor.getDate() + stepDays)
+  }
+  return points
 }
 
 function getWeekdayCounts(messages: ChatMessage[], language: Language): RadarDatum[] {
@@ -2710,17 +2989,90 @@ function silenceHeading(gap: Gap, language: Language): string {
     : `${formatDurationHours(gap.hours, language)} of silence — ${gap.after.sender} broke it`
 }
 
+// Matches a shared link's scheme+host+path in one shot ("https://www.instagram.com/
+// reel/xyz/?igsh=abc"), so it's removed as a whole instead of surviving into tokenize
+// and splitting into "https"/"www"/"instagram"/"igsh"/"reel" — a chat that forwards a
+// lot of links would otherwise have those dominate the word cloud over actual words.
+const urlPattern = /https?:\/\/\S+/gi
+
+function isContentToken(token: string): boolean {
+  return token.length >= 3 && !stopWords.has(token)
+}
+
 function getWordCounts(messages: ChatMessage[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const message of messages) {
-    for (const token of tokenize(message.contentText)) {
-      if (token.length < 3 || stopWords.has(token)) {
+    const textWithoutUrls = message.contentText.replace(urlPattern, ' ')
+    for (const token of tokenize(textWithoutUrls)) {
+      if (!isContentToken(token)) {
         continue
       }
       counts.set(token, (counts.get(token) ?? 0) + 1)
     }
   }
   return counts
+}
+
+/** Counts `n`-word phrases as they actually appear back to back in the text (not
+ * words filtered then re-joined, which would glue together words that were never
+ * adjacent). Only the first and last word have to be real content — same rule as
+ * a single word — so a phrase can still carry a short connector in the middle
+ * ("re con vos") without letting something like "de la" through on its own. */
+function getPhraseCounts(messages: ChatMessage[], size: number): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const message of messages) {
+    const textWithoutUrls = message.contentText.replace(urlPattern, ' ')
+    const tokens = tokenize(textWithoutUrls)
+    for (let start = 0; start + size <= tokens.length; start += 1) {
+      const gram = tokens.slice(start, start + size)
+      if (!isContentToken(gram[0]) || !isContentToken(gram[size - 1])) {
+        continue
+      }
+      const phrase = gram.join(' ')
+      counts.set(phrase, (counts.get(phrase) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+// Out of 40 cloud entries, at most this many are 2-/3-word phrases — the cloud
+// should still read mostly as single words, with combos as the occasional
+// highlight rather than crowding real vocabulary out.
+const WORD_CLOUD_LIMIT = 40
+const WORD_CLOUD_BIGRAM_SLOTS = 9
+const WORD_CLOUD_TRIGRAM_SLOTS = 3
+// A phrase that only happened once isn't a "frequent combination" — it's a
+// sentence fragment that happened to get sliced out.
+const PHRASE_MIN_COUNT = 2
+
+function topEntries(counts: Map<string, number>, limit: number, minCount = 1): [string, number][] {
+  return [...counts.entries()]
+    .filter(([, count]) => count >= minCount)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+}
+
+/** Blends single words with their most frequent 2- and 3-word combinations into
+ * one cloud, majority unigrams with phrases mixed in — see the slot constants
+ * above for the exact ratio. */
+function buildWordCloud(messages: ChatMessage[]): WordCloudDatum[] {
+  const trigrams = topEntries(getPhraseCounts(messages, 3), WORD_CLOUD_TRIGRAM_SLOTS, PHRASE_MIN_COUNT)
+
+  // A bigram that's just a piece of an already-picked trigram ("crack total" inside
+  // "crack total boludo") is the same occurrences restated, not a second distinct
+  // combo worth its own slot — drop it before ranking so a real standalone bigram
+  // gets that slot instead.
+  const bigramCandidates = [...getPhraseCounts(messages, 2).entries()].filter(
+    ([phrase, count]) => count >= PHRASE_MIN_COUNT && !trigrams.some(([trigram]) => trigram.includes(phrase)),
+  )
+  const bigrams = bigramCandidates.sort((left, right) => right[1] - left[1]).slice(0, WORD_CLOUD_BIGRAM_SLOTS)
+
+  const unigramLimit = WORD_CLOUD_LIMIT - trigrams.length - bigrams.length
+  const unigrams = topEntries(getWordCounts(messages), unigramLimit)
+
+  return [...unigrams, ...bigrams, ...trigrams]
+    .sort((left, right) => right[1] - left[1])
+    .map(([word, count]) => ({ word, count }))
 }
 
 function hasCringeWord(text: string): boolean {

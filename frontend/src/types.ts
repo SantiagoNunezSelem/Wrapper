@@ -180,11 +180,17 @@ export interface BarDatum {
   label: string
   value: number
   displayValue: string
+  /** Set only when `label` is a real chat participant — see `colorForParticipant`
+   * in lib/metrics.ts. Absent for category-style rankings (laugh styles, content
+   * types, emoji), which fall back to the chart's own by-position palette. */
+  color?: string
 }
 
 export interface DonutDatum {
   label: string
   value: number
+  /** Same rule as `BarDatum.color`. */
+  color?: string
 }
 
 export interface RadarDatum {
@@ -222,13 +228,14 @@ export interface MonthDatum {
 export type ChartData =
   | { kind: 'bar'; items: BarDatum[] }
   | { kind: 'donut'; items: DonutDatum[] }
-  | { kind: 'hourHeatmap'; hours: number[] }
-  | { kind: 'yearHeatmap'; days: CalendarDay[] }
-  | { kind: 'monthHeatmap'; months: MonthDatum[] }
+  | { kind: 'hourHeatmap'; hours: number[]; peakPeriodLabel?: string; unit?: string }
+  | { kind: 'yearHeatmap'; days: CalendarDay[]; unit?: string }
+  | { kind: 'monthHeatmap'; months: MonthDatum[]; unit?: string }
   | { kind: 'radar'; axes: RadarDatum[] }
-  | { kind: 'calendarStreak'; streaks: StreakRange[] }
+  | { kind: 'calendarStreak'; streaks: StreakRange[]; unit?: string }
   | { kind: 'timeline'; points: TimelinePoint[] }
-  | { kind: 'wordCloud'; words: WordCloudDatum[] }
+  | { kind: 'activityWave'; points: TimelinePoint[] }
+  | { kind: 'wordCloud'; words: WordCloudDatum[]; unit?: string }
   | { kind: 'histogram'; buckets: BarDatum[] }
 
 /** A single WhatsApp-style bubble inside a message group. `isHighlight` marks the
@@ -242,6 +249,10 @@ export interface ChatBubble {
   /** A synthetic "N messages skipped" marker rather than a real message — rendered
    * as a plain divider so a truncated streak never looks like it just ended there. */
   isDivider?: boolean
+  /** Present only on a clickable divider: the bubbles it reveals on click. Absent
+   * (or already exhausted by a nested non-clickable divider) means there's nothing
+   * left to reveal — see `revealedGapBubbles` in lib/metrics.ts. */
+  expand?: { bubbles: ChatBubble[] }
 }
 
 /** A collapsible unit in a metric's detail view: one heading (e.g. "Fran encadenó 9
@@ -264,6 +275,9 @@ export interface ParticipantBreakdownEntry {
   name: string
   value: number
   displayValue: string
+  /** Same rule as `BarDatum.color` — `name` here is always a participant, so this
+   * is set whenever that participant appears in the chat's canonical list. */
+  color?: string
 }
 
 export interface MetricSeriesEntry {

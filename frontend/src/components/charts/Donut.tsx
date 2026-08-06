@@ -29,7 +29,7 @@ export function Donut({ items }: { items: DonutDatum[] }) {
               cy={SIZE / 2}
               r={RADIUS}
               fill="none"
-              stroke={colorForIndex(index)}
+              stroke={item.color ?? colorForIndex(index)}
               strokeWidth={STROKE}
               strokeDasharray={`${dash} ${CIRCUMFERENCE - dash}`}
               strokeDashoffset={-offsetAccumulator}
@@ -44,7 +44,7 @@ export function Donut({ items }: { items: DonutDatum[] }) {
       <ul className="chart-legend">
         {items.map((item, index) => (
           <li key={item.label}>
-            <span className="chart-legend-dot" style={{ background: colorForIndex(index) }} />
+            <span className="chart-legend-dot" style={{ background: item.color ?? colorForIndex(index) }} />
             {item.label} · {Math.round((item.value / total) * 100)}%
           </li>
         ))}

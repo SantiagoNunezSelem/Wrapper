@@ -1,4 +1,5 @@
 import type { ChartData } from '../../types'
+import { ActivityWave } from './ActivityWave'
 import { BarRanking } from './BarRanking'
 import { CalendarStreak } from './CalendarStreak'
 import { Donut } from './Donut'
@@ -18,19 +19,21 @@ export function ChartRenderer({ chart, compact = false }: { chart: ChartData; co
     case 'donut':
       return <Donut items={chart.items} />
     case 'hourHeatmap':
-      return <HourHeatmap hours={chart.hours} />
+      return <HourHeatmap hours={chart.hours} peakPeriodLabel={chart.peakPeriodLabel} unit={chart.unit} />
     case 'yearHeatmap':
-      return <YearHeatmap days={chart.days} />
+      return <YearHeatmap days={chart.days} unit={chart.unit} />
     case 'monthHeatmap':
-      return <MonthHeatmap months={chart.months} />
+      return <MonthHeatmap months={chart.months} unit={chart.unit} />
     case 'radar':
       return <RadarChart axes={chart.axes} />
     case 'calendarStreak':
-      return <CalendarStreak streaks={chart.streaks} />
+      return <CalendarStreak streaks={chart.streaks} unit={chart.unit} />
     case 'timeline':
       return <Timeline points={chart.points} />
+    case 'activityWave':
+      return <ActivityWave points={chart.points} />
     case 'wordCloud':
-      return <WordCloud words={chart.words} compact={compact} />
+      return <WordCloud words={chart.words} unit={chart.unit} compact={compact} />
     default:
       return null
   }

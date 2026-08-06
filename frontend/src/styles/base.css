@@ -578,7 +578,6 @@ h3 {
   padding: 22px 20px;
   border-radius: 16px;
   background: var(--vz-surface-1);
-  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -884,10 +883,16 @@ h3 {
    contents` so its 3 children become direct items of this grid instead of a
    nested grid of their own. That's what lets the label column auto-size to
    the widest label *in this metric* (see .chart-bar-row) while every row's
-   bar still starts at that same shared X. */
+   bar still starts at that same shared X.
+   fit-content(128px), not minmax(min-content, 128px): a minmax() column whose
+   max is a fixed length gets stretched to that max during Grid's "maximize
+   tracks" step whenever the row has leftover space, even if every label is
+   short — the gap before the bar would stay 128px wide regardless of content.
+   fit-content()'s growth limit is capped by the label's own max-content, so
+   short labels ("Fran") leave a small gap and only long ones reach the cap. */
 .chart-bar-ranking {
   display: grid;
-  grid-template-columns: minmax(min-content, 128px) 1fr auto;
+  grid-template-columns: fit-content(128px) 1fr auto;
   align-items: center;
   gap: 9px 8px;
 }
@@ -972,16 +977,69 @@ h3 {
   gap: 6px;
 }
 
-.chart-hour-cells {
-  display: grid;
-  grid-template-columns: repeat(24, minmax(0, 1fr));
+/* padding-top reserves room for the peak badge (see .chart-hour-peak-badge),
+   which floats above the tallest bar and would otherwise clip against the top
+   of this container. */
+.chart-hour-bars {
+  display: flex;
+  align-items: flex-end;
   gap: 3px;
+  height: 120px;
+  padding-top: 24px;
 }
 
-.chart-hour-cell {
-  aspect-ratio: 1;
-  border-radius: 4px;
-  background: var(--vz-brand-cyan);
+.chart-hour-bar {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  min-width: 3px;
+}
+
+.chart-hour-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, var(--vz-brand-violet), var(--vz-brand-cyan));
+}
+
+/* The night hours (see NIGHT_HOURS in HourHeatmap.tsx) read a touch dimmer —
+   a quiet visual echo of "owls vs early birds" without adding a new color. */
+.chart-hour-bar.is-night .chart-hour-bar-fill {
+  opacity: 0.75;
+}
+
+/* `bottom` is the same value driving the fill's `height` (see HourHeatmap.tsx),
+   so this always sits flush above the bar's own top edge, however tall it is.
+   Centered by default; `.is-edge-start`/`.is-edge-end` (below) instead anchor to
+   one side of the peak bar and grow inward, so a peak near hour 0 or hour 23
+   never centers the badge past the card's edge — see EDGE_ZONE in the component. */
+.chart-hour-peak-badge {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-panel-solid);
+  border: 1px solid var(--vz-hairline-strong);
+  color: var(--vz-text-soft);
+  font-size: 0.64rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.chart-hour-peak-badge.is-edge-start {
+  left: 0;
+  transform: none;
+}
+
+.chart-hour-peak-badge.is-edge-end {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .chart-hour-marks {
@@ -989,6 +1047,13 @@ h3 {
   justify-content: space-between;
   font-size: 0.66rem;
   color: var(--vz-text-faint);
+}
+
+.chart-hour-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--vz-text-dim);
 }
 
 .chart-year-heatmap {
@@ -1014,65 +1079,75 @@ h3 {
   gap: 12px;
 }
 
-.chart-radar-labels {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
-  gap: 6px 10px;
-  font-size: 0.74rem;
-  color: var(--vz-text-muted);
-  text-align: center;
-  width: 100%;
+.chart-radar-axis-name {
+  fill: var(--vz-text-strong);
+  font-size: 10px;
+  font-weight: 700;
 }
 
-.chart-radar-labels strong {
-  display: block;
-  color: var(--vz-text-strong);
+.chart-radar-axis-value {
+  fill: var(--vz-text-dim);
+  font-size: 9px;
 }
 
-.chart-calendar-streak {
+/* Podio de rachas — la #1 destacada con el degradado de marca, el resto en
+   tarjetas parejas. Reemplaza al grid de puntos verde lima (no combinaba con
+   el resto de la app) con el mismo lenguaje visual que ya usa el resto de
+   Vistazo. */
+.chart-streak-podium {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.chart-streak-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.chart-streak-range {
-  display: flex;
-  align-items: baseline;
   gap: 8px;
-  font-size: 0.82rem;
-  color: var(--vz-text-muted);
 }
 
-.chart-streak-range strong {
-  font-size: 1.15rem;
+.chart-streak-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-1);
+  border: 1px solid var(--vz-hairline);
+}
+
+.chart-streak-card.is-first {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.16), rgba(34, 211, 238, 0.1));
+  border-color: rgba(192, 132, 252, 0.3);
+}
+
+.chart-streak-rank {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 800;
+  background: var(--vz-surface-4);
+  color: var(--vz-text-soft);
+}
+
+.chart-streak-card.is-first .chart-streak-rank {
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+}
+
+.chart-streak-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.chart-streak-card-body strong {
+  font-size: 1rem;
   color: var(--vz-text-strong);
 }
 
-.chart-streak-dots {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  align-items: center;
-}
-
-.chart-streak-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: #a3e635;
-}
-
-.chart-streak-overflow {
-  font-size: 0.72rem;
+.chart-streak-card-body span {
+  font-size: 0.74rem;
   color: var(--vz-text-dim);
 }
 
@@ -1106,6 +1181,39 @@ h3 {
 }
 
 .chart-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.64rem;
+  color: var(--vz-text-faint);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Activity wave — smooth curve replacing the old GitHub-style calendar    */
+/* grid (see ActivityWave.tsx). The SVG is a fixed logical viewBox, so it  */
+/* scales fluidly with its container — no JS width measurement needed.    */
+/* ---------------------------------------------------------------------- */
+
+.chart-activity-wave {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-activity-wave-svg {
+  display: block;
+}
+
+.chart-activity-wave-baseline {
+  stroke: rgba(255, 255, 255, 0.07);
+}
+
+.chart-activity-wave-peak-dot {
+  fill: var(--vz-panel-solid);
+  stroke: var(--vz-brand-violet);
+  stroke-width: 2;
+}
+
+.chart-activity-wave-axis {
   display: flex;
   justify-content: space-between;
   font-size: 0.64rem;
@@ -1219,6 +1327,41 @@ h3 {
   color: var(--vz-text-dim);
   padding: 2px 0;
   letter-spacing: 0.02em;
+}
+
+/* Reads as an actual control (pill, border, icon) instead of the plain text the
+   dead-end divider above uses — otherwise a clickable "N more messages" and a
+   dead-end one look identical and nothing hints that this one can be tapped. */
+button.chat-bubble-divider.is-expandable {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+  margin: 2px auto;
+  padding: 7px 16px;
+  background: var(--vz-surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--vz-radius-pill);
+  color: var(--vz-brand-cyan);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+button.chat-bubble-divider.is-expandable svg {
+  flex-shrink: 0;
+}
+
+button.chat-bubble-divider.is-expandable:hover {
+  background: var(--vz-surface-3, rgba(255, 255, 255, 0.09));
+  border-color: var(--vz-brand-cyan);
+}
+
+button.chat-bubble-divider.is-expandable:active {
+  transform: scale(0.97);
 }
 
 .chat-bubble-head {
@@ -2199,3 +2342,45 @@ h3 {
   }
 }
 
+
+/* ==========================================================================
+   Tooltip — reemplazo propio del `title` nativo (ver components/Tooltip.tsx)
+   ==========================================================================
+
+   Mismo panel oscuro con blur que modales y dev-toolbar, para que se lea
+   como parte de Vistazo y no como un cuadrito del sistema operativo.
+   `pointer-events: none` a propósito: el contenido es sólo texto, así que el
+   tooltip nunca necesita recibir su propio hover, y dejarlo pasar evita que
+   se interponga entre el puntero y lo que sigue abajo.
+   ========================================================================== */
+
+.vz-tooltip {
+  z-index: 200;
+  max-width: 240px;
+  padding: 7px 12px;
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-panel);
+  backdrop-filter: blur(var(--vz-blur));
+  border: 1px solid var(--vz-hairline-strong);
+  box-shadow: var(--vz-shadow-card);
+  color: var(--vz-text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 110ms ease, transform 110ms ease;
+}
+
+.vz-tooltip.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vz-tooltip {
+    transition: opacity 90ms linear;
+    transform: none;
+  }
+}

@@ -1,3 +1,5 @@
+import { Tooltip } from './Tooltip'
+
 export function CrossIcon({ size = 16 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
@@ -18,8 +20,10 @@ export function CrossButton({
   className?: string
 }) {
   return (
-    <button type="button" className={`icon-only-button ${className}`} onClick={onClick} aria-label={label} title={label}>
-      <CrossIcon />
-    </button>
+    <Tooltip content={label}>
+      <button type="button" className={`icon-only-button ${className}`} onClick={onClick} aria-label={label}>
+        <CrossIcon />
+      </button>
+    </Tooltip>
   )
 }
