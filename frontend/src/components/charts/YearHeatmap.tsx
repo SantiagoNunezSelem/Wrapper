@@ -1,6 +1,7 @@
 import type { CalendarDay } from '../../types'
+import { Tooltip } from '../Tooltip'
 
-export function YearHeatmap({ days }: { days: CalendarDay[] }) {
+export function YearHeatmap({ days, unit }: { days: CalendarDay[]; unit?: string }) {
   if (days.length === 0) {
     return null
   }
@@ -30,16 +31,16 @@ export function YearHeatmap({ days }: { days: CalendarDay[] }) {
   return (
     <div className="chart-year-heatmap" style={{ gridTemplateColumns: `repeat(${column + 1}, minmax(0, 1fr))` }}>
       {cells.map((cell) => (
-        <span
-          key={cell.date}
-          className="chart-year-cell"
-          style={{
-            gridColumn: cell.column + 1,
-            gridRow: cell.row + 1,
-            background: `rgba(34, 211, 238, ${cell.count === 0 ? 0.08 : 0.28 + (cell.count / max) * 0.72})`,
-          }}
-          title={`${cell.date} · ${cell.count}`}
-        />
+        <Tooltip key={cell.date} content={`${cell.date} · ${cell.count}${unit ? ` ${unit}` : ''}`}>
+          <span
+            className="chart-year-cell"
+            style={{
+              gridColumn: cell.column + 1,
+              gridRow: cell.row + 1,
+              background: `rgba(34, 211, 238, ${cell.count === 0 ? 0.08 : 0.28 + (cell.count / max) * 0.72})`,
+            }}
+          />
+        </Tooltip>
       ))}
     </div>
   )

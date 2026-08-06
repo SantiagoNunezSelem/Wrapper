@@ -1,8 +1,11 @@
 import type { RadarDatum } from '../../types'
 
-const SIZE = 180
+const SIZE = 220
 const CENTER = SIZE / 2
 const MAX_RADIUS = 62
+// Where the day-name labels sit, past the outer ring so they never overlap the
+// shape itself even when a value maxes out that ring.
+const LABEL_RADIUS = MAX_RADIUS + 26
 
 function pointOnCircle(index: number, total: number, radius: number): [number, number] {
   const angle = (Math.PI * 2 * index) / total - Math.PI / 2
@@ -39,15 +42,23 @@ export function RadarChart({ axes }: { axes: RadarDatum[] }) {
           const [x, y] = pointOnCircle(index, axes.length, (axis.value / max) * MAX_RADIUS)
           return <circle key={axis.axis} cx={x} cy={y} r={3} fill="#22d3ee" />
         })}
+        {/* Always-on labels, not a hover tooltip — a 7-point star has no obvious way
+            to tell which tip is which day otherwise, and hover doesn't exist on
+            mobile anyway. Drawn last so they sit above the ring lines. */}
+        {axes.map((axis, index) => {
+          const [x, y] = pointOnCircle(index, axes.length, LABEL_RADIUS)
+          return (
+            <g key={axis.axis}>
+              <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" className="chart-radar-axis-name">
+                {axis.axis}
+              </text>
+              <text x={x} y={y + 13} textAnchor="middle" dominantBaseline="middle" className="chart-radar-axis-value">
+                {axis.value}
+              </text>
+            </g>
+          )
+        })}
       </svg>
-      <ul className="chart-radar-labels">
-        {axes.map((axis) => (
-          <li key={axis.axis}>
-            <span>{axis.axis}</span>
-            <strong>{axis.value}</strong>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }

@@ -125,6 +125,7 @@ export function MetricModal({
                       label: entry.name,
                       value: entry.value,
                       displayValue: entry.displayValue,
+                      color: entry.color,
                     }))}
                   />
                 </div>

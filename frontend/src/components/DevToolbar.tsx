@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { clearDevToolbarPosition, getDevToolbarPosition, setDevToolbarPosition, type ToolbarPosition } from '../lib/devFlags'
+import { Tooltip } from './Tooltip'
 
 export interface DevToolbarCopy {
   aiOn: string
@@ -154,39 +155,38 @@ export function DevToolbar({
       aria-label="Local development tools"
       style={position ? { top: position.top, left: position.left, right: 'auto', bottom: 'auto' } : undefined}
     >
-      <span
-        className="dev-toolbar-grip"
-        role="button"
-        tabIndex={0}
-        aria-label={copy.dragHint}
-        title={copy.dragHint}
-        onPointerDown={handleGripPointerDown}
-        onDoubleClick={handleGripDoubleClick}
-      >
-        <GripIcon />
-        {copy.badge}
-      </span>
+      <Tooltip content={copy.dragHint}>
+        <span
+          className="dev-toolbar-grip"
+          role="button"
+          tabIndex={0}
+          aria-label={copy.dragHint}
+          onPointerDown={handleGripPointerDown}
+          onDoubleClick={handleGripDoubleClick}
+        >
+          <GripIcon />
+          {copy.badge}
+        </span>
+      </Tooltip>
 
-      <button
-        type="button"
-        className={`dev-toggle ${isAiDisabled ? 'is-off' : 'is-on'}`}
-        onClick={onToggleAi}
-        title={isAiDisabled ? copy.aiOffHint : copy.aiOnHint}
-      >
-        <span className="dev-toggle-dot" aria-hidden="true" />
-        {isAiDisabled ? copy.aiOff : copy.aiOn}
-      </button>
+      <Tooltip content={isAiDisabled ? copy.aiOffHint : copy.aiOnHint}>
+        <button type="button" className={`dev-toggle ${isAiDisabled ? 'is-off' : 'is-on'}`} onClick={onToggleAi}>
+          <span className="dev-toggle-dot" aria-hidden="true" />
+          {isAiDisabled ? copy.aiOff : copy.aiOn}
+        </button>
+      </Tooltip>
 
-      <button
-        type="button"
-        className={`dev-toggle ${isVipSimulated ? 'is-on' : 'is-off'}`}
-        onClick={onToggleVip}
-        disabled={!canToggleVip || isBusy}
-        title={canToggleVip ? copy.vipHint : copy.signInFirst}
-      >
-        <span className="dev-toggle-dot" aria-hidden="true" />
-        {isVipSimulated ? copy.vipOff : copy.vipOn}
-      </button>
+      <Tooltip content={canToggleVip ? copy.vipHint : copy.signInFirst}>
+        <button
+          type="button"
+          className={`dev-toggle ${isVipSimulated ? 'is-on' : 'is-off'}`}
+          onClick={onToggleVip}
+          disabled={!canToggleVip || isBusy}
+        >
+          <span className="dev-toggle-dot" aria-hidden="true" />
+          {isVipSimulated ? copy.vipOff : copy.vipOn}
+        </button>
+      </Tooltip>
     </div>
   )
 }

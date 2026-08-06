@@ -10,9 +10,11 @@ import type { ChartData, MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 
 /** Estas familias de gráfico son anchas por naturaleza: el heatmap anual tiene
- * 53 columnas y el horario 24. En 320px encogerlos los vuelve ilegibles, así que
- * se dejan a su ancho natural dentro de un contenedor que se desliza. */
-const WIDE_CHARTS = new Set(['yearHeatmap', 'hourHeatmap', 'monthHeatmap', 'calendarStreak', 'timeline'])
+ * 53 columnas y pueden ser más según el rango del chat. En 320px encogerlos los
+ * vuelve ilegibles, así que se dejan a su ancho natural dentro de un contenedor
+ * que se desliza. El horario no entra acá: son siempre 24 barras de ancho fluido
+ * (ver chart-hour-bars en base.css), pensadas para encajar sin scroll. */
+const WIDE_CHARTS = new Set(['yearHeatmap', 'monthHeatmap', 'calendarStreak', 'timeline'])
 
 /**
  * El detalle de una métrica, a pantalla completa.
@@ -164,6 +166,7 @@ export function MetricSheet({
                           label: entry.name,
                           value: entry.value,
                           displayValue: entry.displayValue,
+                          color: entry.color,
                         }))}
                       />
                     </div>
@@ -236,8 +239,13 @@ export function MetricSheet({
             {index + 1} / {total}
           </span>
 
-          <button type="button" className="primary-button m-sheet-next" onClick={onNext}>
-            {index === total - 1 ? m.sheet.backToList : m.sheet.next}
+          <button
+            type="button"
+            className="m-sheet-step"
+            onClick={onNext}
+            aria-label={index === total - 1 ? m.sheet.backToList : m.sheet.next}
+          >
+            <ChevronIcon size={16} />
           </button>
         </footer>
       </section>

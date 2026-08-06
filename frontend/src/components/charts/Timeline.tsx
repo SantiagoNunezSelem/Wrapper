@@ -1,4 +1,5 @@
 import type { TimelinePoint } from '../../types'
+import { Tooltip } from '../Tooltip'
 
 export function Timeline({ points }: { points: TimelinePoint[] }) {
   if (points.length === 0) {
@@ -12,13 +13,11 @@ export function Timeline({ points }: { points: TimelinePoint[] }) {
     <div className="chart-timeline">
       <div className="chart-timeline-bars">
         {points.map((point, index) => (
-          <div
-            key={`${point.dateLabel}-${index}`}
-            className="chart-timeline-bar"
-            title={`${point.dateLabel} · ${point.label}`}
-          >
-            <span className="chart-timeline-fill" style={{ height: `${Math.max((point.value / max) * 100, 4)}%` }} />
-          </div>
+          <Tooltip key={`${point.dateLabel}-${index}`} content={`${point.dateLabel} · ${point.label}`}>
+            <div className="chart-timeline-bar">
+              <span className="chart-timeline-fill" style={{ height: `${Math.max((point.value / max) * 100, 4)}%` }} />
+            </div>
+          </Tooltip>
         ))}
       </div>
       <div className="chart-timeline-axis">

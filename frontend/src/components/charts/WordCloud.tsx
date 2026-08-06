@@ -1,5 +1,6 @@
 import type { WordCloudDatum } from '../../types'
 import { colorForIndex } from './palette'
+import { Tooltip } from '../Tooltip'
 
 const MIN_SIZE = 0.85
 const MAX_SIZE = 2.4
@@ -9,7 +10,7 @@ const MAX_SIZE = 2.4
 const COMPACT_WORD_LIMIT = 14
 const COMPACT_MAX_SIZE = 1.5
 
-export function WordCloud({ words, compact = false }: { words: WordCloudDatum[]; compact?: boolean }) {
+export function WordCloud({ words, unit, compact = false }: { words: WordCloudDatum[]; unit?: string; compact?: boolean }) {
   if (words.length === 0) {
     return null
   }
@@ -25,14 +26,11 @@ export function WordCloud({ words, compact = false }: { words: WordCloudDatum[];
       {shown.map((word, index) => {
         const scale = MIN_SIZE + ((word.count - min) / range) * (maxSize - MIN_SIZE)
         return (
-          <span
-            key={word.word}
-            className="chart-word-cloud-item"
-            style={{ fontSize: `${scale}rem`, color: colorForIndex(index) }}
-            title={`${word.word} · ${word.count}`}
-          >
-            {word.word}
-          </span>
+          <Tooltip key={word.word} content={`${word.word} · ${word.count}${unit ? ` ${unit}` : ''}`}>
+            <span className="chart-word-cloud-item" style={{ fontSize: `${scale}rem`, color: colorForIndex(index) }}>
+              {word.word}
+            </span>
+          </Tooltip>
         )
       })}
     </div>
