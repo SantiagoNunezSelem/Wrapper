@@ -4,8 +4,12 @@ import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer } from '../../components/charts/ChartRenderer'
 import { LockedPanel } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
+// NUEVO: números que laten — para revertir, borrar este import y el uso de
+// useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
+import { useCountUp } from '../../components/useCountUp'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
+import { splitLeadingEmoji } from '../../lib/format'
 import type { ChartData, MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 
@@ -93,6 +97,8 @@ export function MetricSheet({
   )
 
   const m = copy.mobile
+  const heroSplit = card.basic ? splitLeadingEmoji(card.basic.value) : null
+  const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
 
   return (
     <div className="m-layer" role="dialog" aria-modal="true" aria-label={card.title}>
@@ -118,7 +124,11 @@ export function MetricSheet({
             <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} tall />
           ) : card.basic ? (
             <div className="m-sheet-hero">
-              <strong className="gradient-text">{card.basic.value}</strong>
+              <strong>
+                {heroSplit?.emoji ? <span className="stat-emoji">{heroSplit.emoji} </span> : null}
+                {/* ANTES: <span className="gradient-text">{heroSplit?.rest}</span> */}
+                <span className="gradient-text">{statValue}</span>
+              </strong>
               <span>{card.basic.label}</span>
               {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
               {card.basic.chart ? <Chart chart={card.basic.chart} /> : null}

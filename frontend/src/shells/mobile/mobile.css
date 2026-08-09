@@ -96,11 +96,17 @@
   place-items: center;
   width: 34px;
   height: 34px;
+  padding: 0;
   border: 0;
   border-radius: var(--vz-radius-pill);
   background: var(--vz-brand-sweep);
   color: var(--vz-on-brand);
   font-size: 0.88rem;
+  /* A single glyph's own ascent/descent is never quite symmetric — line-height: 1
+     keeps the line box close to the glyph's ink so place-items: center doesn't
+     inherit the browser's default leading and visibly push the letter off-center
+     (most noticeable with a fallback font, before/if Inter has loaded). */
+  line-height: 1;
   font-weight: 800;
   cursor: pointer;
   flex-shrink: 0;
@@ -500,6 +506,11 @@
   text-align: left;
   cursor: pointer;
   transition: background 140ms ease, transform 140ms ease;
+  /* --- NUEVO: entrada en cascada (para revertir, borrar esta línea) -----
+     Misma lógica que las tarjetas de desktop: la lista es el workspace activo,
+     así que entra al montar (no al scrollear) — ver metric-list-item en
+     desktop.css. El delay por fila lo pone MetricRow con animationDelay. */
+  animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .m-row:active {
@@ -808,7 +819,11 @@
   color: var(--vz-text-strong);
 }
 
-.m-account-id span {
+/* :not(.m-avatar) because the avatar is also a bare <span> and a direct
+   child here — without the exclusion this out-specifies .m-avatar's own
+   `display: grid` with `display: block`, which is what was breaking its
+   centering. */
+.m-account-id span:not(.m-avatar) {
   display: block;
   font-size: 0.76rem;
   color: var(--vz-text-faint);
@@ -1399,9 +1414,11 @@
 }
 
 .m-story-bars i {
+  position: relative;
   flex: 1 1 0;
   height: 2.5px;
   border-radius: 3px;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.2);
   transition: background 240ms ease;
 }
@@ -1410,7 +1427,16 @@
   background: rgba(255, 255, 255, 0.6);
 }
 
+/* La pantalla ya vista es blanco sólido; la actual arranca vacía y se llena
+   con `.m-story-fill`, que crece con el cronómetro del recorrido. */
 .m-story-bars i.is-now {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.m-story-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
   background: var(--vz-brand-sweep);
 }
 
@@ -1489,33 +1515,144 @@
   }
 }
 
-/* --- la ficha de la métrica ---
-   Reemplaza al punto de acento suelto: da estructura y deja claro de qué
-   métrica se trata antes de que el ojo llegue al número. */
-.m-story-plate {
+/* --- NUEVO: la mascota ---------------------------------------------------
+   Vive clavada en la esquina de .m-story-body (que ya es position: relative),
+   por encima de las zonas de toque (z-index: 1) pero sin robarles el gesto —
+   es aria-hidden y puramente decorativa, así que no necesita pointer-events
+   propios. El humor (calm/spicy/nosy) lo decide mascotMood.ts según la
+   métrica que está en pantalla; acá sólo se dibuja. Para revertir: sacar
+   <MascotBlob> de StoryMode.tsx y borrar este bloque entero. */
+.m-mascot {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: center;
+}
+
+.m-mascot-blob {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--vz-brand-violet), var(--vz-brand-cyan));
+  box-shadow: 0 0 20px rgba(var(--vz-brand-violet-rgb), 0.35);
+  animation: mMascotMorphCalm 7s ease-in-out infinite, mMascotSpin 20s linear infinite;
+  transition: background 550ms ease, box-shadow 550ms ease;
+}
+
+@keyframes mMascotMorphCalm {
+  0%, 100% { border-radius: 42% 58% 60% 40% / 45% 40% 60% 55%; }
+  50% { border-radius: 58% 42% 40% 60% / 55% 60% 40% 45%; }
+}
+@keyframes mMascotSpin { to { transform: rotate(360deg); } }
+@keyframes mMascotSpinRev { to { transform: rotate(-360deg); } }
+
+.m-mascot.mood-spicy .m-mascot-blob {
+  background: linear-gradient(135deg, #fb923c, #f472b6);
+  box-shadow: 0 0 22px rgba(251, 146, 60, 0.42);
+  animation: mMascotMorphSpicy 2.2s ease-in-out infinite, mMascotSpinRev 5s linear infinite;
+}
+@keyframes mMascotMorphSpicy {
+  0%, 100% { border-radius: 62% 38% 55% 45% / 35% 55% 45% 65%; }
+  50% { border-radius: 40% 60% 35% 65% / 60% 35% 65% 40%; }
+}
+
+.m-mascot.mood-nosy .m-mascot-blob {
+  background: linear-gradient(135deg, #facc15, #e879f9);
+  box-shadow: 0 0 20px rgba(250, 204, 21, 0.38);
+  animation: mMascotMorphNosy 950ms ease-in-out infinite, mMascotSpin 12s linear infinite;
+}
+@keyframes mMascotMorphNosy {
+  0%, 100% { border-radius: 50% 50% 50% 50% / 50% 50% 50% 50%; }
+  50% { border-radius: 46% 54% 42% 58% / 58% 42% 54% 46%; }
+}
+
+.m-mascot-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.m-mascot-eyes { display: flex; gap: 5px; }
+.m-mascot-eyes i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #0f172a;
+  animation: mMascotBlink 4.4s infinite;
+  transition: width 300ms ease, height 300ms ease;
+}
+@keyframes mMascotBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+
+.m-mascot-mouth {
+  width: 7px;
+  height: 3.5px;
+  border-bottom: 1.3px solid #0f172a;
+  border-radius: 0 0 8px 8px;
+  transition: all 400ms ease;
+}
+
+.m-mascot.mood-spicy .m-mascot-eyes i { width: 2.6px; height: 4px; border-radius: 40%; animation-duration: 1.5s; }
+.m-mascot.mood-spicy .m-mascot-mouth {
+  width: 8px;
+  height: 3px;
+  border: 1.3px solid #0f172a;
+  border-top: 0;
+  border-radius: 0 0 40% 40%;
+  clip-path: polygon(0 0, 15% 60%, 30% 10%, 45% 70%, 60% 5%, 75% 65%, 100% 0, 100% 100%, 0 100%);
+}
+
+.m-mascot.mood-nosy .m-mascot-eyes i { width: 3.6px; height: 3.6px; animation-duration: 2.6s; }
+.m-mascot.mood-nosy .m-mascot-mouth { width: 4px; height: 4px; border: 1.3px solid #0f172a; border-radius: 50%; }
+
+.m-mascot-sparkles { position: absolute; inset: -6px; pointer-events: none; opacity: 0; transition: opacity 400ms ease; }
+.m-mascot.mood-nosy .m-mascot-sparkles { opacity: 1; }
+.m-mascot-sparkles i {
+  position: absolute;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: #facc15;
+  animation: mMascotSparkle 1.8s ease-in-out infinite;
+}
+.m-mascot-sparkles i:nth-child(1) { top: 4%; left: 10%; animation-delay: 0s; }
+.m-mascot-sparkles i:nth-child(2) { top: 12%; right: 6%; animation-delay: 0.4s; }
+.m-mascot-sparkles i:nth-child(3) { bottom: 8%; left: 4%; animation-delay: 0.9s; }
+.m-mascot-sparkles i:nth-child(4) { bottom: 16%; right: 10%; animation-delay: 1.3s; }
+@keyframes mMascotSparkle {
+  0%, 100% { transform: translateY(0); opacity: 0.3; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+/* --- FIN NUEVO: la mascota ------------------------------------------------ */
+
+/* --- la ficha de la métrica ---
+   Una marca de color y el título, sin ícono: da estructura y deja claro de qué
+   métrica se trata antes de que el ojo llegue al número, sin depender de un
+   emoji que el sistema operativo dibuja distinto en cada teléfono. */
+.m-story-plate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   /* Cada métrica trae su acento en `--vz-accent`; sin él cae en el violeta. */
   --vz-accent: var(--vz-brand-violet-rgb);
 }
 
-.m-story-tile {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  flex-shrink: 0;
-  border: 1px solid rgba(var(--vz-accent), 0.34);
-  border-radius: var(--vz-radius-sm);
-  background: rgba(var(--vz-accent), 0.16);
-  color: rgb(var(--vz-accent));
-  font-size: 1.35rem;
-  line-height: 1;
-}
-
-.m-story-plate-text {
-  min-width: 0;
+.m-story-tick {
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgb(var(--vz-accent));
 }
 
 .m-story-kicker {
@@ -1604,6 +1741,76 @@
   font-size: 0.88rem;
   color: var(--vz-text-dim);
   line-height: 1.55;
+}
+
+/* El latido antes del número: por medio segundo la pantalla "escribe" la
+   respuesta en vez de mostrarla de una, el mismo gesto que un chat real.
+   Color fijo (no el acento de la métrica) porque `--vz-accent` vive en la
+   ficha y no llega hasta acá — no vale la pena heredarlo para tres puntos. */
+.m-story-typing {
+  display: inline-flex;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.m-story-typing i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vz-brand-violet);
+  animation: mTypingBounce 900ms ease-in-out infinite;
+}
+
+.m-story-typing i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.m-story-typing i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes mTypingBounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* El cierre Pro: qué es lo que falta, dicho en criollo antes de mostrarlo -
+   sin esa línea, el nombre que va rotando no dice nada por sí solo. */
+.m-story-ticker-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.m-story-ticker-caption {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--vz-text-faint);
+}
+
+.m-story-ticker-name {
+  display: block;
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--vz-text-strong);
+  animation: mTickerIn 420ms ease;
+}
+
+@keyframes mTickerIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 /* El detalle va pegado a la información y no en el pie: es otra lectura de lo
@@ -1720,6 +1927,114 @@
   gap: 7px;
 }
 
+/* ==========================================================================
+   Tutorial de exportación — la hoja que aparece al tocar "Subir chat" sin
+   tener todavía un análisis cargado. Mismo contenido que la versión de
+   escritorio (ExportTutorialModal), pero de a un paso por vez: steps +
+   teléfono ilustrado juntos no entran en una pantalla de 6 pulgadas.
+   ========================================================================== */
+
+.m-tutorial-os-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+}
+
+.m-tutorial-os-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--vz-text-dim);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: var(--vz-radius-pill);
+  cursor: pointer;
+}
+
+.m-tutorial-os-toggle button.is-active {
+  background: var(--vz-surface-5);
+  color: var(--vz-text-strong);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+/* La ilustración va con un pequeño marco oscuro alrededor: el estilo
+   realista se descartó por romper con el resto de la app (ver bugfix de
+   transparencia), pero incluso con el estilo propio, pegar el SVG borde a
+   borde contra la hoja se sentía como un recorte mal hecho. */
+.m-tutorial-art {
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  padding: 10px;
+}
+
+.m-tutorial-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--vz-radius-sm);
+  overflow: hidden;
+}
+
+.m-tutorial-step-copy {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.m-tutorial-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.m-tutorial-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vz-surface-6);
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.m-tutorial-dot.is-active {
+  background: var(--vz-brand-sweep);
+  transform: scale(1.3);
+}
+
+.m-tutorial-foot {
+  flex-shrink: 0;
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--vz-hairline);
+}
+
+.m-tutorial-foot-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.m-tutorial-foot-actions .ghost-button {
+  flex: none;
+  padding: 12px 18px;
+}
+
+.m-tutorial-foot-actions .primary-button {
+  flex: 1;
+  padding: 12px 16px;
+}
+
+.m-tutorial-foot .m-privacy-note {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-drawer,
   .m-sheet,
@@ -1734,7 +2049,17 @@
      del shell; con movimiento reducido se apagan del todo. */
   .m-spin,
   .m-story-hint,
+  .m-story-typing i,
+  .m-story-ticker-name,
   .m-row-ai.is-pending .m-row-ai-icon {
+    animation: none;
+  }
+
+  /* NUEVO: la mascota deja de morfar/girar/parpadear pero se queda visible —
+     "late quieto", no desaparece. */
+  .m-mascot-blob,
+  .m-mascot-eyes i,
+  .m-mascot-sparkles i {
     animation: none;
   }
 }

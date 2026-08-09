@@ -21,12 +21,16 @@ export function MetricRow({
   copy,
   ai,
   onOpen,
+  revealDelayMs,
 }: {
   card: MetricCard
   copy: ShellCopy
   /** Sólo llega para quien tiene Pro; para el resto es indefinido. */
   ai?: AiPanelProps
   onOpen: (card: MetricCard) => void
+  /** NUEVO — escalona la entrada de la fila al montar la lista (ver MetricList).
+   * Para revertir: borrar este prop y el `style` que lo usa más abajo. */
+  revealDelayMs?: number
 }) {
   /* "Pro pero la IA todavía no dio veredicto" no es lo mismo que "no es Pro":
      el primero ya pagó, así que se le explica el estado en vez de venderle nada.
@@ -39,6 +43,8 @@ export function MetricRow({
     <button
       type="button"
       className={`m-row ${card.accent} ${locked ? 'is-locked' : ''} ${aiBlocked ? 'is-ai' : ''}`}
+      // ANTES: no había prop style acá
+      style={revealDelayMs ? { animationDelay: `${revealDelayMs}ms` } : undefined}
       onClick={() => onOpen(card)}
     >
       <span className="m-row-head">

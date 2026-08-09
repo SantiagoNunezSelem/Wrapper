@@ -41,9 +41,25 @@ export interface ToolbarPosition {
   left: number
 }
 
-/** Where the dev toolbar was last dragged to. Null means "use the default top-right
- * corner" — never persisted as a magic (0, 0) so a missing value can't be confused with
- * an intentional drag to the corner. */
+/** Mirrors the width `useIsMobile()` switches shells at. Only used to tag a saved drag
+ * position with the shell it was dragged in — doesn't need to match the real hook's
+ * touch/pointer branch, since the worst case of a mismatch is just falling back to the
+ * default position instead of a wrong one. */
+const MOBILE_TOOLBAR_MAX_WIDTH = 768
+
+function isMobileLayout(): boolean {
+  return window.matchMedia(`(max-width: ${MOBILE_TOOLBAR_MAX_WIDTH}px)`).matches
+}
+
+/** Where the dev toolbar was last dragged to. Null means "use the default position for
+ * this shell" — never persisted as a magic (0, 0) so a missing value can't be confused
+ * with an intentional drag to the corner.
+ *
+ * Tagged with the shell it was dragged in and ignored on a mismatch: the desktop and
+ * mobile shells default the toolbar to opposite corners specifically so it doesn't sit
+ * on top of the account avatar in either one, and a raw pixel spot dragged to on a wide
+ * window lands somewhere arbitrary — often right on that avatar — when reused on a
+ * phone-width viewport. */
 export function getDevToolbarPosition(): ToolbarPosition | null {
   try {
     const raw = localStorage.getItem(toolbarPositionKey)
@@ -51,10 +67,12 @@ export function getDevToolbarPosition(): ToolbarPosition | null {
       return null
     }
 
-    const parsed = JSON.parse(raw) as Partial<ToolbarPosition>
-    return typeof parsed.top === 'number' && typeof parsed.left === 'number'
-      ? { top: parsed.top, left: parsed.left }
-      : null
+    const parsed = JSON.parse(raw) as Partial<ToolbarPosition & { isMobile: boolean }>
+    if (typeof parsed.top !== 'number' || typeof parsed.left !== 'number' || parsed.isMobile !== isMobileLayout()) {
+      return null
+    }
+
+    return { top: parsed.top, left: parsed.left }
   } catch {
     return null
   }
@@ -62,7 +80,7 @@ export function getDevToolbarPosition(): ToolbarPosition | null {
 
 export function setDevToolbarPosition(position: ToolbarPosition): void {
   try {
-    localStorage.setItem(toolbarPositionKey, JSON.stringify(position))
+    localStorage.setItem(toolbarPositionKey, JSON.stringify({ ...position, isMobile: isMobileLayout() }))
   } catch {
     // Session-only fallback: the toolbar keeps its dragged spot until reload.
   }

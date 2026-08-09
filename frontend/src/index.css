@@ -6,7 +6,11 @@
 :root {
   font-family: var(--vz-font-sans);
   color: var(--vz-text-base);
-  background: var(--vz-app-background);
+  /* ANTES: background: var(--vz-app-background); */
+  /* Fondo sólido, no el gradiente: el halo animado vive en body::before por
+     encima de esto, así que esto es sólo lo que se ve por debajo mientras
+     esa capa carga o si el navegador no soporta el pseudo-elemento fixed. */
+  background: var(--vz-panel-solid);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,8 +28,39 @@ body,
 }
 
 body {
+  /* ANTES:
   margin: 0;
+  }
+  */
+  margin: 0;
+  position: relative; /* nuevo: ancla body::before de acá abajo */
 }
+
+/* --- NUEVO: fondo con pulso (para volver atrás, borrar desde acá hasta
+   "FIN NUEVO" y sacar `position: relative;` de arriba) ------------------
+   El halo de fondo ya existía pero estaba clavado en un lugar. Ahora deriva
+   despacio (46s, un vaivén de un par de puntos porcentuales) para que la app
+   se sienta habitada en vez de una foto — a propósito muy lento y de poca
+   amplitud, así nunca compite con el contenido ni marea. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -12%;
+  z-index: -1;
+  background: var(--vz-app-background);
+  animation: appBackgroundDrift 46s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes appBackgroundDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(2%, 1.5%) scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+}
+/* --- FIN NUEVO: fondo con pulso --------------------------------------- */
 
 button,
 input {

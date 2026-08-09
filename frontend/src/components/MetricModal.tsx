@@ -6,6 +6,9 @@ import { ChartRenderer } from './charts/ChartRenderer'
 import { CrossButton } from './IconButton'
 import { LockedPanel } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
+// NUEVO: números que laten — para revertir, borrar este import y el uso de
+// useCountUp más abajo (volver a `card.basic.value` directo).
+import { useCountUp } from './useCountUp'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
 
 export interface MetricModalCopy {
@@ -38,6 +41,7 @@ export function MetricModal({
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
+  const statValue = useCountUp(card.basic?.value ?? '') // NUEVO
 
   const hasWordCloud =
     card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
@@ -67,7 +71,8 @@ export function MetricModal({
         ) : card.basic ? (
           <div className="modal-basic">
             <div className="metric-stat is-large">
-              <strong>{card.basic.value}</strong>
+              {/* ANTES: <strong>{card.basic.value}</strong> */}
+              <strong>{statValue}</strong>
               <span>{card.basic.label}</span>
             </div>
             {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}

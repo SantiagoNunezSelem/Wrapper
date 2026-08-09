@@ -80,35 +80,6 @@ export function MobileHome({
   )
 }
 
-/** Subir: la zona punteada es el botón, y debajo el instructivo de exportación.
- * No hay un CTA aparte — sería el mismo gesto dos veces en la misma pantalla. */
-export function MobileUpload({ copy, busyMessage, onUpload }: { copy: ShellCopy; busyMessage: string; onUpload: () => void }) {
-  const m = copy.mobile
-
-  return (
-    <>
-      <p className="m-section-label">{m.upload.eyebrow}</p>
-
-      <DropZone copy={copy} busyMessage={busyMessage} onUpload={onUpload} />
-
-      <p className="m-section-label">{m.upload.howTo}</p>
-      <ol className="m-steps">
-        {m.upload.steps.map((step, index) => (
-          <li key={step.title} className={step.warn ? 'is-warn' : ''}>
-            <span className="m-step-n">{index + 1}</span>
-            <span className="m-step-body">
-              <strong>{step.title}</strong>
-              <span>{step.body}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-
-      <p className="m-privacy-note">{m.upload.privacy}</p>
-    </>
-  )
-}
-
 /** Historial: los análisis guardados. En desktop es una columna lateral que en
  * un teléfono terminaba enterrada abajo de todo; acá tiene pestaña propia. */
 export function MobileHistory({

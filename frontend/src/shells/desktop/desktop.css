@@ -738,6 +738,11 @@
      keeps a lone card in a partial last row from stretching absurdly wide. */
   max-width: 560px;
   display: flex;
+  /* NUEVO: lets .metric-card's JS-driven rotateX/rotateY (the mouse tilt)
+     render with actual depth instead of a flat skew — perspective has to
+     live on the parent, not the element being rotated. Para revertir, borrar
+     esta línea. */
+  perspective: 1000px;
 }
 
 /* The analytics dashboard's own cards animate in on mount (it's an active
@@ -746,10 +751,14 @@
    apply to the same element (a finished `animation …both` would otherwise
    pin opacity/transform and cancel the scroll-triggered transition). */
 .metric-list-item:not(.reveal-child) {
-  animation: riseIn 0.5s ease both;
+  /* ANTES: animation: riseIn 0.5s ease both; */
+  animation: riseIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .metric-card {
+  /* NUEVO: position: relative; — ancla el ::before del spotlight de acá abajo.
+     Para revertir, borrar esta línea. */
+  position: relative;
   width: 100%;
   height: 460px;
   padding: 20px;
@@ -764,10 +773,41 @@
 }
 
 .metric-card:hover {
-  transform: translateY(-3px);
+  /* ANTES: transform: translateY(-3px); — ahora ese mismo translateY lo
+     escribe MetricCard.tsx junto con el tilt, para que no compitan. Para
+     revertir el tilt, restaurar esta línea y borrar el ::before de abajo. */
   box-shadow: var(--vz-shadow-card);
   border-color: var(--vz-hairline-strong);
 }
+
+/* --- NUEVO: spotlight del tilt (para volver atrás, borrar desde acá hasta
+   "FIN NUEVO", restaurar transform: translateY(-3px) arriba, y sacar el
+   position: relative de .metric-card) -----------------------------------
+   El tilt en sí (rotateX/rotateY + el translateY que reemplaza al :hover de
+   arriba) lo escribe MetricCard.tsx en style.transform durante el mousemove
+   — así no compite con esta regla ni fuerza un re-render por frame. El
+   spotlight sigue siendo puro CSS: sólo lee --spot-x/--spot-y, que el mismo
+   mousemove actualiza. */
+.metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px circle at var(--spot-x, 50%) var(--spot-y, 15%), rgba(255, 255, 255, 0.1), transparent 62%);
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+.metric-card:hover::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-card {
+    transition: box-shadow 200ms ease, border-color 200ms ease;
+  }
+}
+/* --- FIN NUEVO: spotlight del tilt ------------------------------------- */
 
 .metric-card-head {
   display: flex;
@@ -1385,8 +1425,26 @@
 
 @media (max-width: 640px) {
   .subpage-content {
-    padding: 8px 2px 48px;
+    padding: 8px 16px 48px;
     gap: 20px;
+  }
+
+  /* The language toggle and the account chip are redundant here on a phone —
+     both already live in the drawer/topbar the user came from. */
+  .subpage-header-actions {
+    display: none;
+  }
+
+  /* Icon-only back button: the label still renders (and still names the
+     button for screen readers via aria-label) but stays visually hidden, and
+     the padding grows to keep the tap target close to the 44px comfort zone
+     even though the icon itself stays 16px. */
+  .subpage-back-label {
+    display: none;
+  }
+
+  .subpage-back {
+    padding: 14px;
   }
 
   .subpage-hero h1 {
@@ -1433,5 +1491,166 @@
 @media (max-width: 640px) {
   .vip-popover {
     width: 100%;
+  }
+}
+
+/* ==========================================================================
+   Tutorial de exportación — el "cartel" que aparece al tocar "Subir archivo"
+   sin tener todavía un chat cargado. Selector de sistema + lista de pasos a
+   la izquierda, teléfono ilustrado a la derecha (mismo patrón que la sección
+   "How do I export my chat?" de whats-wrapped.com, con ilustraciones propias
+   — ver ExportTutorialArt.tsx).
+   ========================================================================== */
+
+.export-tutorial-modal {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tutorial-os-toggle {
+  margin-top: 14px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+}
+
+.tutorial-os-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--vz-text-dim);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: var(--vz-radius-pill);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tutorial-os-toggle button.is-active {
+  background: var(--vz-surface-5);
+  color: var(--vz-text-strong);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+.tutorial-body {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.tutorial-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutorial-step {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border-radius: var(--vz-radius-md);
+  cursor: pointer;
+  color: var(--vz-text-dim);
+}
+
+.tutorial-step:hover {
+  background: var(--vz-surface-1);
+}
+
+.tutorial-step.is-active {
+  background: var(--vz-surface-3);
+  border-color: var(--vz-hairline);
+}
+
+.tutorial-step-num {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--vz-surface-4);
+  color: var(--vz-text-dim);
+}
+
+.tutorial-step.is-active .tutorial-step-num {
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+}
+
+.tutorial-step-copy strong {
+  display: block;
+  font-size: 0.87rem;
+  color: var(--vz-text-soft);
+  margin-bottom: 2px;
+}
+
+.tutorial-step.is-active .tutorial-step-copy strong {
+  color: var(--vz-text-strong);
+}
+
+.tutorial-step-copy span {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--vz-text-faint);
+}
+
+.tutorial-art {
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-surface-1);
+  border: 1px solid var(--vz-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+
+.tutorial-art svg {
+  width: 100%;
+  height: auto;
+  max-height: 560px;
+}
+
+.tutorial-foot {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tutorial-foot p {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--vz-text-faint);
+  max-width: 34ch;
+}
+
+.tutorial-foot-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .tutorial-body {
+    grid-template-columns: 1fr;
   }
 }

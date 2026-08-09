@@ -81,6 +81,7 @@ export function useVistazo() {
   const [analysisProgress, setAnalysisProgress] = useState<number | null>(null)
   const [error, setError] = useState<string>('')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isExportTutorialOpen, setIsExportTutorialOpen] = useState(false)
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null)
   const [aiStates, setAiStates] = useState<AiCardStates>({})
   const [isAiBusy, setIsAiBusy] = useState(false)
@@ -509,6 +510,17 @@ export function useVistazo() {
     fileInputRef.current?.click()
   }
 
+  /** "Subir archivo" en un contexto de primera vez: muestra el tutorial de
+      exportación antes que nada, salvo que ya haya un análisis cargado —
+      ahí el usuario ya sabe de qué se trata. */
+  function requestUpload() {
+    if (analysis) {
+      openFilePicker()
+    } else {
+      setIsExportTutorialOpen(true)
+    }
+  }
+
   /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover. */
   function requestUnlock() {
     openVipPopover()
@@ -816,6 +828,8 @@ export function useVistazo() {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    isExportTutorialOpen,
+    setIsExportTutorialOpen,
     isVipPopoverOpen,
     setIsVipPopoverOpen,
 
@@ -829,6 +843,7 @@ export function useVistazo() {
     goToSubscriptionPage,
     openVipPopover,
     requestUnlock,
+    requestUpload,
     openFilePicker,
     processFile,
     handleFileSelection,
