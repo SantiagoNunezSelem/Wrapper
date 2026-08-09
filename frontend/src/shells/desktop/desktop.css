@@ -738,6 +738,11 @@
      keeps a lone card in a partial last row from stretching absurdly wide. */
   max-width: 560px;
   display: flex;
+  /* NUEVO: lets .metric-card's JS-driven rotateX/rotateY (the mouse tilt)
+     render with actual depth instead of a flat skew — perspective has to
+     live on the parent, not the element being rotated. Para revertir, borrar
+     esta línea. */
+  perspective: 1000px;
 }
 
 /* The analytics dashboard's own cards animate in on mount (it's an active
@@ -746,10 +751,14 @@
    apply to the same element (a finished `animation …both` would otherwise
    pin opacity/transform and cancel the scroll-triggered transition). */
 .metric-list-item:not(.reveal-child) {
-  animation: riseIn 0.5s ease both;
+  /* ANTES: animation: riseIn 0.5s ease both; */
+  animation: riseIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .metric-card {
+  /* NUEVO: position: relative; — ancla el ::before del spotlight de acá abajo.
+     Para revertir, borrar esta línea. */
+  position: relative;
   width: 100%;
   height: 460px;
   padding: 20px;
@@ -764,10 +773,41 @@
 }
 
 .metric-card:hover {
-  transform: translateY(-3px);
+  /* ANTES: transform: translateY(-3px); — ahora ese mismo translateY lo
+     escribe MetricCard.tsx junto con el tilt, para que no compitan. Para
+     revertir el tilt, restaurar esta línea y borrar el ::before de abajo. */
   box-shadow: var(--vz-shadow-card);
   border-color: var(--vz-hairline-strong);
 }
+
+/* --- NUEVO: spotlight del tilt (para volver atrás, borrar desde acá hasta
+   "FIN NUEVO", restaurar transform: translateY(-3px) arriba, y sacar el
+   position: relative de .metric-card) -----------------------------------
+   El tilt en sí (rotateX/rotateY + el translateY que reemplaza al :hover de
+   arriba) lo escribe MetricCard.tsx en style.transform durante el mousemove
+   — así no compite con esta regla ni fuerza un re-render por frame. El
+   spotlight sigue siendo puro CSS: sólo lee --spot-x/--spot-y, que el mismo
+   mousemove actualiza. */
+.metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px circle at var(--spot-x, 50%) var(--spot-y, 15%), rgba(255, 255, 255, 0.1), transparent 62%);
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+.metric-card:hover::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-card {
+    transition: box-shadow 200ms ease, border-color 200ms ease;
+  }
+}
+/* --- FIN NUEVO: spotlight del tilt ------------------------------------- */
 
 .metric-card-head {
   display: flex;
@@ -1385,8 +1425,26 @@
 
 @media (max-width: 640px) {
   .subpage-content {
-    padding: 8px 2px 48px;
+    padding: 8px 16px 48px;
     gap: 20px;
+  }
+
+  /* The language toggle and the account chip are redundant here on a phone —
+     both already live in the drawer/topbar the user came from. */
+  .subpage-header-actions {
+    display: none;
+  }
+
+  /* Icon-only back button: the label still renders (and still names the
+     button for screen readers via aria-label) but stays visually hidden, and
+     the padding grows to keep the tap target close to the 44px comfort zone
+     even though the icon itself stays 16px. */
+  .subpage-back-label {
+    display: none;
+  }
+
+  .subpage-back {
+    padding: 14px;
   }
 
   .subpage-hero h1 {

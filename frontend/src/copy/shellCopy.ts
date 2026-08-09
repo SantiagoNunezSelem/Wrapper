@@ -111,6 +111,53 @@ export const shellCopy = {
       decline: 'Ahora no',
       working: 'Activando...',
     },
+    exportTutorial: {
+      eyebrow: 'Antes de subir',
+      title: '¿Cómo exporto mi chat?',
+      os: { ios: 'iOS', android: 'Android' },
+      steps: {
+        ios: [
+          {
+            title: 'Abrí el chat y tocá el nombre',
+            body: 'En WhatsApp, abrí la conversación que querés analizar y tocá el nombre del contacto o grupo, arriba de todo.',
+          },
+          {
+            title: 'Buscá "Exportar chat"',
+            body: 'Deslizá hasta el final de la info del chat. La opción está en lo último de la lista.',
+          },
+          {
+            title: 'Elegí "Sin multimedia"',
+            body: 'Así el archivo pesa poco y sube en segundos — las fotos no se usan para ninguna métrica.',
+          },
+          {
+            title: 'Guardalo y subilo acá',
+            body: 'Elegí "Guardar en Archivos" y después subí ese mismo .txt en Vistazo.',
+          },
+        ],
+        android: [
+          {
+            title: 'Abrí el chat y tocá ⋮',
+            body: 'En WhatsApp, abrí la conversación que querés analizar y tocá los tres puntos, arriba a la derecha.',
+          },
+          {
+            title: '"Exportar chat" en el menú',
+            body: 'Tocá "Más" y después "Exportar chat", dentro del menú.',
+          },
+          {
+            title: 'Elegí "Sin multimedia"',
+            body: 'Así el archivo pesa poco y sube en segundos — las fotos no se usan para ninguna métrica.',
+          },
+          {
+            title: 'Guardalo y subilo acá',
+            body: 'Guardá el .txt en el dispositivo y subilo en Vistazo.',
+          },
+        ],
+      },
+      skip: 'Ya sé cómo, elegir archivo',
+      pick: 'Elegir archivo',
+      next: 'Siguiente paso',
+      privacy: 'El archivo se procesa en tu dispositivo. Nunca se sube el texto crudo del chat.',
+    },
     manageSubscription: 'Gestionar suscripción',
     vipPopover: {
       eyebrow: 'Métricas Pro',
@@ -289,19 +336,9 @@ export const shellCopy = {
       drawer: { myWrapped: 'Mi Wrapped', savedHistory: 'Historial guardado', language: 'Idioma', privacy: 'Privacidad' },
       home: { recent: 'Últimos', seeAll: 'Ver todos', empty: 'Todavía no analizaste ningún chat.' },
       upload: {
-        eyebrow: 'Nuevo análisis',
         pick: 'Elegí el archivo',
         formats: '.txt o .zip exportado de WhatsApp',
         browse: 'Buscar en el teléfono',
-        howTo: 'Cómo exportarlo desde WhatsApp',
-        steps: [
-          { title: 'Abrí el chat en WhatsApp', body: 'El que quieras analizar, grupal o individual.', warn: false },
-          { title: 'Tocá ⋮ · Más · Exportar chat', body: 'En iPhone es el nombre del chat arriba · Exportar chat.', warn: false },
-          { title: 'Elegí «Sin archivos multimedia»', body: 'Es el paso que más se saltea. Con multimedia el archivo pesa de más y las fotos no se usan para nada.', warn: true },
-          { title: 'Guardá el .txt o .zip en el teléfono', body: 'WhatsApp te ofrece compartirlo — guardalo en Archivos o Descargas.', warn: false },
-          { title: 'Volvé acá y tocá la zona de arriba', body: 'Elegís el archivo que guardaste y listo.', warn: false },
-        ],
-        privacy: 'El archivo se procesa en tu teléfono. Sólo se guardan las métricas agregadas, nunca el texto del chat.',
       },
       list: { metricsCount: 'métricas', proCount: 'Pro', lockedCount: 'bloqueadas', tabList: 'Lista', tabStory: 'Historia' },
       sheet: { next: 'Siguiente métrica', backToList: 'Volver a la lista', prev: 'Métrica anterior', highlights: 'Momentos destacados' },
@@ -312,6 +349,7 @@ export const shellCopy = {
         prev: 'Anterior',
         next: 'Siguiente',
         outroTitle: 'métricas Pro te están esperando',
+        outroCaption: 'Todavía no viste:',
         outroMore: 'y {n} más',
         outroCta: 'Desbloquear VIP',
         copied: 'Copiado',
@@ -408,6 +446,53 @@ export const shellCopy = {
       accept: 'Turn on and analyze',
       decline: 'Not now',
       working: 'Turning on...',
+    },
+    exportTutorial: {
+      eyebrow: 'Before you upload',
+      title: 'How do I export my chat?',
+      os: { ios: 'iOS', android: 'Android' },
+      steps: {
+        ios: [
+          {
+            title: 'Open the chat and tap the name',
+            body: 'In WhatsApp, open the conversation you want to analyze and tap the contact or group name at the top.',
+          },
+          {
+            title: 'Find "Export Chat"',
+            body: 'Scroll all the way to the bottom of the chat info. The option is at the end of the list.',
+          },
+          {
+            title: 'Choose "Without Media"',
+            body: "That keeps the file small and it uploads in seconds — photos aren't used for any metric.",
+          },
+          {
+            title: 'Save it and upload it here',
+            body: 'Pick "Save to Files" and then upload that same .txt in Vistazo.',
+          },
+        ],
+        android: [
+          {
+            title: 'Open the chat and tap ⋮',
+            body: 'In WhatsApp, open the conversation you want to analyze and tap the three dots at the top right.',
+          },
+          {
+            title: '"Export chat" in the menu',
+            body: 'Tap "More" and then "Export chat" inside the menu.',
+          },
+          {
+            title: 'Choose "Without Media"',
+            body: "That keeps the file small and it uploads in seconds — photos aren't used for any metric.",
+          },
+          {
+            title: 'Save it and upload it here',
+            body: 'Save the .txt to your device and upload it in Vistazo.',
+          },
+        ],
+      },
+      skip: 'I know how, choose file',
+      pick: 'Choose file',
+      next: 'Next step',
+      privacy: 'The file is processed on your device. The raw chat text is never uploaded.',
     },
     manageSubscription: 'Manage subscription',
     vipPopover: {
@@ -584,19 +669,9 @@ export const shellCopy = {
       drawer: { myWrapped: 'My Wrapped', savedHistory: 'Saved history', language: 'Language', privacy: 'Privacy' },
       home: { recent: 'Recent', seeAll: 'See all', empty: "You haven't analyzed any chat yet." },
       upload: {
-        eyebrow: 'New analysis',
         pick: 'Choose the file',
         formats: '.txt or .zip exported from WhatsApp',
         browse: 'Browse your phone',
-        howTo: 'How to export it from WhatsApp',
-        steps: [
-          { title: 'Open the chat in WhatsApp', body: 'Whichever one you want to analyze, group or one-on-one.', warn: false },
-          { title: 'Tap ⋮ · More · Export chat', body: "On iPhone it's the chat name at the top · Export chat.", warn: false },
-          { title: 'Pick "Without media"', body: 'This is the step people skip. With media the file is much heavier and the photos are never used.', warn: true },
-          { title: 'Save the .txt or .zip on your phone', body: 'WhatsApp offers to share it — save it to Files or Downloads.', warn: false },
-          { title: 'Come back and tap the area above', body: 'Pick the file you saved and you are done.', warn: false },
-        ],
-        privacy: 'The file is processed on your phone. Only aggregated metrics are stored, never the chat text.',
       },
       list: { metricsCount: 'metrics', proCount: 'Pro', lockedCount: 'locked', tabList: 'List', tabStory: 'Story' },
       sheet: { next: 'Next metric', backToList: 'Back to the list', prev: 'Previous metric', highlights: 'Highlights' },
@@ -607,6 +682,7 @@ export const shellCopy = {
         prev: 'Previous',
         next: 'Next',
         outroTitle: 'Pro metrics are waiting for you',
+        outroCaption: "You haven't seen yet:",
         outroMore: 'and {n} more',
         outroCta: 'Unlock VIP',
         copied: 'Copied',

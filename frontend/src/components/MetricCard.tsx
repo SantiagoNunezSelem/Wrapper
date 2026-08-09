@@ -1,7 +1,24 @@
+/* ANTES (para volver atrás, restaurar este bloque y borrar todo lo marcado
+   "NUEVO" más abajo — tilt magnético + números que laten):
+
 import type { MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { ChartRenderer } from './charts/ChartRenderer'
 import { LockedPanel } from './LockedPanel'
+
+*/
+import { useRef, type MouseEvent } from 'react'
+import { prefersReducedMotion } from '../lib/prefersReducedMotion'
+import type { MetricCard as MetricCardData } from '../types'
+import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
+import { ChartRenderer } from './charts/ChartRenderer'
+import { LockedPanel } from './LockedPanel'
+import { useCountUpOnView } from './useCountUp'
+
+/** NUEVO: how far a card tilts toward the cursor, in degrees at the very
+ * edge. Read once — nobody changes their OS motion setting mid-session. */
+const MAX_TILT_DEG = 7
+const tiltEnabled = !prefersReducedMotion()
 
 function CrownIcon() {
   return (
@@ -32,8 +49,47 @@ export function MetricCard({
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const locked = !aiBlocked && card.tier === 'vip' && !card.basic
 
+  // --- NUEVO: tilt magnético + números que laten (para revertir, borrar
+  // desde acá hasta "FIN NUEVO" y restaurar el <article>/<strong> de abajo) ---
+  const cardRef = useRef<HTMLElement>(null)
+  const [statValue, statRef] = useCountUpOnView<HTMLElement>(card.basic?.value ?? '')
+
+  // Written straight to the DOM instead of React state: a mousemove-driven
+  // rotation needs to update every frame, and routing that through state would
+  // re-render the whole card (chart included) 60 times a second for nothing.
+  function handleMouseMove(event: MouseEvent<HTMLElement>) {
+    const node = cardRef.current
+    if (!tiltEnabled || !node) {
+      return
+    }
+
+    const rect = node.getBoundingClientRect()
+    const px = (event.clientX - rect.left) / rect.width
+    const py = (event.clientY - rect.top) / rect.height
+    const rotateX = (0.5 - py) * MAX_TILT_DEG
+    const rotateY = (px - 0.5) * MAX_TILT_DEG
+
+    node.style.transform = `translateY(-3px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
+    node.style.setProperty('--spot-x', `${px * 100}%`)
+    node.style.setProperty('--spot-y', `${py * 100}%`)
+  }
+
+  function handleMouseLeave() {
+    const node = cardRef.current
+    if (node) {
+      node.style.transform = ''
+    }
+  }
+  // --- FIN NUEVO ------------------------------------------------------------
+
   return (
-    <article className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}>
+    /* ANTES: <article className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}> */
+    <article
+      ref={cardRef}
+      className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <div className="metric-card-head">
         <h3>{card.title}</h3>
         {card.tier === 'vip' ? (
@@ -52,7 +108,8 @@ export function MetricCard({
       ) : (
         <div className="metric-basic">
           <div className="metric-stat">
-            <strong>{card.basic.value}</strong>
+            {/* ANTES: <strong>{card.basic.value}</strong> */}
+            <strong ref={statRef}>{statValue}</strong>
             <span>{card.basic.label}</span>
           </div>
           {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}

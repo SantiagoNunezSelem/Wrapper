@@ -323,7 +323,8 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                     <div
                       key={card.id}
                       className="metric-list-item"
-                      style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
+                      // ANTES: style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
+                      style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 65}ms` }}
                     >
                       <MetricCard
                         card={card}

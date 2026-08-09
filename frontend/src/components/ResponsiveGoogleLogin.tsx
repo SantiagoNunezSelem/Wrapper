@@ -1,7 +1,10 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 
-const HORIZONTAL_MARGIN = 500
+// Google's own button caps out around 400px and looks cramped below ~200px, so clamp
+// to that range regardless of how wide the wrapping box measures.
+const MIN_BUTTON_WIDTH = 200
+const MAX_BUTTON_WIDTH = 400
 
 /**
  * Google's button only accepts a fixed pixel width (no percentage/fluid sizing), so
@@ -26,12 +29,14 @@ export function ResponsiveGoogleLogin({
       return
     }
 
-    setButtonWidth(Math.round(el.getBoundingClientRect().width - HORIZONTAL_MARGIN * 2))
+    const clamp = (width: number) => Math.min(MAX_BUTTON_WIDTH, Math.max(MIN_BUTTON_WIDTH, Math.round(width)))
+
+    setButtonWidth(clamp(el.getBoundingClientRect().width))
 
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width
       if (width) {
-        setButtonWidth(Math.round(width - HORIZONTAL_MARGIN * 2))
+        setButtonWidth(clamp(width))
       }
     })
 

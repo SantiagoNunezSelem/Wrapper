@@ -112,9 +112,9 @@ export function SubscriptionPage({
   return (
     <div className="subpage">
       <header className="subpage-header">
-        <button type="button" className="subpage-back" onClick={onBack}>
+        <button type="button" className="subpage-back" onClick={onBack} aria-label={copy.backToApp}>
           <BackIcon />
-          {copy.backToApp}
+          <span className="subpage-back-label">{copy.backToApp}</span>
         </button>
 
         <div className="subpage-header-actions">
