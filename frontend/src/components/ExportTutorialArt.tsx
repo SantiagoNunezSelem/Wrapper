@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { prefersReducedMotion } from '../lib/prefersReducedMotion'
 
 /**
  * Ilustraciones del tutorial "¿Cómo exporto mi chat?" — SVG original propio
@@ -64,8 +65,12 @@ function Defs() {
 function Ring({ cx, cy }: { cx: number; cy: number }) {
   return (
     <circle cx={cx} cy={cy} r={14} fill="none" stroke={ACCENT} strokeWidth={2} opacity={0.7}>
-      <animate attributeName="r" values="12;22;12" dur="1.8s" repeatCount="indefinite" />
-      <animate attributeName="opacity" values="0.7;0;0.7" dur="1.8s" repeatCount="indefinite" />
+      {prefersReducedMotion() ? null : (
+        <>
+          <animate attributeName="r" values="12;22;12" dur="1.8s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.7;0;0.7" dur="1.8s" repeatCount="indefinite" />
+        </>
+      )}
     </circle>
   )
 }

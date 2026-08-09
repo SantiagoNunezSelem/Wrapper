@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
+import { ExportTutorialModal } from '../../components/ExportTutorialModal'
 import { FileUploadZone } from '../../components/FileUploadZone'
 import { CrossButton } from '../../components/IconButton'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
@@ -57,6 +58,8 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    isExportTutorialOpen,
+    setIsExportTutorialOpen,
     isVipPopoverOpen,
     setIsVipPopoverOpen,
     showDevTools,
@@ -66,6 +69,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     goToSubscriptionPage,
     openVipPopover,
     requestUnlock,
+    requestUpload,
     openFilePicker,
     processFile,
     handleFileSelection,
@@ -394,7 +398,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               <p className="lead">{copy.landingSubtitle}</p>
 
               <div className="landing-actions">
-                <button type="button" className="primary-button" onClick={openFilePicker}>
+                <button type="button" className="primary-button" onClick={requestUpload}>
                   {busyMessage || copy.startNow}
                 </button>
                 {!user ? (
@@ -616,6 +620,17 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             void handleConsentAccept()
           }}
           onDismiss={() => setIsConsentModalOpen(false)}
+        />
+      ) : null}
+
+      {isExportTutorialOpen ? (
+        <ExportTutorialModal
+          copy={{ ...copy.exportTutorial, close: copy.close }}
+          onClose={() => setIsExportTutorialOpen(false)}
+          onPick={() => {
+            setIsExportTutorialOpen(false)
+            openFilePicker()
+          }}
         />
       ) : null}
 

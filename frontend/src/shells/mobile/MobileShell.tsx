@@ -7,17 +7,16 @@ import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import type { Vistazo } from '../../app/useVistazo'
 import type { MetricCard } from '../../types'
+import { ExportTutorialSheet } from './ExportTutorialSheet'
 import { MetricList } from './MetricList'
 import { MetricSheet } from './MetricSheet'
 import { MobileDrawer } from './MobileDrawer'
 import { MobileTabBar, type MobileTab } from './MobileTabBar'
-import { MobileAccount, MobileHistory, MobileHome, MobileUpload } from './MobileViews'
+import { MobileAccount, MobileHistory, MobileHome } from './MobileViews'
 import { StoryMode } from './StoryMode'
 import './mobile.css'
 
-/** Vista interna de una pestaña. `upload` no es una pestaña de la barra —se
- * llega por el botón `+`— pero ocupa la pantalla igual que las otras. */
-type MobileView = MobileTab | 'upload'
+type MobileView = MobileTab
 
 /**
  * Vistazo para teléfono.
@@ -56,6 +55,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    isExportTutorialOpen,
+    setIsExportTutorialOpen,
     isVipPopoverOpen,
     setIsVipPopoverOpen,
     showDevTools,
@@ -67,6 +68,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     goToSubscriptionPage,
     openVipPopover,
     requestUnlock,
+    requestUpload,
     openFilePicker,
     handleFileSelection,
     handleGoogleSuccess,
@@ -111,17 +113,6 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     setOpenMetricId(null)
     setIsStoryOpen(false)
     setView(next)
-  }
-
-  function handleUpload() {
-    // Con un chat ya cargado el usuario sabe de qué se trata: se le abre el
-    // selector directo. Sin nada cargado todavía, primero el instructivo de
-    // cómo exportar, que es donde la gente se traba.
-    if (analysis) {
-      openFilePicker()
-    } else {
-      goTo('upload')
-    }
   }
 
   const subscriptionLabel =
@@ -224,13 +215,11 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             saved={savedAnalyses}
             language={language}
             busyMessage={busyMessage}
-            onUpload={handleUpload}
+            onUpload={requestUpload}
             onOpenSaved={openSavedAnalysis}
             onSeeAll={() => goTo('history')}
           />
         ) : null}
-
-        {view === 'upload' ? <MobileUpload copy={copy} busyMessage={busyMessage} onUpload={openFilePicker} /> : null}
 
         {view === 'metrics' && analysis ? (
           <MetricList
@@ -254,7 +243,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             user={user}
             onOpenSaved={openSavedAnalysis}
             onSignIn={() => setIsAuthModalOpen(true)}
-            onUpload={handleUpload}
+            onUpload={requestUpload}
           />
         ) : null}
 
@@ -272,11 +261,11 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       </main>
 
       <MobileTabBar
-        active={view === 'upload' ? 'home' : view}
+        active={view}
         copy={copy.mobile}
         hasAnalysis={Boolean(analysis)}
         onSelect={goTo}
-        onUpload={handleUpload}
+        onUpload={requestUpload}
       />
 
       <MobileDrawer
@@ -284,7 +273,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
         copy={copy}
         language={language}
         user={user}
-        activeTab={view === 'upload' ? 'home' : view}
+        activeTab={view}
         hasAnalysis={Boolean(analysis)}
         subscriptionLabel={subscriptionLabel}
         onClose={() => setIsDrawerOpen(false)}
@@ -395,6 +384,17 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             void handleConsentAccept()
           }}
           onDismiss={() => setIsConsentModalOpen(false)}
+        />
+      ) : null}
+
+      {isExportTutorialOpen ? (
+        <ExportTutorialSheet
+          copy={{ ...copy.exportTutorial, close: copy.close }}
+          onClose={() => setIsExportTutorialOpen(false)}
+          onPick={() => {
+            setIsExportTutorialOpen(false)
+            openFilePicker()
+          }}
         />
       ) : null}
 

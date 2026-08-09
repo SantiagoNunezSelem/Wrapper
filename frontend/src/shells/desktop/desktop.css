@@ -1493,3 +1493,164 @@
     width: 100%;
   }
 }
+
+/* ==========================================================================
+   Tutorial de exportación — el "cartel" que aparece al tocar "Subir archivo"
+   sin tener todavía un chat cargado. Selector de sistema + lista de pasos a
+   la izquierda, teléfono ilustrado a la derecha (mismo patrón que la sección
+   "How do I export my chat?" de whats-wrapped.com, con ilustraciones propias
+   — ver ExportTutorialArt.tsx).
+   ========================================================================== */
+
+.export-tutorial-modal {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tutorial-os-toggle {
+  margin-top: 14px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-pill);
+}
+
+.tutorial-os-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--vz-text-dim);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: var(--vz-radius-pill);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tutorial-os-toggle button.is-active {
+  background: var(--vz-surface-5);
+  color: var(--vz-text-strong);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+.tutorial-body {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.tutorial-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutorial-step {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border-radius: var(--vz-radius-md);
+  cursor: pointer;
+  color: var(--vz-text-dim);
+}
+
+.tutorial-step:hover {
+  background: var(--vz-surface-1);
+}
+
+.tutorial-step.is-active {
+  background: var(--vz-surface-3);
+  border-color: var(--vz-hairline);
+}
+
+.tutorial-step-num {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--vz-surface-4);
+  color: var(--vz-text-dim);
+}
+
+.tutorial-step.is-active .tutorial-step-num {
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+}
+
+.tutorial-step-copy strong {
+  display: block;
+  font-size: 0.87rem;
+  color: var(--vz-text-soft);
+  margin-bottom: 2px;
+}
+
+.tutorial-step.is-active .tutorial-step-copy strong {
+  color: var(--vz-text-strong);
+}
+
+.tutorial-step-copy span {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--vz-text-faint);
+}
+
+.tutorial-art {
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-surface-1);
+  border: 1px solid var(--vz-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+
+.tutorial-art svg {
+  width: 100%;
+  height: auto;
+  max-height: 560px;
+}
+
+.tutorial-foot {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tutorial-foot p {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--vz-text-faint);
+  max-width: 34ch;
+}
+
+.tutorial-foot-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .tutorial-body {
+    grid-template-columns: 1fr;
+  }
+}
