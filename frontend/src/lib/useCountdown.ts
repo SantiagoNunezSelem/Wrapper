@@ -52,3 +52,21 @@ export function formatCountdown(seconds: number): string {
   const minutes = Math.floor(seconds / 60)
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }
+
+/**
+ * Coarse "how long until this comes back" for waits measured in hours — "4h 12m", or
+ * just "12m" in the last hour. Deliberately not `formatCountdown`'s m:ss: a wait for
+ * tomorrow is something to glance at, and a ticking seconds digit on a number that big
+ * reads as a deadline rather than as "later today".
+ */
+export function formatLongWait(seconds: number): string {
+  const totalMinutes = Math.ceil(seconds / 60)
+
+  if (totalMinutes < 60) {
+    return `${Math.max(1, totalMinutes)}m`
+  }
+
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`
+}

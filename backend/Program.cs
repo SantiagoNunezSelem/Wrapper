@@ -391,6 +391,7 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
 });
 
 app.MapSubscriptionEndpoints();
+app.MapFreeUnlockEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);

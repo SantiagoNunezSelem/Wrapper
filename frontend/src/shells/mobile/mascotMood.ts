@@ -8,7 +8,6 @@ const SPICY_IDS = new Set([
   'clavavistos',
   'inactividad',
   'redflags',
-  'cringe',
   'arrepentido',
   'dramatico',
   'tonopicante',

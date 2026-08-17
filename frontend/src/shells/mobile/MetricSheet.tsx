@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer } from '../../components/charts/ChartRenderer'
-import { LockedPanel } from '../../components/LockedPanel'
+import { LockedPanel, type FreeUnlockPrompt } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
@@ -35,6 +35,8 @@ export function MetricSheet({
   total,
   copy,
   ai,
+  freeUnlock,
+  isRevealingFreeUnlock = false,
   onClose,
   onPrev,
   onNext,
@@ -45,6 +47,11 @@ export function MetricSheet({
   total: number
   copy: ShellCopy
   ai?: AiPanelProps
+  /** Set only where a daily free unlock could actually be spent — see `freeUnlockFor`. */
+  freeUnlock?: FreeUnlockPrompt
+  /** True for the few seconds right after this card's free unlock was confirmed —
+   * see `revealingFreeUnlockId` in useVistazo. */
+  isRevealingFreeUnlock?: boolean
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -140,7 +147,15 @@ export function MetricSheet({
               <p className="m-section-label">{copy.detailTitle}</p>
 
               {detailLocked ? (
-                <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} tall />
+                <LockedPanel
+                  preview={card.preview}
+                  unlockLabel={copy.unlock}
+                  onUnlock={onUnlock}
+                  freeUnlock={freeUnlock}
+                  isRevealing={isRevealingFreeUnlock}
+                  revealingLabel={copy.freeUnlock.loading}
+                  tall
+                />
               ) : card.detail ? (
                 <>
                   {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}

@@ -436,6 +436,18 @@ h3 {
   transform: translateY(-3px) rotate(-22deg);
 }
 
+/* The spinner LockedPanel swaps in right after a free unlock is confirmed — same ring
+   style and `overlaySpin` keyframe as the app's full-screen loading state, just sized
+   for this panel instead of the viewport, since this wait is scoped to one card. */
+.locked-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vz-radius-pill);
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--vz-brand-cyan);
+  animation: overlaySpin 0.8s linear infinite;
+}
+
 .unlock-button {
   padding: 9px 18px;
   border-radius: var(--vz-radius-pill);
@@ -457,6 +469,43 @@ h3 {
   animation: none;
   box-shadow: none;
   transform: none;
+}
+
+/* El desbloqueo gratuito diario no es la venta: se lee como una cortesía, en
+   verde y sin el latido del botón de VIP, que es el que tiene que pedir algo. */
+.unlock-button.is-free {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #04231a;
+  animation: none;
+}
+
+.unlock-button.is-free:hover {
+  box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.18);
+}
+
+/* Sólo aparece con los desbloqueos agotados, debajo del botón de VIP. */
+.locked-wait-note {
+  font-size: 0.74rem;
+  color: var(--vz-text-soft);
+  opacity: 0.85;
+}
+
+.free-unlock-modal {
+  max-width: 420px;
+  text-align: center;
+}
+
+.free-unlock-metric {
+  font-weight: 600;
+  color: var(--vz-text);
+}
+
+.free-unlock-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
 }
 
 /* An AI-blocked card is not a locked one: the viewer already paid, so it reads as a
@@ -519,7 +568,13 @@ h3 {
   display: grid;
   place-items: center;
   padding: 20px;
-  z-index: 30;
+  /* Above .m-layer (60, mobile.css): a modal like VipUnlockPopover or
+     FreeUnlockConfirm can be opened from inside an already-open metric sheet
+     (see MetricSheet's onUnlock), and has to land on top of it, not behind it —
+     otherwise it renders but stays invisible until the sheet is closed. Still
+     below .m-story (80), which is a deliberate full takeover with nothing else
+     to interact with. */
+  z-index: 65;
   overflow-y: auto;
 }
 
@@ -2086,81 +2141,15 @@ button.chat-bubble-divider.is-expandable:active {
 }
 
 /* ==========================================================================
-   Plan purchase flow (Card Payment Brick) — shared by the /suscripcion plan
-   card and the "Desbloquear VIP" popover.
+   Plan purchase flow — shared by the /suscripcion plan card and the
+   "Desbloquear VIP" popover. Buying redirects to Mercado Pago's own hosted
+   checkout, so there is nothing to render here beyond the plan details, the
+   buy button's own redirecting state, and an error if opening it fails.
    ========================================================================== */
 
 .plan-flow-details {
   display: grid;
   gap: 16px;
-}
-
-.plan-flow-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--vz-text-dim);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 0;
-  margin-bottom: 4px;
-}
-
-.plan-flow-back:hover:not(:disabled) {
-  color: var(--vz-text-soft);
-}
-
-.plan-flow-back:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.plan-flow-card h3 {
-  margin: 0 0 12px;
-  font-size: 0.95rem;
-  color: var(--vz-text-soft);
-}
-
-.card-brick {
-  border-radius: var(--vz-radius-xs);
-  overflow: hidden;
-}
-
-.card-brick-loading {
-  margin: 0 0 10px;
-  font-size: 0.85rem;
-  color: var(--vz-text-dim);
-}
-
-.payment-brick-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 10px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #00b1ea;
-  letter-spacing: 0.01em;
-}
-
-.payment-brick-surface {
-  border-radius: var(--vz-radius-xs);
-  overflow: hidden;
-  background: #fff;
-  padding: 6px;
-  border: 1px solid rgba(0, 158, 227, 0.35);
-  box-shadow: 0 0 0 3px rgba(0, 158, 227, 0.08);
-}
-
-.plan-flow-submitting {
-  margin: 10px 0 0;
-  font-size: 0.85rem;
-  color: var(--vz-text-dim);
-  text-align: center;
 }
 
 .plan-flow-error {
@@ -2170,40 +2159,6 @@ button.chat-bubble-divider.is-expandable:active {
   background: var(--vz-danger-border);
   color: var(--vz-danger-text);
   font-size: 0.85rem;
-}
-
-.plan-flow-success {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 18px 4px 6px;
-  text-align: center;
-}
-
-.plan-flow-success h3 {
-  margin: 0;
-  font-size: 1.15rem;
-  color: var(--vz-text-strong);
-}
-
-.plan-flow-success p {
-  margin: 0;
-  color: var(--vz-text-muted);
-  max-width: 42ch;
-}
-
-.plan-flow-success-icon {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: rgba(34, 197, 94, 0.18);
-  color: #4ade80;
-}
-
-.plan-flow-success .primary-button {
-  margin-top: 6px;
 }
 
 /* ==========================================================================
@@ -2248,9 +2203,10 @@ button.chat-bubble-divider.is-expandable:active {
   position: fixed;
   top: 14px;
   right: 14px;
-  /* Above the sticky topbar and the modals' backdrop, so it stays reachable
-     while a modal is open. */
-  z-index: 60;
+  /* Above the sticky topbar, mobile sheets (.m-layer) and the modals' backdrop,
+     so it stays reachable while any of those is open. Still below .m-story, a
+     deliberate full takeover with nothing else to interact with. */
+  z-index: 70;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2339,6 +2295,13 @@ button.chat-bubble-divider.is-expandable:active {
 .dev-toggle.is-off {
   border-color: rgba(239, 68, 68, 0.4);
   color: #fca5a5;
+}
+
+/* Un botón que hace algo, no un interruptor con estado: sin verde/rojo, porque
+   no hay un "está prendido" que mostrar. */
+.dev-toggle.is-action {
+  border-color: rgba(129, 140, 248, 0.45);
+  color: #c7d2fe;
 }
 
 /* En pantallas angostas se corre al pie: arriba a la derecha tapaba el

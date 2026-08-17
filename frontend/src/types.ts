@@ -96,6 +96,13 @@ export interface SubscriptionEvent {
   createdAtUtc: string
 }
 
+/** What starting a checkout hands back: nothing about the subscription is known to have
+ * succeeded yet, just where to send the browser to find out. */
+export interface CheckoutStart {
+  initPoint: string
+  subscriptionId: string
+}
+
 export interface SubscriptionOverview {
   plan: SubscriptionPlan
   current: SubscriptionRecord | null
@@ -110,6 +117,30 @@ export interface SubscriptionOverview {
   invoices: SubscriptionInvoice[]
   events: SubscriptionEvent[]
   warning: string | null
+}
+
+/**
+ * How many of today's free detail unlocks an account has left, and which metrics they
+ * already bought on one chat. Server-issued, so the allowance reads the same after a
+ * reload, in another browser, or on another chat — see the backend's FreeUnlockEndpoints.
+ *
+ * Two scopes in one object, deliberately: `used`/`remaining` belong to the *account* and
+ * count every chat, while `unlockedMetricIds` belongs to the *chat* named by
+ * `sourceHash`. Spending one on a metric never opens that metric on a different export.
+ *
+ * Only ever meaningful for a viewer without Pro: with Pro every detail is open already.
+ */
+export interface FreeUnlockState {
+  dailyLimit: number
+  /** Spent today across every chat. */
+  used: number
+  remaining: number
+  /** Free-tier metric ids unlocked today **for `sourceHash`**. Resets with `resetsAtUtc`. */
+  unlockedMetricIds: string[]
+  /** Which chat `unlockedMetricIds` describes. Null when the request named no chat. */
+  sourceHash: string | null
+  /** Next UTC midnight — an absolute instant, so the countdown needs no server ticks. */
+  resetsAtUtc: string
 }
 
 /**

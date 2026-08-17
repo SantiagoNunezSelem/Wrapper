@@ -4,6 +4,7 @@ import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
 import { ExportTutorialModal } from '../../components/ExportTutorialModal'
 import { FileUploadZone } from '../../components/FileUploadZone'
+import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { CrossButton } from '../../components/IconButton'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { MetricCard } from '../../components/MetricCard'
@@ -62,12 +63,17 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     setIsExportTutorialOpen,
     isVipPopoverOpen,
     setIsVipPopoverOpen,
+    freeUnlocks,
+    freeUnlockFor,
+    pendingFreeUnlockMetric,
+    revealingFreeUnlockId,
+    confirmFreeUnlock,
+    cancelFreeUnlock,
     showDevTools,
     devAiDisabled,
     isDevBusy,
     navigateTo,
     goToSubscriptionPage,
-    openVipPopover,
     requestUnlock,
     requestUpload,
     openFilePicker,
@@ -76,11 +82,11 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     handleGoogleSuccess,
     handleConsentAccept,
     handleLogout,
-    handlePurchaseSuccess,
     handleCancelSubscription,
     handleRefreshSubscription,
     handleToggleDevAi,
     handleToggleDevSubscription,
+    handleResetDevFreeUnlocks,
     openSavedAnalysis,
     backToLanding,
   } = vistazo
@@ -148,10 +154,14 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           isAiDisabled={devAiDisabled}
           isVipSimulated={Boolean(subscription?.current?.isDevSimulated && subscription.current.hasAccess)}
           canToggleVip={Boolean(token)}
+          canResetUnlocks={Boolean(token) && !user?.hasVipAccess}
           isBusy={isDevBusy}
           onToggleAi={handleToggleDevAi}
           onToggleVip={() => {
             void handleToggleDevSubscription()
+          }}
+          onResetUnlocks={() => {
+            void handleResetDevFreeUnlocks()
           }}
         />
       ) : null}
@@ -167,10 +177,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           error={subscriptionError}
           onBack={() => navigateTo('/')}
           onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
-          onStartPurchase={openVipPopover}
-          onPurchaseSuccess={(overview) => {
-            void handlePurchaseSuccess(overview)
-          }}
           onCancel={() => {
             void handleCancelSubscription()
           }}
@@ -589,9 +595,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             setIsVipPopoverOpen(false)
             setIsAuthModalOpen(true)
           }}
-          onSuccess={(overview) => {
-            void handlePurchaseSuccess(overview)
-          }}
         />
       ) : null}
 
@@ -605,10 +608,36 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             showMore: copy.showMore,
             unlock: copy.unlock,
             searchPlaceholder: copy.searchPlaceholder,
+            freeUnlockLoading: copy.freeUnlock.loading,
           }}
           ai={aiPanel}
+          freeUnlock={freeUnlockFor(selectedMetric)}
+          isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
+        />
+      ) : null}
+
+      {/* Encima del modal de la métrica a propósito: el desbloqueo se pide desde
+          ahí y la confirmación tiene que quedar por delante de lo que la abrió. */}
+      {pendingFreeUnlockMetric && freeUnlocks ? (
+        <FreeUnlockConfirm
+          copy={{
+            eyebrow: copy.freeUnlock.confirmEyebrow,
+            title: copy.freeUnlock.confirmTitle,
+            body: copy.freeUnlock.confirmBody,
+            metricLine: copy.freeUnlock.confirmMetric,
+            confirm: copy.freeUnlock.confirmCta,
+            cancel: copy.freeUnlock.cancel,
+            close: copy.close,
+          }}
+          metricTitle={pendingFreeUnlockMetric.title}
+          remaining={freeUnlocks.remaining}
+          dailyLimit={freeUnlocks.dailyLimit}
+          onConfirm={() => {
+            void confirmFreeUnlock()
+          }}
+          onCancel={cancelFreeUnlock}
         />
       ) : null}
 

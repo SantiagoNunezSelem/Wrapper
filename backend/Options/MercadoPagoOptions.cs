@@ -15,9 +15,9 @@ public sealed class MercadoPagoOptions
     /// </summary>
     public string AccessToken { get; set; } = string.Empty;
 
-    /// <summary>Public key. Not needed for the redirect checkout, but handy if a card
-    /// form is ever embedded, and useful to confirm both halves of the credential pair
-    /// come from the same application.</summary>
+    /// <summary>Public key. Not needed by the redirect checkout — Mercado Pago's own
+    /// hosted page handles the card form — but useful to confirm both halves of the
+    /// credential pair come from the same application.</summary>
     public string PublicKey { get; set; } = string.Empty;
 
     /// <summary>
@@ -45,11 +45,13 @@ public sealed class MercadoPagoOptions
     public string PreapprovalPlanIdNoTrial { get; set; } = string.Empty;
 
     /// <summary>
-    /// Used only when <see cref="AutoCreatePlan"/> has to create a <c>preapproval_plan</c>
-    /// from scratch (the normal case is <see cref="PreapprovalPlanId"/> already pointing at
-    /// a real plan). Subscriptions themselves are created with a tokenized card via the
-    /// Card Payment Brick — see <c>MercadoPagoClient.CreateSubscriptionAsync</c> — so there
-    /// is no browser redirect anywhere in that path and nothing needs to "come back" to.
+    /// The frontend's own origin (no trailing slash) — <c>https://vistazo.app</c> in
+    /// production, <c>http://localhost:5173</c> while developing. Checkout is a redirect
+    /// to Mercado Pago's hosted page, and this is where they send the payer back once
+    /// it's done: <c>{BackUrl}/suscripcion?checkout=return</c>, which the frontend reads
+    /// to re-sync the subscription immediately instead of waiting on the webhook. Also
+    /// used as the <c>preapproval_plan</c>'s own <c>back_url</c> when one has to be
+    /// auto-created (see <see cref="AutoCreatePlan"/>).
     /// </summary>
     public string BackUrl { get; set; } = "http://localhost:5173";
 
@@ -87,4 +89,23 @@ public sealed class MercadoPagoOptions
     public bool IsConfigured => !string.IsNullOrWhiteSpace(AccessToken);
 
     public bool IsTestCredential => AccessToken.StartsWith("TEST-", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Where Mercado Pago sends the payer back after the hosted checkout. Mercado Pago
+    /// rejects <c>back_url</c> outright when it points at <c>localhost</c> — there is no
+    /// way to hand it a working one until this is deployed under a real domain — so this
+    /// falls back to their own site rather than failing plan creation while developing.
+    /// The payer still completes the payment fine in that case; only the "land back on
+    /// /suscripcion automatically" convenience is unavailable until <see cref="BackUrl"/>
+    /// is a real HTTPS domain — the account page's "Actualizar estado" still finds and
+    /// links it by searching Mercado Pago for the payer's email (see SubscriptionService).
+    /// </summary>
+    public string CheckoutReturnUrl
+    {
+        get
+        {
+            var url = $"{BackUrl.TrimEnd('/')}/suscripcion?checkout=return";
+            return url.Contains("localhost", StringComparison.OrdinalIgnoreCase) ? "https://www.mercadopago.com/" : url;
+        }
+    }
 }

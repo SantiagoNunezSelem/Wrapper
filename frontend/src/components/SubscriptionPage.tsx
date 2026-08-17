@@ -62,9 +62,9 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
  * visual language is deliberately calmer than the rest of the app: solid panels, no
  * gradients on headings, no confetti.
  *
- * Plan details render inline here, but buying itself always happens in the same popup
- * "Desbloquear VIP" opens (`onStartPurchase` — see `App.tsx`'s `openVipPopover`), so the
- * payment step never appears inline on this page. Never a redirect either way.
+ * Buying redirects straight to Mercado Pago's hosted checkout from wherever the plan
+ * card lives (see PlanPurchaseFlow), so it renders inline here exactly like it does in
+ * the "Desbloquear VIP" popover — there is no separate payment step to hand off to.
  */
 export function SubscriptionPage({
   language,
@@ -76,8 +76,6 @@ export function SubscriptionPage({
   error,
   onBack,
   onLanguageToggle,
-  onStartPurchase,
-  onPurchaseSuccess,
   onCancel,
   onRefresh,
   onSignIn,
@@ -91,8 +89,6 @@ export function SubscriptionPage({
   error: string
   onBack: () => void
   onLanguageToggle: () => void
-  onStartPurchase: () => void
-  onPurchaseSuccess: (overview: SubscriptionOverview) => void
   onCancel: () => void
   onRefresh: () => void
   onSignIn: () => void
@@ -160,15 +156,7 @@ export function SubscriptionPage({
         ) : null}
 
         {user && token && canSubscribe ? (
-          <PlansSection
-            copy={copy}
-            token={token}
-            userEmail={user.email}
-            plan={plan}
-            overview={overview}
-            onSuccess={onPurchaseSuccess}
-            onStartPurchase={onStartPurchase}
-          />
+          <PlansSection copy={copy} token={token} userEmail={user.email} plan={plan} overview={overview} />
         ) : null}
 
         {user ? (
@@ -356,16 +344,12 @@ function PlansSection({
   userEmail,
   plan,
   overview,
-  onSuccess,
-  onStartPurchase,
 }: {
   copy: SubscriptionPageCopy
   token: string
   userEmail: string
   plan: SubscriptionOverview['plan'] | null
   overview: SubscriptionOverview | null
-  onSuccess: (overview: SubscriptionOverview) => void
-  onStartPurchase: () => void
 }) {
   const [isOpen, setIsOpen] = useState(true)
 
@@ -392,8 +376,6 @@ function PlansSection({
               plan={plan}
               trialAvailable={Boolean(overview?.trialAvailable)}
               trialDeniedReason={overview?.trialDeniedReason ?? null}
-              onSuccess={onSuccess}
-              onRequestExternalCheckout={onStartPurchase}
             />
           </div>
         ) : null}

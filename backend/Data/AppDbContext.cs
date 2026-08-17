@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<SubscriptionEvent> SubscriptionEvents => Set<SubscriptionEvent>();
     public DbSet<TrialClaim> TrialClaims => Set<TrialClaim>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<FreeMetricUnlock> FreeMetricUnlocks => Set<FreeMetricUnlock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +119,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => new { item.UserId, item.SourceHash });
             entity.HasOne(item => item.User)
                 .WithMany(item => item.Analyses)
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FreeMetricUnlock>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.MetricId).HasMaxLength(60);
+            entity.Property(item => item.SourceHash).HasMaxLength(64);
+            entity.Property(item => item.DayKeyUtc).HasMaxLength(10);
+            // Unique, not just indexed: this is what makes spending an unlock idempotent.
+            // A double-tapped confirm button (or a retried request) hits the constraint
+            // instead of charging the same metric twice against the daily allowance.
+            // The chat is part of the key, so the same metric on two different exports is
+            // two rows — two unlocks — by construction.
+            entity.HasIndex(item => new { item.UserId, item.DayKeyUtc, item.SourceHash, item.MetricId }).IsUnique();
+            entity.HasOne(item => item.User)
+                .WithMany()
                 .HasForeignKey(item => item.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

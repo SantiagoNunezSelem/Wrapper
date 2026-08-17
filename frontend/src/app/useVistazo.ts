@@ -1,6 +1,7 @@
 import { type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { AiPanelProps } from '../components/AiStatePanel'
+import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import { shellCopy } from '../copy/shellCopy'
 import { toAcceptedMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
@@ -9,12 +10,15 @@ import {
   ApiError,
   cancelSubscription,
   getCurrentUser,
+  getFreeUnlocks,
   getSubscription,
   grantAiConsent,
   listAnalyses,
   loginWithGoogle,
+  resetDevFreeUnlocks,
   retryAiMetrics,
   saveAnalysis,
+  spendFreeUnlock,
   syncSubscription,
   toggleDevSubscription,
 } from '../lib/api'
@@ -29,10 +33,12 @@ import {
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
   AnalysisBundle,
   ChatMessage,
+  FreeUnlockState,
   Language,
   MetricCard as MetricCardData,
   SavedAnalysis,
@@ -87,6 +93,18 @@ export function useVistazo() {
   const [isAiBusy, setIsAiBusy] = useState(false)
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false)
 
+  // Today's free detail unlocks. Null until the account's allowance has been read (or
+  // for a signed-out visitor, who has no account to count against) — which is exactly
+  // the state where no free-unlock affordance should be offered at all.
+  const [freeUnlocks, setFreeUnlocks] = useState<FreeUnlockState | null>(null)
+  // The metric a confirmation is currently open for. The confirm exists because the
+  // allowance is small and only refills tomorrow — see FreeUnlockConfirm.
+  const [pendingFreeUnlockId, setPendingFreeUnlockId] = useState<string | null>(null)
+  // The metric currently showing the post-confirm loading spinner in its own detail
+  // panel — see confirmFreeUnlock. At most one at a time: it tracks the confirm flow,
+  // and a user can only have one confirm open at once.
+  const [revealingFreeUnlockId, setRevealingFreeUnlockId] = useState<string | null>(null)
+
   const [subscription, setSubscription] = useState<SubscriptionOverview | null>(null)
   const [subscriptionAction, setSubscriptionAction] = useState<'cancel' | 'refresh' | null>(null)
   const [subscriptionError, setSubscriptionError] = useState('')
@@ -128,6 +146,10 @@ export function useVistazo() {
 
   const hasVipAccess = Boolean(user?.hasVipAccess)
 
+  // Ticks down to the server's own reset instant, so "vuelven en 4h 12m" keeps counting
+  // without another round trip — and hits zero at the same moment for every device.
+  const secondsUntilFreeUnlockReset = useSecondsUntil(freeUnlocks?.resetsAtUtc)
+
   // What each AI-backed card should say. A viewer without Pro gets an empty map, which
   // the gate reads as "no verdict" and renders as the ordinary VIP lock. A Pro viewer
   // gets the real reason instead: no key on this server, consent not given yet, or
@@ -150,11 +172,23 @@ export function useVistazo() {
     return aiStates
   }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, aiStates])
 
-  // Either a live upload (gated on the fly, so VIP or an AI verdict landing mid-session
-  // costs nothing to reflect) or a bundle replayed from history exactly as it was saved.
+  // Only the unlocks bought for the chat currently on screen. The hash check is what
+  // keeps an answer that lands after the user has already switched chats from opening a
+  // detail on the new one that nobody paid for.
+  const freeUnlockedIds = useMemo(() => {
+    if (!freeUnlocks || !activeChat || freeUnlocks.sourceHash !== activeChat.sourceHash) {
+      return new Set<string>()
+    }
+
+    return new Set(freeUnlocks.unlockedMetricIds)
+  }, [freeUnlocks, activeChat])
+
+  // Either a live upload (gated on the fly, so VIP, an AI verdict or a free unlock
+  // landing mid-session costs nothing to reflect) or a bundle replayed from history
+  // exactly as it was saved.
   const analysis = useMemo(
-    () => replayedAnalysis ?? (core ? gateAnalysis(core, hasVipAccess, aiCardStates) : null),
-    [replayedAnalysis, core, hasVipAccess, aiCardStates],
+    () => replayedAnalysis ?? (core ? gateAnalysis(core, hasVipAccess, aiCardStates, freeUnlockedIds) : null),
+    [replayedAnalysis, core, hasVipAccess, aiCardStates, freeUnlockedIds],
   )
 
   useEffect(() => {
@@ -319,6 +353,24 @@ export function useVistazo() {
     void loadSubscription(token)
   }, [showDevTools, token])
 
+  // Read once the account is known and only while it lacks Pro: with Pro every detail is
+  // already open, so the allowance is dead weight. It is re-read whenever `hasVipAccess`
+  // flips, which is what makes a lapsed subscription fall back to the free unlocks
+  // without a reload — and whenever the chat changes, since which metrics are unlocked
+  // is a property of the chat, not of the account.
+  useEffect(() => {
+    if (!token || !user || hasVipAccess) {
+      setFreeUnlocks(null)
+      return
+    }
+
+    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    // Keyed on identity, entitlement and chat, not on the whole `user`/`activeChat`:
+    // every unrelated refresh of those objects would otherwise re-fetch the same
+    // allowance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user?.id, hasVipAccess, activeChat?.sourceHash])
+
   async function hydrateSession(authToken: string) {
     try {
       const [currentUser, analyses] = await Promise.all([
@@ -336,6 +388,29 @@ export function useVistazo() {
     }
   }
 
+  // Midnight passed with the tab still open. Re-read rather than refill locally: the day
+  // key is the server's, and guessing it here is how a UI ends up offering five unlocks
+  // the backend will refuse.
+  useEffect(() => {
+    if (!token || !freeUnlocks || secondsUntilFreeUnlockReset > 0) {
+      return
+    }
+
+    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, secondsUntilFreeUnlockReset, freeUnlocks?.resetsAtUtc])
+
+  /** Never surfaced as an error: failing to read the allowance just means no free-unlock
+   * button this session, and the ordinary VIP upsell is still a working way forward. */
+  async function loadFreeUnlocks(authToken: string, sourceHash?: string) {
+    try {
+      setFreeUnlocks(await getFreeUnlocks(authToken, sourceHash))
+    } catch (caught) {
+      console.error(caught)
+      setFreeUnlocks(null)
+    }
+  }
+
   /** Loads the account screen's data. Kept separate from `hydrateSession` so signing in
    * does not pay for a subscription round trip nobody asked to see yet. */
   async function loadSubscription(authToken: string) {
@@ -350,10 +425,8 @@ export function useVistazo() {
   function goToSubscriptionPage() {
     setSubscriptionError('')
     navigateTo('/suscripcion')
-
-    if (token) {
-      void loadSubscription(token)
-    }
+    // Loading is handled by the effect below, keyed on `route` — it also covers landing
+    // here straight from a fresh page load (typed URL, bookmark, back from Mercado Pago).
   }
 
   /** "Desbloquear VIP" on a locked card: a quick popover, not a page — see
@@ -367,21 +440,29 @@ export function useVistazo() {
     }
   }
 
-  /** Shared by both purchase surfaces (the popover and the full account page): the
-   * Brick already finished and Mercado Pago already authorized the subscription by the
-   * time this runs, so it is just reconciling local state with what the backend
-   * returned — never a second network attempt at the purchase itself. */
-  async function handlePurchaseSuccess(overview: SubscriptionOverview) {
-    setSubscription(overview)
-
-    if (token) {
-      try {
-        setUser(await getCurrentUser(token))
-      } catch (caught) {
-        console.error(caught)
-      }
+  // Keeps the account screen's data fresh whenever it becomes the active route — a click
+  // from inside the app (goToSubscriptionPage above never fetches itself), a page load
+  // straight at `/suscripcion`, or the browser's back/forward buttons. The `checkout`
+  // query param is Mercado Pago's own back_url marker (see MercadoPagoOptions.BackUrl):
+  // the browser almost always gets back before their webhook does, so this is what makes
+  // "you're on the free trial now" show up immediately instead of a stale "pendiente".
+  useEffect(() => {
+    if (!token || route !== 'subscription') {
+      return
     }
-  }
+
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('checkout') === 'return') {
+      params.delete('checkout')
+      const query = params.toString()
+      window.history.replaceState({}, '', `/suscripcion${query ? `?${query}` : ''}`)
+      void handleRefreshSubscription()
+    } else {
+      void loadSubscription(token)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, route])
 
   async function handleCancelSubscription() {
     if (!token) {
@@ -503,6 +584,9 @@ export function useVistazo() {
     setSubscription(null)
     setSubscriptionError('')
     setIsVipPopoverOpen(false)
+    // The allowance belongs to the account that just left — not to whoever signs in next.
+    setFreeUnlocks(null)
+    setPendingFreeUnlockId(null)
     aiAttemptedFor.current = ''
   }
 
@@ -524,6 +608,112 @@ export function useVistazo() {
   /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover. */
   function requestUnlock() {
     openVipPopover()
+  }
+
+  /**
+   * What a locked panel should offer for one card, or `undefined` for the plain VIP
+   * upsell. Several things have to be true at once for a free unlock to make sense:
+   *
+   * - the viewer has no Pro access (with it, nothing is locked to begin with);
+   * - the card is free-tier (the paid metrics are the product — never buyable this way);
+   * - the account's allowance has been read (a signed-out visitor has none);
+   * - there is a live chat to spend it on, since an unlock belongs to one export;
+   * - the analysis is a live upload, not a replay. A bundle saved without access was
+   *   stored *already stripped* of its details, so spending an unlock on one would cost
+   *   a real unlock and reveal nothing. Those get the reprocess hint instead.
+   */
+  function freeUnlockFor(card: MetricCardData): FreeUnlockPrompt | undefined {
+    if (hasVipAccess || card.tier !== 'free' || !freeUnlocks || !activeChat || isReplay) {
+      return undefined
+    }
+
+    // Already bought for this chat today: the detail is showing, so nothing to offer.
+    if (freeUnlockedIds.has(card.id)) {
+      return undefined
+    }
+
+    const { remaining, dailyLimit } = freeUnlocks
+    const label = remaining === 1 ? copy.freeUnlock.ctaOne : copy.freeUnlock.cta.replace('{n}', String(remaining))
+
+    return {
+      label,
+      // Only worth saying once the allowance is actually gone — a countdown next to
+      // "4 restantes" would be answering a question nobody is asking yet.
+      waitNote:
+        remaining > 0
+          ? null
+          : copy.freeUnlock.waitNote
+              .replace('{limit}', String(dailyLimit))
+              .replace('{t}', formatLongWait(secondsUntilFreeUnlockReset)),
+      onUse: remaining > 0 ? () => setPendingFreeUnlockId(card.id) : null,
+    }
+  }
+
+  /**
+   * Spends one of the day's unlocks on the metric the confirmation is open for, for the
+   * chat on screen.
+   *
+   * The confirm modal closes the instant this is called — it is a full-screen backdrop,
+   * and the wait that follows has to read as "this card is fetching its data," not as
+   * the app freezing. So the wait moves into the card's own detail panel instead (see
+   * `revealingFreeUnlockId` and `LockedPanel`'s `isRevealing`), timed to a random 3-6s so
+   * it never looks like a canned delay.
+   *
+   * The real spend finishes almost instantly; the randomized wait is what the viewer
+   * actually experiences. Once both are done, the account's state is re-read fresh
+   * rather than trusting the spend call's own response — if a second unlock was
+   * confirmed on another card in the meantime, that response could already be stale by
+   * the time this wait ends, and would overwrite a more complete state with an older one.
+   */
+  async function confirmFreeUnlock() {
+    const metricId = pendingFreeUnlockId
+
+    if (!token || !metricId || !activeChat) {
+      return
+    }
+
+    const sourceHash = activeChat.sourceHash
+
+    setPendingFreeUnlockId(null)
+    setRevealingFreeUnlockId(metricId)
+
+    try {
+      await Promise.all([spendFreeUnlock(token, metricId, sourceHash), sleep(randomFreeUnlockDelayMs())])
+      setFreeUnlocks(await getFreeUnlocks(token, sourceHash))
+      // The re-gate itself is free: `analysis` is derived from the core still in memory,
+      // so the real detail appears without recomputing a single metric.
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.freeUnlock.error)
+
+      // Whatever went wrong, the allowance the server believes in is the one that
+      // counts — re-read it so the button cannot keep offering an unlock that is gone.
+      void loadFreeUnlocks(token, sourceHash)
+    } finally {
+      setRevealingFreeUnlockId(null)
+    }
+  }
+
+  function cancelFreeUnlock() {
+    setPendingFreeUnlockId(null)
+  }
+
+  /** Localhost only: hands today's five back so the flow can be walked again. */
+  async function handleResetDevFreeUnlocks() {
+    if (!token) {
+      return
+    }
+
+    setIsDevBusy(true)
+
+    try {
+      setFreeUnlocks(await resetDevFreeUnlocks(token, activeChat?.sourceHash))
+    } catch (caught) {
+      console.error(caught)
+      setError(caught instanceof Error ? caught.message : copy.loadError)
+    } finally {
+      setIsDevBusy(false)
+    }
   }
 
   async function processFile(file: File) {
@@ -787,6 +977,14 @@ export function useVistazo() {
 
   const hasLockedVipCards = analysis ? analysis.vipMetrics.some((card) => !card.basic || !card.detail) : false
   const showReprocessHint = isReplay && Boolean(user?.hasVipAccess) && hasLockedVipCards
+
+  // The card a confirmation is currently open for — looked up rather than stashed, so it
+  // can never name a metric that has since left the list.
+  const pendingFreeUnlockMetric = useMemo(
+    () => interleavedMetrics.find((card) => card.id === pendingFreeUnlockId) ?? null,
+    [interleavedMetrics, pendingFreeUnlockId],
+  )
+
   return {
     // --- sesión e idioma ---
     language,
@@ -833,6 +1031,14 @@ export function useVistazo() {
     isVipPopoverOpen,
     setIsVipPopoverOpen,
 
+    // --- desbloqueos gratuitos diarios ---
+    freeUnlocks,
+    freeUnlockFor,
+    pendingFreeUnlockMetric,
+    revealingFreeUnlockId,
+    confirmFreeUnlock,
+    cancelFreeUnlock,
+
     // --- sólo en localhost ---
     showDevTools,
     devAiDisabled,
@@ -849,13 +1055,13 @@ export function useVistazo() {
     handleFileSelection,
     handleGoogleSuccess,
     handleLogout,
-    handlePurchaseSuccess,
     handleCancelSubscription,
     handleRefreshSubscription,
     handleAiRetry,
     handleConsentAccept,
     handleToggleDevAi,
     handleToggleDevSubscription,
+    handleResetDevFreeUnlocks,
     openSavedAnalysis,
     backToLanding,
   }
@@ -890,4 +1096,18 @@ function stripExtension(fileName: string): string {
   const parts = fileName.split('.')
   parts.pop()
   return parts.join('.') || fileName
+}
+
+// Long enough to read as "fetching something real," short enough not to feel broken;
+// randomized within the range so it never looks like a canned constant. See
+// confirmFreeUnlock, the only caller.
+const FREE_UNLOCK_MIN_DELAY_MS = 3000
+const FREE_UNLOCK_MAX_DELAY_MS = 6000
+
+function randomFreeUnlockDelayMs(): number {
+  return FREE_UNLOCK_MIN_DELAY_MS + Math.random() * (FREE_UNLOCK_MAX_DELAY_MS - FREE_UNLOCK_MIN_DELAY_MS)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

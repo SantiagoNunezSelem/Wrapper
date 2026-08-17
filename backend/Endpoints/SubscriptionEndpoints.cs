@@ -38,17 +38,15 @@ public static class SubscriptionEndpoints
             return Results.Ok(await BuildOverviewAsync(user, subscriptions, eligibility, cancellationToken));
         });
 
-        // Called once the Card Payment Brick has tokenized the card client-side — see
-        // frontend/src/components/CardCheckoutBrick.tsx. The card itself never reaches
-        // this backend, only the one-time token; the subscription is authorized (or
-        // rejected) synchronously in this same call, so the response already reflects
-        // the outcome instead of a "come back later" placeholder.
+        // Opens a checkout and hands back Mercado Pago's own hosted page — the frontend's
+        // whole job after this call is `window.location.href = initPoint`. Nothing about
+        // the subscription is known to have succeeded yet: that arrives later, through the
+        // webhook or the /sync endpoint the checkout's back_url lands on.
         app.MapPost("/api/subscription/checkout", [Authorize] async (
             ClaimsPrincipal principal,
             CheckoutRequest? request,
             AppDbContext db,
             SubscriptionService subscriptions,
-            TrialEligibilityService trialEligibility,
             HttpContext http,
             CancellationToken cancellationToken) =>
         {
@@ -58,14 +56,10 @@ public static class SubscriptionEndpoints
                 return Results.Unauthorized();
             }
 
-            if (string.IsNullOrWhiteSpace(request?.CardTokenId))
-            {
-                return Results.BadRequest(new { message = "CardTokenId is required.", code = "missing_card_token" });
-            }
-
+            CheckoutResult result;
             try
             {
-                await subscriptions.CreateSubscriptionAsync(user, request.CardTokenId, http, request.DeviceId, cancellationToken);
+                result = await subscriptions.StartCheckoutAsync(user, http, request?.DeviceId, cancellationToken);
             }
             catch (SubscriptionConflictException exception)
             {
@@ -75,16 +69,12 @@ public static class SubscriptionEndpoints
             }
             catch (MercadoPagoException exception)
             {
-                // Mercado Pago rejected the card/token itself (declined, expired token,
-                // etc.) — a 502 reads as "our fault", so this comes back as a 422 the
-                // frontend shows next to the card form instead.
                 return Results.Json(
-                    new { message = exception.Message, code = "card_rejected" },
-                    statusCode: StatusCodes.Status422UnprocessableEntity);
+                    new { message = exception.Message, code = "provider_error" },
+                    statusCode: StatusCodes.Status502BadGateway);
             }
 
-            var eligibility = await trialEligibility.EvaluateAsync(user, http, request.DeviceId, cancellationToken);
-            return Results.Ok(await BuildOverviewAsync(user, subscriptions, eligibility, cancellationToken));
+            return Results.Ok(new CheckoutStartResponse(result.RedirectUrl, result.SubscriptionId));
         });
 
         app.MapPost("/api/subscription/cancel", [Authorize] async (
@@ -319,7 +309,9 @@ public static class SubscriptionEndpoints
 
 internal sealed record WebhookNotification(string Topic, string? Action, string DataId);
 
-public sealed record CheckoutRequest(string? CardTokenId, string? DeviceId);
+public sealed record CheckoutRequest(string? DeviceId);
+
+public sealed record CheckoutStartResponse(string InitPoint, Guid SubscriptionId);
 
 public sealed record PlanResponse(
     decimal Amount,

@@ -110,10 +110,6 @@ function toBoundaryPattern(phrases: string[]): RegExp {
   return new RegExp(`\\b(?:${phrases.map(escapeRegExp).join('|')})\\b`, 'i')
 }
 
-function buildRepeatedEmojiPattern(emojis: string[], minCount: number): RegExp {
-  return new RegExp(`(?:${emojis.map(escapeRegExp).join('|')}){${minCount},}`, 'u')
-}
-
 interface TieredWordMatch {
   word: string
   isExplicit: boolean
@@ -313,25 +309,6 @@ function categoryLabel(category: RedFlagCategory, language: Language): string {
   return language === 'es' ? category.labelEs : category.labelEn
 }
 
-// Actually cringe-coded phrases (dated slang, over-the-top pet names, roleplay-style
-// asterisk actions) — deliberately excludes ordinary, extremely common words like
-// "literal" or "bro" that used to swamp this metric with false positives.
-const cringeWords = [
-  'uwu', 'owo', 'senpai', 'kawaii', 'nyaa', 'shippear', 'shipear', 'bebito', 'bebita', 'bb', 'bby',
-  'amorsh', 'amoxis', 'mi cielito', 'mi principito', 'mi princesa', 'mi rey', 'mi reina', 'papucho',
-  'papuchi', 'mamacita', 'te amo infinito', 'te amo con toda mi alma', 'eres mi todo', 'sos mi todo',
-  'no puedo vivir sin ti', 'no puedo vivir sin vos', 'mi media naranja', 'almas gemelas', 'yolo',
-  'swag', 'ntc',
-]
-const cringePattern = toBoundaryPattern(cringeWords)
-// "*se sonroja*", "*te abraza*" — roleplay-style narrated actions are a strong, distinct
-// cringe signal on their own, independent of the word dictionary above.
-const roleplayActionPattern = /\*[^*\n]{2,40}\*/
-const cutesySpamPattern = buildRepeatedEmojiPattern(
-  ['❤️', '❤', '🥺', '😍', '🥰', '💕', '💖', '💗', '😻', '💞', '💓'],
-  3,
-)
-
 // Heuristic dictionary for "El Tono Picante" — not a claim of accuracy, just candidate
 // bait; the AI pass (see applyAiVerdicts) is what actually decides which candidates get
 // shown as detailed examples. Split into the same two tiers as the red-flag categories
@@ -515,10 +492,6 @@ const metricMeta: MetaDictionary = {
     es: { title: 'Detector de Red Flags', description: 'Un puntaje de tensión a partir de silencios, borrados y palabras clave.', preview: 'Desglose de patrones y momentos señalados.' },
     en: { title: 'Red Flag Detector', description: 'A tension score built from silences, deletions, and keywords.', preview: 'Pattern breakdown and flagged moments.' },
   },
-  cringe: {
-    es: { title: 'Índice de Cringe', description: 'Cuántas veces aparece vocabulario marcado como cringe.', preview: 'Top 5 momentos cringe por integrante, con fecha y frase.' },
-    en: { title: 'Cringe Index', description: 'How often cringe-flagged vocabulary shows up.', preview: "Each participant's top 5 cringe moments, dated and quoted." },
-  },
   arrepentido: {
     es: { title: 'El Arrepentido', description: 'Cuántos mensajes borró cada quien después de mandarlos.', preview: 'Evolución de los borrados a lo largo del tiempo.' },
     en: { title: 'The Regret Counter', description: 'How many messages each person deleted after sending.', preview: 'How deletions evolved over time.' },
@@ -678,15 +651,16 @@ const freeMetricEntries: MetricEntry[] = [
   { id: 'spammer', tier: 'free', accent: 'tier-purple', compute: metricSpammer },
   { id: 'monologuista', tier: 'free', accent: 'tier-pink', compute: metricMonologuista },
   { id: 'reloj', tier: 'free', accent: 'tier-orange', compute: metricReloj },
-  { id: 'rompehielo', tier: 'free', accent: 'tier-blue', compute: metricRompehielo },
+  { id: 'jajaja', tier: 'free', accent: 'tier-yellow', compute: metricJajaja },
   { id: 'emojis', tier: 'free', accent: 'tier-cyan', compute: metricEmojis },
   { id: 'racha-dias', tier: 'free', accent: 'tier-lime', compute: metricRachaDias },
   { id: 'testamento', tier: 'free', accent: 'tier-gold', compute: metricTestamento },
   { id: 'multimedia', tier: 'free', accent: 'tier-rose', compute: metricMultimedia },
-  { id: 'top-dias', tier: 'free', accent: 'tier-indigo', compute: metricTopDias },
+  { id: 'poliglota', tier: 'free', accent: 'tier-green', compute: metricPoliglota },
   { id: 'velocista', tier: 'free', accent: 'tier-mint', compute: metricVelocista },
   { id: 'heatmap-anual', tier: 'free', accent: 'tier-teal', compute: metricHeatmapAnual },
   { id: 'termometro', tier: 'free', accent: 'tier-violet', compute: metricTermometro },
+  { id: 'arrepentido', tier: 'free', accent: 'tier-slate', compute: metricArrepentido },
 ]
 
 const vipMetricEntries: MetricEntry[] = [
@@ -694,12 +668,10 @@ const vipMetricEntries: MetricEntry[] = [
   { id: 'inactividad', tier: 'vip', accent: 'tier-slate', compute: metricInactividad },
   { id: 'wordcloud', tier: 'vip', accent: 'tier-cyan', compute: metricWordcloud },
   { id: 'redflags', tier: 'vip', accent: 'tier-red', compute: metricRedflags },
-  { id: 'cringe', tier: 'vip', accent: 'tier-orange', compute: metricCringe },
-  { id: 'arrepentido', tier: 'vip', accent: 'tier-rose', compute: metricArrepentido },
-  { id: 'poliglota', tier: 'vip', accent: 'tier-green', compute: metricPoliglota },
-  { id: 'jajaja', tier: 'vip', accent: 'tier-yellow', compute: metricJajaja },
-  { id: 'metralleta', tier: 'vip', accent: 'tier-blue', compute: metricMetralleta },
-  { id: 'interrogador', tier: 'vip', accent: 'tier-indigo', compute: metricInterrogador },
+  { id: 'rompehielo', tier: 'vip', accent: 'tier-blue', compute: metricRompehielo },
+  { id: 'top-dias', tier: 'vip', accent: 'tier-indigo', compute: metricTopDias },
+  { id: 'metralleta', tier: 'vip', accent: 'tier-rose', compute: metricMetralleta },
+  { id: 'interrogador', tier: 'vip', accent: 'tier-orange', compute: metricInterrogador },
   { id: 'dramatico', tier: 'vip', accent: 'tier-gold', compute: metricDramatico },
   { id: 'tonopicante', tier: 'vip', accent: 'tier-magenta', compute: metricTonoPicante },
   { id: 'curador', tier: 'vip', accent: 'tier-sky', compute: metricCurador },
@@ -825,17 +797,22 @@ export async function applyAiVerdicts(
 
 /** Cheap: just decides which cards' `basic`/`detail` are visible for this viewer.
  * Safe to call synchronously on every `hasVipAccess`/replay/AI-state change since none
- * of the underlying metric numbers depend on VIP status. */
+ * of the underlying metric numbers depend on VIP status.
+ *
+ * `freeUnlockedIds` are the free-tier metrics this account spent one of its daily free
+ * unlocks on (see FreeUnlockState) — the same re-gate-for-free path VIP takes, which is
+ * why unlocking one costs a round trip and not a re-analysis. */
 export function gateAnalysis(
   core: AnalysisCore,
   hasVipAccess: boolean,
   aiStates: AiCardStates = {},
+  freeUnlockedIds: ReadonlySet<string> = new Set(),
 ): AnalysisBundle {
   const { rawFreeMetrics, rawVipMetrics, ...meta } = core
   return {
     ...meta,
-    freeMetrics: rawFreeMetrics.map((card) => gateCard(card, hasVipAccess, aiStates)),
-    vipMetrics: rawVipMetrics.map((card) => gateCard(card, hasVipAccess, aiStates)),
+    freeMetrics: rawFreeMetrics.map((card) => gateCard(card, hasVipAccess, aiStates, freeUnlockedIds)),
+    vipMetrics: rawVipMetrics.map((card) => gateCard(card, hasVipAccess, aiStates, freeUnlockedIds)),
   }
 }
 
@@ -935,7 +912,12 @@ function createMetric(
 /** Applies VIP/locking rules to an already-computed (ungated) card. Cheap and
  * pure, so it can re-run on every `hasVipAccess` change with no recompute cost —
  * see `gateAnalysis`. */
-function gateCard(card: MetricCard, hasVipAccess: boolean, aiStates: AiCardStates): MetricCard {
+function gateCard(
+  card: MetricCard,
+  hasVipAccess: boolean,
+  aiStates: AiCardStates,
+  freeUnlockedIds: ReadonlySet<string>,
+): MetricCard {
   const aiState: AiCardState | undefined = isAiMetricId(card.id)
     ? aiStates[card.id] ?? { status: 'pending' }
     : undefined
@@ -943,10 +925,13 @@ function gateCard(card: MetricCard, hasVipAccess: boolean, aiStates: AiCardState
   // An AI metric without a verdict must never fall back to the raw keyword numbers:
   // those false positives are the whole reason the AI pass exists. It stays locked and
   // the card shows why — which is also what keeps one failed metric from taking the
-  // other twenty-four down with it.
+  // other twenty-three down with it.
   const aiUnresolved = aiState !== undefined && aiState.status !== 'ready'
   const basicLocked = (card.tier === 'vip' && !hasVipAccess) || aiUnresolved
-  const detailLocked = !hasVipAccess || aiUnresolved
+  // A daily free unlock only ever opens a free-tier card: the paid metrics are the
+  // product, so the tier check stays here even though the server enforces it too.
+  const freeUnlocked = card.tier === 'free' && freeUnlockedIds.has(card.id)
+  const detailLocked = (!hasVipAccess && !freeUnlocked) || aiUnresolved
 
   return {
     ...card,
@@ -1074,41 +1059,72 @@ function metricReloj(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricRompehielo(ctx: MetricContext): MetricResult {
-  const { chatMessages, language } = ctx
-  const openers = getDayOpeners(chatMessages)
-  const byStarter = countBySender(openers)
-  const top = topEntry(byStarter)
+function metricJajaja(ctx: MetricContext): MetricResult {
+  const { textMessages, participants, textMessagesBySender, language } = ctx
+  const overall = new Map<string, number>()
+
+  for (const message of textMessages) {
+    for (const token of tokenize(message.contentText)) {
+      const style = classifyLaugh(token)
+      if (style) {
+        const label = laughStyleLabel(style, language)
+        overall.set(label, (overall.get(label) ?? 0) + 1)
+      }
+    }
+  }
+
+  const top = topEntry(overall)
 
   if (!top) {
     return { hasData: false }
   }
 
-  const total = openers.length
+  const bySenderDominant = new Map<string, number>()
+  const bySenderStyle = new Map<string, string>()
+  const series: MetricSeriesEntry[] = []
+
+  for (const name of participants) {
+    const styles = new Map<string, number>()
+    for (const message of textMessagesBySender.get(name) ?? []) {
+      for (const token of tokenize(message.contentText)) {
+        const style = classifyLaugh(token)
+        if (style) {
+          const label = laughStyleLabel(style, language)
+          styles.set(label, (styles.get(label) ?? 0) + 1)
+        }
+      }
+    }
+
+    const dominant = topEntry(styles)
+    if (dominant) {
+      bySenderDominant.set(name, dominant.value)
+      bySenderStyle.set(name, dominant.key)
+    }
+
+    if (styles.size > 0) {
+      series.push({ name, chart: { kind: 'bar', items: rankingBars(styles, language, 6) } })
+    }
+  }
 
   return {
     hasData: true,
     basic: {
-      value: percentage(top.value, total),
-      label: language === 'es' ? `de los días los abre ${top.key}` : `of days are opened by ${top.key}`,
-      chart: { kind: 'donut', items: [...byStarter.entries()].map(([label, value]) => ({ label, value })) },
+      value: top.key,
+      label:
+        language === 'es'
+          ? `es el estilo de risa dominante (${formatNumber(top.value, language)} veces)`
+          : `is the dominant laugh style (${formatNumber(top.value, language)} times)`,
+      chart: { kind: 'bar', items: rankingBars(overall, language, 6) },
     },
     detail: {
       intro:
         language === 'es'
-          ? 'Quién retoma la charla cada día, con el primer mensaje exacto.'
-          : 'Who restarts the conversation each day, with the exact opening message.',
-      breakdown: breakdownPercent(byStarter, total),
-      groups: capGroups(openers).map((message) =>
-        momentGroup(
-          ctx,
-          message,
-          language === 'es'
-            ? `${formatDate(message.timestamp, language)} — abrió ${message.sender}`
-            : `${formatDate(message.timestamp, language)} — opened by ${message.sender}`,
-        ),
-      ),
-      paginatedItemsLabel: language === 'es' ? 'Aperturas de conversación' : 'Conversation openers',
+          ? 'Cómo se ríe cada integrante, de la risa seca a la caótica.'
+          : 'How each participant laughs, from the dry "ja" to full keyboard chaos.',
+      breakdown: [...bySenderDominant.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .map(([name, value]) => ({ name, value, displayValue: bySenderStyle.get(name) ?? '' })),
+      series,
     },
   }
 }
@@ -1317,49 +1333,64 @@ function metricMultimedia(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricTopDias(ctx: MetricContext): MetricResult {
-  const { chatMessages, language } = ctx
-  const byDay = countByDay(chatMessages)
+function metricPoliglota(ctx: MetricContext): MetricResult {
+  const { textMessages, participants, language } = ctx
+  const bySender = new Map<string, number>()
+  const termsBySender = new Map<string, Map<string, number>>()
 
-  if (byDay.size === 0) {
+  for (const message of textMessages) {
+    if (!message.sender) {
+      continue
+    }
+
+    const hits = tokenize(message.contentText).filter((token) => englishTokenHints.has(token))
+    if (hits.length === 0) {
+      continue
+    }
+
+    bySender.set(message.sender, (bySender.get(message.sender) ?? 0) + hits.length)
+    const terms = termsBySender.get(message.sender) ?? new Map<string, number>()
+    for (const hit of hits) {
+      terms.set(hit, (terms.get(hit) ?? 0) + 1)
+    }
+    termsBySender.set(message.sender, terms)
+  }
+
+  const top = topEntry(bySender)
+
+  if (!top) {
     return { hasData: false }
   }
 
-  const sorted = [...byDay.entries()].sort((left, right) => right[1] - left[1])
-  const [topDay, topCount] = sorted[0]
-  const top10 = sorted.slice(0, 10)
-  const bySenderOnTopDay = countBySender(chatMessages.filter((message) => dayKey(message.timestamp) === topDay))
+  const total = [...bySender.values()].reduce((sum, value) => sum + value, 0)
+  const series: MetricSeriesEntry[] = participants
+    .map((name) => {
+      const terms = termsBySender.get(name)
+      const items: BarDatum[] = terms
+        ? [...terms.entries()]
+            .sort((left, right) => right[1] - left[1])
+            .slice(0, PER_PARTICIPANT_TOP_LIMIT)
+            .map(([term, count]) => ({ label: term, value: count, displayValue: `×${formatNumber(count, language)}` }))
+        : []
+      return { name, items }
+    })
+    .filter((entry) => entry.items.length > 0)
+    .map((entry) => ({ name: entry.name, chart: { kind: 'bar', items: entry.items } as ChartData }))
 
   return {
     hasData: true,
     basic: {
-      value: formatNumber(topCount, language),
-      label: language === 'es' ? `mensajes el ${formatDate(topDay, language)}` : `messages on ${formatDate(topDay, language)}`,
+      value: top.key,
+      label: language === 'es' ? `mezcla más anglicismos (${top.value})` : `mixes in the most English terms (${top.value})`,
+      chart: { kind: 'donut', items: [...bySender.entries()].map(([label, value]) => ({ label, value })) },
     },
     detail: {
       intro:
         language === 'es'
-          ? 'Los 10 días con más actividad histórica, y quién los empujó.'
-          : 'The 10 most active days in history, and who drove them.',
-      chart: {
-        kind: 'bar',
-        items: top10.map(([day, count]) => ({ label: formatDate(day, language), value: count, displayValue: formatNumber(count, language) })),
-      },
-      breakdown: breakdownCount(bySenderOnTopDay, language),
-      groups: capGroups(
-        top10
-          .map(([day, count]) =>
-            dayRangeGroup(
-              ctx,
-              day,
-              language === 'es'
-                ? `${formatDate(day, language)} — pico de ${formatNumber(count, language)} mensajes`
-                : `${formatDate(day, language)} — peak of ${formatNumber(count, language)} messages`,
-            ),
-          )
-          .filter((group): group is MessageGroup => group !== null),
-      ),
-      paginatedItemsLabel: language === 'es' ? 'Fragmentos de los días pico' : 'Peak-day fragments',
+          ? 'Los términos importados favoritos de cada integrante.'
+          : "Each participant's favorite imported terms.",
+      breakdown: breakdownPercent(bySender, total),
+      series,
     },
   }
 }
@@ -1497,6 +1528,35 @@ function metricTermometro(ctx: MetricContext): MetricResult {
       intro: language === 'es' ? 'La distribución semanal de cada integrante.' : "Each participant's own weekly rhythm.",
       breakdown: topBySender.map(({ name, best }) => ({ name, value: best.value, displayValue: best.axis })),
       series,
+    },
+  }
+}
+
+function metricArrepentido(ctx: MetricContext): MetricResult {
+  const { chatMessages, language } = ctx
+  const deleted = chatMessages.filter((message) => message.isDeleted)
+
+  if (deleted.length === 0) {
+    return { hasData: false }
+  }
+
+  const bySender = countBySender(deleted)
+  const top = topEntry(bySender)!
+
+  return {
+    hasData: true,
+    basic: {
+      value: formatNumber(top.value, language),
+      label: language === 'es' ? `mensajes borrados por ${top.key}` : `messages deleted by ${top.key}`,
+      chart: { kind: 'bar', items: rankingBars(bySender, language, 8) },
+    },
+    detail: {
+      intro:
+        language === 'es'
+          ? 'Cuándo ocurren más arrepentimientos a lo largo del tiempo.'
+          : 'When those second thoughts happen most, over time.',
+      chart: { kind: 'timeline', points: dailyVolume(deleted, language) },
+      breakdown: breakdownPercent(bySender, deleted.length),
     },
   }
 }
@@ -1763,200 +1823,88 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
   }
 }
 
-function metricCringe(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, language } = ctx
-  const hits = textMessages.filter((message) => hasCringeWord(message.contentText))
-
-  if (hits.length === 0) {
-    return { hasData: false }
-  }
-
-  const bySender = countBySender(hits)
-  const hitsBySender = groupBySender(hits)
-  const groupsList: MessageGroup[] = []
-
-  for (const name of participants) {
-    const own = (hitsBySender.get(name) ?? []).slice(0, 5)
-    for (const message of own) {
-      groupsList.push(momentGroup(ctx, message, `${name} — ${formatDate(message.timestamp, language)}`))
-    }
-  }
-
-  return {
-    hasData: true,
-    basic: {
-      value: formatNumber(hits.length, language),
-      label: language === 'es' ? 'momentos cringe detectados' : 'cringe-coded moments detected',
-    },
-    detail: {
-      intro:
-        language === 'es'
-          ? 'Top 5 momentos cringe de cada integrante, con fecha y frase exacta.'
-          : "Each participant's top 5 cringe moments, with date and exact quote.",
-      breakdown: breakdownCount(bySender, language),
-      groups: capGroups(groupsList),
-      paginatedItemsLabel: language === 'es' ? 'Momentos cringe' : 'Cringe moments',
-    },
-  }
-}
-
-function metricArrepentido(ctx: MetricContext): MetricResult {
+function metricRompehielo(ctx: MetricContext): MetricResult {
   const { chatMessages, language } = ctx
-  const deleted = chatMessages.filter((message) => message.isDeleted)
-
-  if (deleted.length === 0) {
-    return { hasData: false }
-  }
-
-  const bySender = countBySender(deleted)
-  const top = topEntry(bySender)!
-
-  return {
-    hasData: true,
-    basic: {
-      value: formatNumber(top.value, language),
-      label: language === 'es' ? `mensajes borrados por ${top.key}` : `messages deleted by ${top.key}`,
-      chart: { kind: 'bar', items: rankingBars(bySender, language, 8) },
-    },
-    detail: {
-      intro:
-        language === 'es'
-          ? 'Cuándo ocurren más arrepentimientos a lo largo del tiempo.'
-          : 'When those second thoughts happen most, over time.',
-      chart: { kind: 'timeline', points: dailyVolume(deleted, language) },
-      breakdown: breakdownPercent(bySender, deleted.length),
-    },
-  }
-}
-
-function metricPoliglota(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, language } = ctx
-  const bySender = new Map<string, number>()
-  const termsBySender = new Map<string, Map<string, number>>()
-
-  for (const message of textMessages) {
-    if (!message.sender) {
-      continue
-    }
-
-    const hits = tokenize(message.contentText).filter((token) => englishTokenHints.has(token))
-    if (hits.length === 0) {
-      continue
-    }
-
-    bySender.set(message.sender, (bySender.get(message.sender) ?? 0) + hits.length)
-    const terms = termsBySender.get(message.sender) ?? new Map<string, number>()
-    for (const hit of hits) {
-      terms.set(hit, (terms.get(hit) ?? 0) + 1)
-    }
-    termsBySender.set(message.sender, terms)
-  }
-
-  const top = topEntry(bySender)
+  const openers = getDayOpeners(chatMessages)
+  const byStarter = countBySender(openers)
+  const top = topEntry(byStarter)
 
   if (!top) {
     return { hasData: false }
   }
 
-  const total = [...bySender.values()].reduce((sum, value) => sum + value, 0)
-  const series: MetricSeriesEntry[] = participants
-    .map((name) => {
-      const terms = termsBySender.get(name)
-      const items: BarDatum[] = terms
-        ? [...terms.entries()]
-            .sort((left, right) => right[1] - left[1])
-            .slice(0, PER_PARTICIPANT_TOP_LIMIT)
-            .map(([term, count]) => ({ label: term, value: count, displayValue: `×${formatNumber(count, language)}` }))
-        : []
-      return { name, items }
-    })
-    .filter((entry) => entry.items.length > 0)
-    .map((entry) => ({ name: entry.name, chart: { kind: 'bar', items: entry.items } as ChartData }))
+  const total = openers.length
 
   return {
     hasData: true,
     basic: {
-      value: top.key,
-      label: language === 'es' ? `mezcla más anglicismos (${top.value})` : `mixes in the most English terms (${top.value})`,
-      chart: { kind: 'donut', items: [...bySender.entries()].map(([label, value]) => ({ label, value })) },
+      value: percentage(top.value, total),
+      label: language === 'es' ? `de los días los abre ${top.key}` : `of days are opened by ${top.key}`,
+      chart: { kind: 'donut', items: [...byStarter.entries()].map(([label, value]) => ({ label, value })) },
     },
     detail: {
       intro:
         language === 'es'
-          ? 'Los términos importados favoritos de cada integrante.'
-          : "Each participant's favorite imported terms.",
-      breakdown: breakdownPercent(bySender, total),
-      series,
+          ? 'Quién retoma la charla cada día, con el primer mensaje exacto.'
+          : 'Who restarts the conversation each day, with the exact opening message.',
+      breakdown: breakdownPercent(byStarter, total),
+      groups: capGroups(openers).map((message) =>
+        momentGroup(
+          ctx,
+          message,
+          language === 'es'
+            ? `${formatDate(message.timestamp, language)} — abrió ${message.sender}`
+            : `${formatDate(message.timestamp, language)} — opened by ${message.sender}`,
+        ),
+      ),
+      paginatedItemsLabel: language === 'es' ? 'Aperturas de conversación' : 'Conversation openers',
     },
   }
 }
 
-function metricJajaja(ctx: MetricContext): MetricResult {
-  const { textMessages, participants, textMessagesBySender, language } = ctx
-  const overall = new Map<string, number>()
+function metricTopDias(ctx: MetricContext): MetricResult {
+  const { chatMessages, language } = ctx
+  const byDay = countByDay(chatMessages)
 
-  for (const message of textMessages) {
-    for (const token of tokenize(message.contentText)) {
-      const style = classifyLaugh(token)
-      if (style) {
-        const label = laughStyleLabel(style, language)
-        overall.set(label, (overall.get(label) ?? 0) + 1)
-      }
-    }
-  }
-
-  const top = topEntry(overall)
-
-  if (!top) {
+  if (byDay.size === 0) {
     return { hasData: false }
   }
 
-  const bySenderDominant = new Map<string, number>()
-  const bySenderStyle = new Map<string, string>()
-  const series: MetricSeriesEntry[] = []
-
-  for (const name of participants) {
-    const styles = new Map<string, number>()
-    for (const message of textMessagesBySender.get(name) ?? []) {
-      for (const token of tokenize(message.contentText)) {
-        const style = classifyLaugh(token)
-        if (style) {
-          const label = laughStyleLabel(style, language)
-          styles.set(label, (styles.get(label) ?? 0) + 1)
-        }
-      }
-    }
-
-    const dominant = topEntry(styles)
-    if (dominant) {
-      bySenderDominant.set(name, dominant.value)
-      bySenderStyle.set(name, dominant.key)
-    }
-
-    if (styles.size > 0) {
-      series.push({ name, chart: { kind: 'bar', items: rankingBars(styles, language, 6) } })
-    }
-  }
+  const sorted = [...byDay.entries()].sort((left, right) => right[1] - left[1])
+  const [topDay, topCount] = sorted[0]
+  const top10 = sorted.slice(0, 10)
+  const bySenderOnTopDay = countBySender(chatMessages.filter((message) => dayKey(message.timestamp) === topDay))
 
   return {
     hasData: true,
     basic: {
-      value: top.key,
-      label:
-        language === 'es'
-          ? `es el estilo de risa dominante (${formatNumber(top.value, language)} veces)`
-          : `is the dominant laugh style (${formatNumber(top.value, language)} times)`,
-      chart: { kind: 'bar', items: rankingBars(overall, language, 6) },
+      value: formatNumber(topCount, language),
+      label: language === 'es' ? `mensajes el ${formatDate(topDay, language)}` : `messages on ${formatDate(topDay, language)}`,
     },
     detail: {
       intro:
         language === 'es'
-          ? 'Cómo se ríe cada integrante, de la risa seca a la caótica.'
-          : 'How each participant laughs, from the dry "ja" to full keyboard chaos.',
-      breakdown: [...bySenderDominant.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .map(([name, value]) => ({ name, value, displayValue: bySenderStyle.get(name) ?? '' })),
-      series,
+          ? 'Los 10 días con más actividad histórica, y quién los empujó.'
+          : 'The 10 most active days in history, and who drove them.',
+      chart: {
+        kind: 'bar',
+        items: top10.map(([day, count]) => ({ label: formatDate(day, language), value: count, displayValue: formatNumber(count, language) })),
+      },
+      breakdown: breakdownCount(bySenderOnTopDay, language),
+      groups: capGroups(
+        top10
+          .map(([day, count]) =>
+            dayRangeGroup(
+              ctx,
+              day,
+              language === 'es'
+                ? `${formatDate(day, language)} — pico de ${formatNumber(count, language)} mensajes`
+                : `${formatDate(day, language)} — peak of ${formatNumber(count, language)} messages`,
+            ),
+          )
+          .filter((group): group is MessageGroup => group !== null),
+      ),
+      paginatedItemsLabel: language === 'es' ? 'Fragmentos de los días pico' : 'Peak-day fragments',
     },
   }
 }
@@ -3073,13 +3021,6 @@ function buildWordCloud(messages: ChatMessage[]): WordCloudDatum[] {
   return [...unigrams, ...bigrams, ...trigrams]
     .sort((left, right) => right[1] - left[1])
     .map(([word, count]) => ({ word, count }))
-}
-
-function hasCringeWord(text: string): boolean {
-  if (roleplayActionPattern.test(text) || cutesySpamPattern.test(text)) {
-    return true
-  }
-  return cringePattern.test(normalizeForMatch(text))
 }
 
 // Home-row letters that a "jaja"/"jsjs" laugh naturally spills onto when someone's
