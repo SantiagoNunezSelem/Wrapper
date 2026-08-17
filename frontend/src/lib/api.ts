@@ -1,6 +1,8 @@
 import type {
   AiMetricState,
   AuthResponse,
+  CheckoutStart,
+  FreeUnlockState,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
@@ -155,21 +157,23 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
 }
 
 /**
- * Creates the subscription from a card the Payment Brick already tokenized in the
- * browser (see `components/PaymentBrickCheckout.tsx`) — the card itself never passes
- * through this function or this backend, only the one-time token. Unlike a redirect
- * checkout, this call's response already reflects the outcome: it either resolves with
- * the subscription now trialing/active, or rejects with why Mercado Pago declined it.
+ * Opens a checkout and hands back Mercado Pago's own hosted page — the card form, 3-D
+ * Secure if the bank asks for it, all of it happens over there, not in this app. The
+ * caller's whole job with the result is `window.location.href = initPoint`; whether the
+ * subscription actually goes through is unknown here, and shows up later once the payer
+ * is sent back (see `syncSubscription`) or the webhook lands.
  */
-export async function createSubscriptionWithCard(token: string, cardTokenId: string): Promise<SubscriptionOverview> {
-  return request<SubscriptionOverview>(
+export async function startCheckout(token: string): Promise<CheckoutStart> {
+  const response = await request<{ initPoint: string; subscriptionId: string }>(
     '/api/subscription/checkout',
     {
       method: 'POST',
-      body: JSON.stringify({ cardTokenId, deviceId: getDeviceId() }),
+      body: JSON.stringify({ deviceId: getDeviceId() }),
     },
     token,
   )
+
+  return { initPoint: response.initPoint, subscriptionId: response.subscriptionId }
 }
 
 /** Stops automatic renewal. Access continues until the end of the paid period. */
@@ -183,6 +187,44 @@ export async function syncSubscription(token: string): Promise<SubscriptionOverv
   return request<SubscriptionOverview>('/api/subscription/sync', { method: 'POST' }, token)
 }
 
+// ---------------------------------------------------------------------------
+// Free daily metric unlocks
+// ---------------------------------------------------------------------------
+
+/**
+ * Today's free-unlock allowance for the signed-in account, plus what it already bought
+ * on `sourceHash`. Omitting the chat still answers how many are left today, just with an
+ * empty unlock list.
+ */
+export async function getFreeUnlocks(token: string, sourceHash?: string): Promise<FreeUnlockState> {
+  const query = sourceHash ? `?sourceHash=${encodeURIComponent(sourceHash)}` : ''
+  return request<FreeUnlockState>(`/api/metric-unlocks${query}`, { method: 'GET' }, token)
+}
+
+/**
+ * Spends one of the day's free unlocks on a free-tier metric, for one chat, and hands
+ * back the allowance as it stands afterwards.
+ *
+ * Idempotent per (chat, metric, day), so re-asking for something already unlocked on
+ * that chat is free — while the same metric on a different export is a separate unlock.
+ * Rejections carry a `code`: `daily_limit_reached`, `vip_metric` (a Pro metric can never
+ * be bought this way), `source_hash_required` or `vip_active`.
+ */
+export async function spendFreeUnlock(
+  token: string,
+  metricId: string,
+  sourceHash: string,
+): Promise<FreeUnlockState> {
+  return request<FreeUnlockState>(
+    '/api/metric-unlocks',
+    {
+      method: 'POST',
+      body: JSON.stringify({ metricId, sourceHash }),
+    },
+    token,
+  )
+}
+
 /** Local dev only; the backend refuses this outside Development + loopback. */
 export async function toggleDevSubscription(token: string): Promise<{ simulatedSubscriptionActive: boolean }> {
   return request<{ simulatedSubscriptionActive: boolean }>(
@@ -190,6 +232,13 @@ export async function toggleDevSubscription(token: string): Promise<{ simulatedS
     { method: 'POST' },
     token,
   )
+}
+
+/** Local dev only: hands today's free unlocks back so the flow can be walked again.
+ * Clears every chat's; `sourceHash` only picks which chat the reply describes. */
+export async function resetDevFreeUnlocks(token: string, sourceHash?: string): Promise<FreeUnlockState> {
+  const query = sourceHash ? `?sourceHash=${encodeURIComponent(sourceHash)}` : ''
+  return request<FreeUnlockState>(`/api/dev/free-unlocks/reset${query}`, { method: 'POST' }, token)
 }
 
 export async function saveAnalysis(

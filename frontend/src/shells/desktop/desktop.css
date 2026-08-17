@@ -1481,13 +1481,6 @@
   }
 }
 
-/* Only the card/payment step gets the extra room (+40px each side) — the plan step
-   keeps the width above as-is. The `max-width: 640px` media query rule further below
-   still wins on narrow screens since it targets .vip-popover directly. */
-.vip-popover-wide {
-  width: min(700px, 100%);
-}
-
 @media (max-width: 640px) {
   .vip-popover {
     width: 100%;

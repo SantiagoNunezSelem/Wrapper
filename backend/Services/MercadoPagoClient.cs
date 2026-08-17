@@ -53,7 +53,7 @@ public sealed class MercadoPagoClient(
                     }
                     : null,
             },
-            ["back_url"] = _options.BackUrl,
+            ["back_url"] = _options.CheckoutReturnUrl,
         };
 
         return await SendAsync<PreapprovalPlan>(HttpMethod.Post, "/preapproval_plan", body, cancellationToken)
@@ -63,36 +63,33 @@ public sealed class MercadoPagoClient(
     public Task<PreapprovalPlan?> GetPlanAsync(string planId, CancellationToken cancellationToken) =>
         SendAsync<PreapprovalPlan>(HttpMethod.Get, $"/preapproval_plan/{planId}", null, cancellationToken);
 
-    /// <summary>
-    /// Creates and immediately authorizes a subscription from a tokenized card — the card
-    /// itself never reaches this backend, only the one-time token the Card Payment Brick
-    /// produced client-side (see <c>frontend/src/components/CardCheckoutBrick.tsx</c>).
-    /// Unlike a redirect-based checkout, this either succeeds or fails in this one call:
-    /// there is no follow-up "the payer still has to approve it" step.
-    /// </summary>
-    public async Task<Preapproval> CreateSubscriptionAsync(
-        string planId,
-        string payerEmail,
-        string cardTokenId,
-        string externalReference,
-        CancellationToken cancellationToken)
-    {
-        var body = new Dictionary<string, object?>
-        {
-            ["preapproval_plan_id"] = planId,
-            ["payer_email"] = payerEmail,
-            ["card_token_id"] = cardTokenId,
-            ["external_reference"] = externalReference,
-            ["reason"] = _options.Reason,
-            ["status"] = "authorized",
-        };
-
-        return await SendAsync<Preapproval>(HttpMethod.Post, "/preapproval", body, cancellationToken)
-            ?? throw new MercadoPagoException("Mercado Pago returned an empty subscription.");
-    }
-
     public Task<Preapproval?> GetSubscriptionAsync(string preapprovalId, CancellationToken cancellationToken) =>
         SendAsync<Preapproval>(HttpMethod.Get, $"/preapproval/{preapprovalId}", null, cancellationToken);
+
+    /// <summary>
+    /// Finds preapprovals Mercado Pago has on file for a payer. There is no card-token
+    /// endpoint to create a subscription from a redirect checkout — the plan's own
+    /// <c>init_point</c> is what the payer is sent to, and Mercado Pago creates the actual
+    /// preapproval on their side once done, with no id we already know to look it up by.
+    /// This is how a local "pendiente" row gets linked to it: by the same payer email, the
+    /// same signal <see cref="SubscriptionService"/>'s webhook handler already falls back
+    /// to when a notification arrives with no matching local row.
+    ///
+    /// Sorted newest first by the caller, not by this call — Mercado Pago's own <c>sort</c>/
+    /// <c>criteria</c> params on this endpoint reject every value tried against them.
+    /// </summary>
+    public async Task<IReadOnlyList<Preapproval>> SearchSubscriptionsByPayerEmailAsync(
+        string payerEmail,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendAsync<PreapprovalSearch>(
+            HttpMethod.Get,
+            $"/preapproval/search?payer_email={Uri.EscapeDataString(payerEmail)}&limit=10",
+            null,
+            cancellationToken);
+
+        return result?.Results ?? [];
+    }
 
     /// <summary>
     /// Stops future debits. Mercado Pago has no "un-cancel": a customer who changes their
@@ -328,3 +325,6 @@ public sealed record AuthorizedPaymentDetail(
 
 public sealed record AuthorizedPaymentSearch(
     [property: JsonPropertyName("results")] List<AuthorizedPayment>? Results);
+
+public sealed record PreapprovalSearch(
+    [property: JsonPropertyName("results")] List<Preapproval>? Results);

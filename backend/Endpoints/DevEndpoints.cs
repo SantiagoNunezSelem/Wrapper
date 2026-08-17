@@ -10,7 +10,8 @@ namespace backend.Endpoints;
 
 /// <summary>
 /// Local development conveniences, chiefly the VIP switch that makes the paid
-/// experience testable without pushing real money through Mercado Pago.
+/// experience testable without pushing real money through Mercado Pago, plus a reset for
+/// the daily free-unlock allowance so that flow can be walked more than once a day.
 ///
 /// Two independent gates, because either one alone eventually fails: the routes are only
 /// mapped when the app runs in the Development environment, and every call additionally
@@ -111,6 +112,38 @@ public static class DevEndpoints
                 hasVipAccess = SubscriptionAccessEvaluator.HasVipAccess(user),
                 subscriptionState = SubscriptionAccessEvaluator.GetVisibleState(user),
             });
+        });
+
+        // Hands today's five free unlocks back. Without this, checking the exhausted
+        // state and then the fresh state again means waiting for UTC midnight.
+        group.MapPost("/free-unlocks/reset", [Authorize] async (
+            HttpContext http,
+            ClaimsPrincipal principal,
+            AppDbContext db,
+            // Only so the reply can describe the chat on screen; the reset itself is
+            // account-wide and clears every chat's unlocks.
+            string? sourceHash,
+            CancellationToken cancellationToken) =>
+        {
+            if (!IsLoopback(http))
+            {
+                return Results.NotFound();
+            }
+
+            var userId = principal.GetRequiredUserId();
+
+            if (!await db.Users.AnyAsync(candidate => candidate.Id == userId, cancellationToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            // Every day's rows, not just today's: this is a test switch, and leaving
+            // history behind only invites confusion about which day a row belongs to.
+            await db.FreeMetricUnlocks
+                .Where(item => item.UserId == userId)
+                .ExecuteDeleteAsync(cancellationToken);
+
+            return Results.Ok(await FreeUnlockState.ReadAsync(db, userId, sourceHash?.Trim(), cancellationToken));
         });
     }
 

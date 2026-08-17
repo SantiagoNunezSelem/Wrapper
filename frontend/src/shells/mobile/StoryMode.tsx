@@ -27,9 +27,6 @@ const HOLD_DELAY_MS = 180
  * swipe en curso, no una espera: se cancela el temporizador de hold. */
 const MOVE_CANCEL_PX = 10
 
-/** Cuánto dura el latido de "escribiendo..." antes de que aparezca el número. */
-const TYPING_REVEAL_MS = 550
-
 /** Cada cuánto rota el nombre de la métrica bloqueada en la pantalla de cierre. */
 const TICKER_INTERVAL_MS = 900
 
@@ -163,15 +160,12 @@ export function StoryMode({
     setProgress(0)
   }, [index])
 
-  // El número arranca oculto detrás de los puntitos y se revela solo — un latido
-  // corto, no una espera real. En el cierre no hay número que revelar así.
+  // El número se muestra directamente sin espera de carga.
   useEffect(() => {
     if (isOutro || reducedMotion) {
       return
     }
-    setRevealed(false)
-    const timeout = setTimeout(() => setRevealed(true), TYPING_REVEAL_MS)
-    return () => clearTimeout(timeout)
+    setRevealed(true)
   }, [index, isOutro, reducedMotion])
 
   // El nombre de la métrica bloqueada rota mientras la pantalla de cierre esté

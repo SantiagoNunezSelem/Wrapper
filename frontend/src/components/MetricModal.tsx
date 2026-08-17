@@ -4,7 +4,7 @@ import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
 import { CrossButton } from './IconButton'
-import { LockedPanel } from './LockedPanel'
+import { LockedPanel, type FreeUnlockPrompt } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a `card.basic.value` directo).
@@ -18,12 +18,15 @@ export interface MetricModalCopy {
   showMore: string
   unlock: string
   searchPlaceholder: string
+  freeUnlockLoading: string
 }
 
 export function MetricModal({
   card,
   copy,
   ai,
+  freeUnlock,
+  isRevealingFreeUnlock = false,
   onClose,
   onUnlock,
 }: {
@@ -31,6 +34,11 @@ export function MetricModal({
   copy: MetricModalCopy
   /** Passed only to viewers with Pro access; everyone else gets the ordinary upsell. */
   ai?: AiPanelProps
+  /** Set only where a daily free unlock could actually be spent — see `freeUnlockFor`. */
+  freeUnlock?: FreeUnlockPrompt
+  /** True for the few seconds right after this card's free unlock was confirmed —
+   * see `revealingFreeUnlockId` in useVistazo. */
+  isRevealingFreeUnlock?: boolean
   onClose: () => void
   onUnlock: () => void
 }) {
@@ -90,7 +98,15 @@ export function MetricModal({
           <h3>{copy.detailTitle}</h3>
 
           {detailLocked ? (
-            <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} tall />
+            <LockedPanel
+              preview={card.preview}
+              unlockLabel={copy.unlock}
+              onUnlock={onUnlock}
+              freeUnlock={freeUnlock}
+              isRevealing={isRevealingFreeUnlock}
+              revealingLabel={copy.freeUnlockLoading}
+              tall
+            />
           ) : card.detail ? (
             <>
               {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}

@@ -62,14 +62,18 @@ public sealed class SubscriptionService(
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Creates the subscription directly from a card the Card Payment Brick already
-    /// tokenized in the browser — no redirect, no separate "the payer still has to
-    /// approve it" step. Mercado Pago either authorizes it in this one call or rejects
-    /// it, and either way we know before this method returns.
+    /// Opens a checkout: a local "pendiente" row, and the plan's own <c>init_point</c> to
+    /// send the payer's browser to. There is no per-user "create a pending preapproval"
+    /// call here — Mercado Pago's redirect checkout for subscriptions doesn't offer one
+    /// (their <c>/preapproval</c> endpoint requires a tokenized card, which is exactly the
+    /// embedded flow this replaces); the payer logs into their own Mercado Pago account on
+    /// the plan's hosted page and Mercado Pago creates the actual preapproval on their
+    /// side. That means this local row has no <see cref="Subscription.ExternalSubscriptionId"/>
+    /// yet when this method returns — linking it happens by matching payer email, either
+    /// when the webhook notifies us or when <see cref="SyncAsync"/> searches for it.
     /// </summary>
-    public async Task<CheckoutResult> CreateSubscriptionAsync(
+    public async Task<CheckoutResult> StartCheckoutAsync(
         User user,
-        string cardTokenId,
         HttpContext http,
         string? deviceId,
         CancellationToken cancellationToken)
@@ -77,11 +81,6 @@ public sealed class SubscriptionService(
         if (!client.IsConfigured)
         {
             throw new MercadoPagoException("Mercado Pago is not configured: set MercadoPago:AccessToken.");
-        }
-
-        if (string.IsNullOrWhiteSpace(cardTokenId))
-        {
-            throw new MercadoPagoException("Missing card token — the card form did not finish tokenizing.");
         }
 
         if (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is { } current &&
@@ -93,6 +92,12 @@ public sealed class SubscriptionService(
 
         var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
         var planId = await ResolvePlanIdAsync(eligibility.IsEligible, cancellationToken);
+
+        var plan = await client.GetPlanAsync(planId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(plan?.InitPoint))
+        {
+            throw new MercadoPagoException("Mercado Pago did not return a checkout URL for this plan.");
+        }
 
         var subscription = new Subscription
         {
@@ -109,34 +114,8 @@ public sealed class SubscriptionService(
         db.Subscriptions.Add(subscription);
         user.Subscriptions.Add(subscription);
 
-        Preapproval preapproval;
-        try
-        {
-            // external_reference ties the row to whatever Mercado Pago reports back —
-            // belt-and-suspenders alongside ExternalSubscriptionId, which this call also
-            // gets to set immediately (unlike the old redirect flow, there is no window
-            // where the subscription exists on their side but not linked on ours).
-            preapproval = await client.CreateSubscriptionAsync(
-                planId,
-                user.Email,
-                cardTokenId,
-                subscription.Id.ToString(),
-                cancellationToken);
-        }
-        catch (MercadoPagoException exception)
-        {
-            // The attempt is kept as a record (a declined card is exactly the kind of
-            // thing worth being able to look back at), but nothing about it — trial
-            // included — is claimed, since Mercado Pago never actually authorized it.
-            RecordEvent(subscription, "checkout", "rejected", null, exception.Message);
-            await db.SaveChangesAsync(cancellationToken);
-            throw;
-        }
-
-        ApplyPreapproval(subscription, preapproval);
-        subscription.ExternalSubscriptionId ??= preapproval.Id;
-        subscription.UpdatedAtUtc = DateTime.UtcNow;
-
+        // Burned here, not on conversion: an abandoned checkout still consumes the offer,
+        // the conservative direction (see TrialEligibilityService.Claim).
         if (eligibility.IsEligible)
         {
             trialEligibility.Claim(user, subscription, eligibility.Identity);
@@ -151,7 +130,7 @@ public sealed class SubscriptionService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new CheckoutResult(subscription.Status, subscription.Id, eligibility.IsEligible, eligibility.Reason);
+        return new CheckoutResult(subscription.Status, subscription.Id, eligibility.IsEligible, eligibility.Reason, plan.InitPoint);
     }
 
     // ---------------------------------------------------------------------------
@@ -226,12 +205,45 @@ public sealed class SubscriptionService(
     /// </summary>
     public async Task<Subscription?> SyncAsync(User user, CancellationToken cancellationToken)
     {
+        if (!client.IsConfigured)
+        {
+            return SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
+        }
+
         var subscription = user.Subscriptions
             .Where(item => !string.IsNullOrWhiteSpace(item.ExternalSubscriptionId))
             .OrderByDescending(item => item.UpdatedAtUtc)
             .FirstOrDefault();
 
-        if (subscription is null || !client.IsConfigured)
+        // A redirect checkout's local row starts with no id — Mercado Pago only hands one
+        // out once the payer finishes on their own hosted page (see StartCheckoutAsync).
+        // Look it up by payer email, the same signal the webhook handler falls back to in
+        // FindSubscriptionAsync, so the very first landing back on /suscripcion has a
+        // chance to link it even if the webhook is slow, unreachable, or not set up yet.
+        if (subscription is null)
+        {
+            var pending = user.Subscriptions
+                .Where(item => item.Status == "pendiente" && string.IsNullOrWhiteSpace(item.ExternalSubscriptionId))
+                .OrderByDescending(item => item.CreatedAtUtc)
+                .FirstOrDefault();
+
+            if (pending is not null)
+            {
+                var candidates = await client.SearchSubscriptionsByPayerEmailAsync(user.Email, cancellationToken);
+                var found = candidates
+                    .Where(candidate => candidate.Id is not null && candidate.PreapprovalPlanId == pending.ExternalPlanId)
+                    .OrderByDescending(candidate => candidate.DateCreated)
+                    .FirstOrDefault();
+
+                if (found is not null)
+                {
+                    pending.ExternalSubscriptionId = found.Id;
+                    subscription = pending;
+                }
+            }
+        }
+
+        if (subscription is null)
         {
             return SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
         }
@@ -720,10 +732,12 @@ public sealed record PlanInfo(
     string Reason,
     bool ProviderConfigured);
 
-/// <param name="Status">The subscription's resulting status — <c>trial</c> or <c>activa</c>
-/// on success. <see cref="SubscriptionService.CreateSubscriptionAsync"/> throws rather than
-/// returning a failure state, so callers only ever see this for an authorized subscription.</param>
-public sealed record CheckoutResult(string Status, Guid SubscriptionId, bool TrialApplied, string? TrialDeniedReason);
+/// <param name="Status">Always <c>pendiente</c> at this point — <c>StartCheckoutAsync</c>
+/// only opens the checkout, it never learns the outcome. The webhook or a later
+/// <see cref="SubscriptionService.SyncAsync"/> is what eventually moves it to
+/// <c>trial</c>/<c>activa</c> (or leaves it <c>pendiente</c>, if the payer never finishes).</param>
+/// <param name="RedirectUrl">Mercado Pago's hosted checkout page — send the browser here.</param>
+public sealed record CheckoutResult(string Status, Guid SubscriptionId, bool TrialApplied, string? TrialDeniedReason, string RedirectUrl);
 
 public sealed class SubscriptionConflictException(string code, string message) : Exception(message)
 {

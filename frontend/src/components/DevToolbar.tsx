@@ -10,6 +10,8 @@ export interface DevToolbarCopy {
   vipOn: string
   vipOff: string
   vipHint: string
+  unlocksReset: string
+  unlocksHint: string
   signInFirst: string
   badge: string
   dragHint: string
@@ -20,13 +22,18 @@ export interface DevToolbarCopy {
 const DRAG_THRESHOLD_PX = 3
 
 /**
- * Two switches that only exist on localhost — see `isLocalhost` in lib/devFlags.
+ * Switches that only exist on localhost — see `isLocalhost` in lib/devFlags.
  *
- * They solve the two things that make this app annoying to work on: every chat import
- * spends real Gemini tokens, and every look at the Pro experience would otherwise need a
- * real Mercado Pago payment. The VIP switch is backed by an actual (flagged) subscription
- * row rather than a client-side boolean, so the server-side Pro gate is exercised too —
- * a fake that only convinced the UI would hide exactly the bugs worth catching.
+ * They solve the things that make this app annoying to work on: every chat import
+ * spends real Gemini tokens, every look at the Pro experience would otherwise need a
+ * real Mercado Pago payment, and the daily free unlocks would otherwise be testable
+ * five times a day. The VIP switch is backed by an actual (flagged) subscription row
+ * rather than a client-side boolean, so the server-side Pro gate is exercised too — a
+ * fake that only convinced the UI would hide exactly the bugs worth catching.
+ *
+ * The unlock reset is hidden while the VIP switch is on, because a Pro account has no
+ * allowance to reset — showing a button whose only outcome is "nothing visibly changed"
+ * is worse than not showing it.
  *
  * The whole bar is draggable by its grip handle, because a fixed top-right toolbar
  * inevitably ends up sitting on top of something (the account menu, in this app's case).
@@ -39,17 +46,22 @@ export function DevToolbar({
   isAiDisabled,
   isVipSimulated,
   canToggleVip,
+  canResetUnlocks,
   isBusy,
   onToggleAi,
   onToggleVip,
+  onResetUnlocks,
 }: {
   copy: DevToolbarCopy
   isAiDisabled: boolean
   isVipSimulated: boolean
   canToggleVip: boolean
+  /** Signed in and without Pro — the only state where a daily allowance exists. */
+  canResetUnlocks: boolean
   isBusy: boolean
   onToggleAi: () => void
   onToggleVip: () => void
+  onResetUnlocks: () => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [position, setPosition] = useState<ToolbarPosition | null>(() => {
@@ -187,6 +199,15 @@ export function DevToolbar({
           {isVipSimulated ? copy.vipOff : copy.vipOn}
         </button>
       </Tooltip>
+
+      {canResetUnlocks ? (
+        <Tooltip content={copy.unlocksHint}>
+          <button type="button" className="dev-toggle is-action" onClick={onResetUnlocks} disabled={isBusy}>
+            <span className="dev-toggle-dot" aria-hidden="true" />
+            {copy.unlocksReset}
+          </button>
+        </Tooltip>
+      ) : null}
     </div>
   )
 }

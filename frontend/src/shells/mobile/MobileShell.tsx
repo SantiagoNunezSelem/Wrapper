@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
+import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
@@ -59,14 +60,20 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     setIsExportTutorialOpen,
     isVipPopoverOpen,
     setIsVipPopoverOpen,
+    freeUnlocks,
+    freeUnlockFor,
+    pendingFreeUnlockMetric,
+    revealingFreeUnlockId,
+    confirmFreeUnlock,
+    cancelFreeUnlock,
     showDevTools,
     devAiDisabled,
     isDevBusy,
     handleToggleDevAi,
     handleToggleDevSubscription,
+    handleResetDevFreeUnlocks,
     navigateTo,
     goToSubscriptionPage,
-    openVipPopover,
     requestUnlock,
     requestUpload,
     openFilePicker,
@@ -74,7 +81,6 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleGoogleSuccess,
     handleLogout,
     handleConsentAccept,
-    handlePurchaseSuccess,
     handleCancelSubscription,
     handleRefreshSubscription,
     openSavedAnalysis,
@@ -119,33 +125,6 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     copy.subscriptionPage.statuses[user?.subscriptionState as keyof typeof copy.subscriptionPage.statuses] ??
     copy.mobile.account.noSubscription
 
-  if (route === 'subscription') {
-    return (
-      <SubscriptionPage
-        language={language}
-        copy={copy.subscriptionPage}
-        user={user}
-        token={token}
-        overview={subscription}
-        busyAction={subscriptionAction}
-        error={subscriptionError}
-        onBack={() => navigateTo('/')}
-        onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
-        onStartPurchase={openVipPopover}
-        onPurchaseSuccess={(overview) => {
-          void handlePurchaseSuccess(overview)
-        }}
-        onCancel={() => {
-          void handleCancelSubscription()
-        }}
-        onRefresh={() => {
-          void handleRefreshSubscription()
-        }}
-        onSignIn={() => setIsAuthModalOpen(true)}
-      />
-    )
-  }
-
   return (
     <div className="m-shell">
       <input
@@ -168,167 +147,196 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           isAiDisabled={devAiDisabled}
           isVipSimulated={Boolean(subscription?.current?.isDevSimulated && subscription.current.hasAccess)}
           canToggleVip={Boolean(token)}
+          canResetUnlocks={Boolean(token) && !user?.hasVipAccess}
           isBusy={isDevBusy}
           onToggleAi={handleToggleDevAi}
           onToggleVip={() => {
             void handleToggleDevSubscription()
           }}
+          onResetUnlocks={() => {
+            void handleResetDevFreeUnlocks()
+          }}
         />
       ) : null}
 
-      <header className="m-topbar">
-        <button
-          type="button"
-          className="m-burger"
-          onClick={() => setIsDrawerOpen(true)}
-          aria-label={copy.mobile.openMenu}
-          aria-expanded={isDrawerOpen}
-        >
-          <i />
-          <i />
-          <i />
-        </button>
+      {route === 'subscription' ? (
+        <SubscriptionPage
+          language={language}
+          copy={copy.subscriptionPage}
+          user={user}
+          token={token}
+          overview={subscription}
+          busyAction={subscriptionAction}
+          error={subscriptionError}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+          onCancel={() => {
+            void handleCancelSubscription()
+          }}
+          onRefresh={() => {
+            void handleRefreshSubscription()
+          }}
+          onSignIn={() => setIsAuthModalOpen(true)}
+        />
+      ) : (
+        <>
+          <header className="m-topbar">
+            <button
+              type="button"
+              className="m-burger"
+              onClick={() => setIsDrawerOpen(true)}
+              aria-label={copy.mobile.openMenu}
+              aria-expanded={isDrawerOpen}
+            >
+              <i />
+              <i />
+              <i />
+            </button>
 
-        <button type="button" className="m-brand" onClick={() => goTo('home')}>
-          <span className="brand-orb" />
-          <span className="m-brand-name">{view === 'metrics' && analysis ? analysis.chatName : 'Vistazo'}</span>
-        </button>
+            <button type="button" className="m-brand" onClick={() => goTo('home')}>
+              <span className="brand-orb" />
+              <span className="m-brand-name">{view === 'metrics' && analysis ? analysis.chatName : 'Vistazo'}</span>
+            </button>
 
-        {user ? (
-          <button type="button" className="m-avatar" onClick={() => goTo('account')} aria-label={copy.account}>
-            {user.displayName.slice(0, 1).toUpperCase()}
-          </button>
-        ) : (
-          <button type="button" className="m-signin" onClick={() => setIsAuthModalOpen(true)}>
-            {copy.login}
-          </button>
-        )}
-      </header>
+            {user ? (
+              <button type="button" className="m-avatar" onClick={() => goTo('account')} aria-label={copy.account}>
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </button>
+            ) : (
+              <button type="button" className="m-signin" onClick={() => setIsAuthModalOpen(true)}>
+                {copy.login}
+              </button>
+            )}
+          </header>
 
-      {!hasGoogleClientId ? <p className="warning-banner m-banner">{copy.setupWarning}</p> : null}
-      {error ? <p className="error-banner m-banner">{error}</p> : null}
+          {!hasGoogleClientId ? <p className="warning-banner m-banner">{copy.setupWarning}</p> : null}
+          {error ? <p className="error-banner m-banner">{error}</p> : null}
 
-      <main className="m-main">
-        {view === 'home' ? (
-          <MobileHome
-            copy={copy}
-            saved={savedAnalyses}
-            language={language}
-            busyMessage={busyMessage}
+          <main className="m-main">
+            {view === 'home' ? (
+              <MobileHome
+                copy={copy}
+                saved={savedAnalyses}
+                language={language}
+                busyMessage={busyMessage}
+                onUpload={requestUpload}
+                onOpenSaved={openSavedAnalysis}
+                onSeeAll={() => goTo('history')}
+              />
+            ) : null}
+
+            {view === 'metrics' && analysis ? (
+              <MetricList
+                analysis={analysis}
+                metrics={interleavedMetrics}
+                copy={copy}
+                language={language}
+                generatedAt={generatedAt}
+                showReprocessHint={showReprocessHint}
+                ai={aiPanel}
+                onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
+                onStartStory={() => setIsStoryOpen(true)}
+              />
+            ) : null}
+
+            {view === 'history' ? (
+              <MobileHistory
+                copy={copy}
+                saved={savedAnalyses}
+                language={language}
+                user={user}
+                onOpenSaved={openSavedAnalysis}
+                onSignIn={() => setIsAuthModalOpen(true)}
+                onUpload={requestUpload}
+              />
+            ) : null}
+
+            {view === 'account' ? (
+              <MobileAccount
+                copy={copy}
+                language={language}
+                user={user}
+                subscription={subscription}
+                onSignIn={() => setIsAuthModalOpen(true)}
+                onManage={goToSubscriptionPage}
+                onSignOut={handleLogout}
+              />
+            ) : null}
+          </main>
+
+          <MobileTabBar
+            active={view}
+            copy={copy.mobile}
+            hasAnalysis={Boolean(analysis)}
+            onSelect={goTo}
             onUpload={requestUpload}
-            onOpenSaved={openSavedAnalysis}
-            onSeeAll={() => goTo('history')}
           />
-        ) : null}
 
-        {view === 'metrics' && analysis ? (
-          <MetricList
-            analysis={analysis}
-            metrics={interleavedMetrics}
+          <MobileDrawer
+            open={isDrawerOpen}
             copy={copy}
-            language={language}
-            generatedAt={generatedAt}
-            showReprocessHint={showReprocessHint}
-            ai={aiPanel}
-            onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
-            onStartStory={() => setIsStoryOpen(true)}
-          />
-        ) : null}
-
-        {view === 'history' ? (
-          <MobileHistory
-            copy={copy}
-            saved={savedAnalyses}
             language={language}
             user={user}
-            onOpenSaved={openSavedAnalysis}
-            onSignIn={() => setIsAuthModalOpen(true)}
-            onUpload={requestUpload}
+            activeTab={view}
+            hasAnalysis={Boolean(analysis)}
+            subscriptionLabel={subscriptionLabel}
+            onClose={() => setIsDrawerOpen(false)}
+            onNavigate={goTo}
+            onToggleLanguage={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+            onManageSubscription={() => {
+              setIsDrawerOpen(false)
+              goToSubscriptionPage()
+            }}
+            onSignIn={() => {
+              setIsDrawerOpen(false)
+              setIsAuthModalOpen(true)
+            }}
+            onSignOut={() => {
+              setIsDrawerOpen(false)
+              handleLogout()
+            }}
           />
-        ) : null}
 
-        {view === 'account' ? (
-          <MobileAccount
-            copy={copy}
-            language={language}
-            user={user}
-            subscription={subscription}
-            onSignIn={() => setIsAuthModalOpen(true)}
-            onManage={goToSubscriptionPage}
-            onSignOut={handleLogout}
-          />
-        ) : null}
-      </main>
+          {isStoryOpen && analysis ? (
+            <StoryMode
+              metrics={interleavedMetrics}
+              chatName={analysis.chatName}
+              copy={copy}
+              onClose={() => setIsStoryOpen(false)}
+              onOpenDetail={(card) => {
+                // Salir del recorrido al abrir el detalle: volver después a la
+                // misma pantalla del recorrido sería una pila de dos capas sobre
+                // una pantalla de 6 pulgadas.
+                setIsStoryOpen(false)
+                setOpenMetricId(card.id)
+              }}
+              onUnlock={() => {
+                setIsStoryOpen(false)
+                requestUnlock()
+              }}
+            />
+          ) : null}
 
-      <MobileTabBar
-        active={view}
-        copy={copy.mobile}
-        hasAnalysis={Boolean(analysis)}
-        onSelect={goTo}
-        onUpload={requestUpload}
-      />
-
-      <MobileDrawer
-        open={isDrawerOpen}
-        copy={copy}
-        language={language}
-        user={user}
-        activeTab={view}
-        hasAnalysis={Boolean(analysis)}
-        subscriptionLabel={subscriptionLabel}
-        onClose={() => setIsDrawerOpen(false)}
-        onNavigate={goTo}
-        onToggleLanguage={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
-        onManageSubscription={() => {
-          setIsDrawerOpen(false)
-          goToSubscriptionPage()
-        }}
-        onSignIn={() => {
-          setIsDrawerOpen(false)
-          setIsAuthModalOpen(true)
-        }}
-        onSignOut={() => {
-          setIsDrawerOpen(false)
-          handleLogout()
-        }}
-      />
-
-      {isStoryOpen && analysis ? (
-        <StoryMode
-          metrics={interleavedMetrics}
-          chatName={analysis.chatName}
-          copy={copy}
-          onClose={() => setIsStoryOpen(false)}
-          onOpenDetail={(card) => {
-            // Salir del recorrido al abrir el detalle: volver después a la
-            // misma pantalla del recorrido sería una pila de dos capas sobre
-            // una pantalla de 6 pulgadas.
-            setIsStoryOpen(false)
-            setOpenMetricId(card.id)
-          }}
-          onUnlock={() => {
-            setIsStoryOpen(false)
-            requestUnlock()
-          }}
-        />
-      ) : null}
-
-      {openMetric ? (
-        <MetricSheet
-          card={openMetric}
-          index={openMetricIndex}
-          total={interleavedMetrics.length}
-          copy={copy}
-          ai={aiPanel}
-          onClose={() => setOpenMetricId(null)}
-          onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
-          onNext={() => {
-            const next = interleavedMetrics[openMetricIndex + 1]
-            setOpenMetricId(next ? next.id : null)
-          }}
-          onUnlock={requestUnlock}
-        />
-      ) : null}
+          {openMetric ? (
+            <MetricSheet
+              card={openMetric}
+              index={openMetricIndex}
+              total={interleavedMetrics.length}
+              copy={copy}
+              ai={aiPanel}
+              freeUnlock={freeUnlockFor(openMetric)}
+              isRevealingFreeUnlock={revealingFreeUnlockId === openMetric.id}
+              onClose={() => setOpenMetricId(null)}
+              onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
+              onNext={() => {
+                const next = interleavedMetrics[openMetricIndex + 1]
+                setOpenMetricId(next ? next.id : null)
+              }}
+              onUnlock={requestUnlock}
+            />
+          ) : null}
+        </>
+      )}
 
       {isAuthModalOpen ? (
         <div className="m-layer">
@@ -370,9 +378,29 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             setIsVipPopoverOpen(false)
             setIsAuthModalOpen(true)
           }}
-          onSuccess={(overview) => {
-            void handlePurchaseSuccess(overview)
+        />
+      ) : null}
+
+      {/* Fuera del bloque de la ruta `app`, como el resto de las capas: la hoja de
+          la métrica que lo abrió sigue montada abajo y esto tiene que quedar encima. */}
+      {pendingFreeUnlockMetric && freeUnlocks ? (
+        <FreeUnlockConfirm
+          copy={{
+            eyebrow: copy.freeUnlock.confirmEyebrow,
+            title: copy.freeUnlock.confirmTitle,
+            body: copy.freeUnlock.confirmBody,
+            metricLine: copy.freeUnlock.confirmMetric,
+            confirm: copy.freeUnlock.confirmCta,
+            cancel: copy.freeUnlock.cancel,
+            close: copy.close,
           }}
+          metricTitle={pendingFreeUnlockMetric.title}
+          remaining={freeUnlocks.remaining}
+          dailyLimit={freeUnlocks.dailyLimit}
+          onConfirm={() => {
+            void confirmFreeUnlock()
+          }}
+          onCancel={cancelFreeUnlock}
         />
       ) : null}
 

@@ -196,6 +196,44 @@ public static class SchemaUpgrades
             );
             """,
             cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // Free daily metric unlocks
+        // ---------------------------------------------------------------------
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "FreeMetricUnlocks" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_FreeMetricUnlocks" PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "MetricId" TEXT NULL,
+                "SourceHash" TEXT NULL,
+                "DayKeyUtc" TEXT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                CONSTRAINT "FK_FreeMetricUnlocks_Users_UserId" FOREIGN KEY ("UserId")
+                    REFERENCES "Users" ("Id") ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+
+        // Unlocks started out keyed by (user, metric, day) — one unlock opened a metric
+        // across every chat. They are now per chat as well, so the column is added and
+        // the old constraint dropped: leaving it in place would reject the second chat's
+        // row as a duplicate of the first.
+        await AddColumnIfMissingAsync(db, "FreeMetricUnlocks", "SourceHash", "TEXT NULL", cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DROP INDEX IF EXISTS "IX_FreeMetricUnlocks_UserId_DayKeyUtc_MetricId";
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_FreeMetricUnlocks_UserId_DayKeyUtc_SourceHash_MetricId"
+                ON "FreeMetricUnlocks" ("UserId", "DayKeyUtc", "SourceHash", "MetricId");
+            """,
+            cancellationToken);
     }
 
     private static async Task AddColumnIfMissingAsync(

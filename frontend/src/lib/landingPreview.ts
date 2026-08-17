@@ -211,7 +211,7 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
       id: 'demo-jajaja',
       title: es ? 'El Jajaja Analítico' : 'The Laugh Analyzer',
       description: es ? 'El estilo de risa que domina el chat.' : 'The laugh style that dominates the chat.',
-      tier: 'vip',
+      tier: 'free',
       accent: 'tier-yellow',
       hasData: true,
       basic: {

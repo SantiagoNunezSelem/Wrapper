@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
-import { PaymentBrickCheckout, type PaymentBrickCheckoutCopy } from './PaymentBrickCheckout'
-import { createSubscriptionWithCard } from '../lib/api'
-import type { SubscriptionOverview, SubscriptionPlan } from '../types'
+import { useState } from 'react'
+import { startCheckout } from '../lib/api'
+import type { SubscriptionPlan } from '../types'
 
 export interface PlanPurchaseFlowCopy {
   planName: string
@@ -18,41 +17,27 @@ export interface PlanPurchaseFlowCopy {
   trialUnavailable: string
   trialReasons: Record<string, string>
   paymentsDisabled: string
-  cardStepTitle: string
-  cardStepBack: string
-  cardCheckout: PaymentBrickCheckoutCopy
-  submitting: string
+  redirecting: string
   genericError: string
-  successTitle: string
-  successTrialBody: string
-  successActiveBody: string
-  successCta: string
 }
 
 /**
- * The whole "buy" experience in one reusable piece: plan details, then the Payment
- * Brick, then a confirmation. Used both by the full `/suscripcion` page (inside its
- * collapsible plan card) and by the quick popover a locked metric's "Desbloquear VIP"
- * opens.
+ * The plan card plus its "buy" button. Used both by the full `/suscripcion` page (inside
+ * its collapsible plan card) and by the quick popover a locked metric's "Desbloquear VIP"
+ * opens — same component, same behaviour, no navigation between them.
  *
- * On the full page, only the plan-details step renders inline — Santiago wants the
- * actual payment step to always happen in the same popup, wherever it's triggered
- * from, so `onRequestExternalCheckout` (when given) replaces the plan step's buy
- * button with "open that popup" instead of advancing this instance's own `step` to
- * `'card'`. The popover doesn't pass it, so there the whole flow (plan → card →
- * success) still runs in place, same as before.
+ * Buying itself is not something that happens on this page: the button opens a checkout
+ * on Mercado Pago's side and immediately sends the browser to their hosted page (card
+ * form, 3-D Secure, all of it lives there, never embedded here). There is nothing to show
+ * afterwards in this component — this tab is about to navigate away — so the only local
+ * state is the wait for that redirect URL and whatever error stops it from arriving.
  */
 export function PlanPurchaseFlow({
   copy,
   token,
-  userEmail,
   plan,
   trialAvailable,
   trialDeniedReason,
-  onSuccess,
-  onDone,
-  onRequestExternalCheckout,
-  onStepChange,
 }: {
   copy: PlanPurchaseFlowCopy
   token: string
@@ -60,97 +45,21 @@ export function PlanPurchaseFlow({
   plan: SubscriptionPlan | null
   trialAvailable: boolean
   trialDeniedReason: string | null
-  onSuccess: (overview: SubscriptionOverview) => void
-  onDone?: () => void
-  /** When provided, the buy button opens that flow elsewhere instead of showing the
-   * Payment Brick inline in this instance — see the component doc comment above. */
-  onRequestExternalCheckout?: () => void
-  /** Lets a wrapper (the popover) react to which step is showing — e.g. widen itself
-   * only for the card step, where the Payment Brick needs more room. */
-  onStepChange?: (step: 'plan' | 'card' | 'success') => void
 }) {
-  const [step, setStep] = useState<'plan' | 'card' | 'success'>('plan')
   const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [result, setResult] = useState<SubscriptionOverview | null>(null)
+  const [isRedirecting, setIsRedirecting] = useState(false)
 
-  useEffect(() => {
-    onStepChange?.(step)
-    // onStepChange intentionally excluded: callers pass an inline setter, and
-    // re-running this because that function identity changed would defeat the point.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step])
-
-  async function handleToken(cardTokenId: string) {
-    setIsSubmitting(true)
+  async function handleBuy() {
+    setIsRedirecting(true)
     setError('')
 
     try {
-      const overview = await createSubscriptionWithCard(token, cardTokenId)
-      setResult(overview)
-      setStep('success')
-      onSuccess(overview)
+      const { initPoint } = await startCheckout(token)
+      window.location.href = initPoint
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.genericError)
-      // Rethrown so the Brick's own onSubmit promise rejects — that is what tells it
-      // the attempt failed and the card form should stay up for another try, instead
-      // of showing its own "submitted" state for a charge that never went through.
-      throw caught
-    } finally {
-      setIsSubmitting(false)
+      setIsRedirecting(false)
     }
-  }
-
-  if (step === 'success') {
-    const isTrial = result?.current?.status === 'trial'
-
-    return (
-      <div className="plan-flow-success">
-        <span className="plan-flow-success-icon" aria-hidden="true">
-          <CheckIcon />
-        </span>
-        <h3>{copy.successTitle}</h3>
-        <p>{isTrial ? copy.successTrialBody : copy.successActiveBody}</p>
-        {onDone ? (
-          <button type="button" className="primary-button" onClick={onDone}>
-            {copy.successCta}
-          </button>
-        ) : null}
-      </div>
-    )
-  }
-
-  if (step === 'card') {
-    return (
-      <div className="plan-flow-card">
-        <button
-          type="button"
-          className="plan-flow-back"
-          onClick={() => {
-            setStep('plan')
-            setError('')
-          }}
-          disabled={isSubmitting}
-        >
-          <BackIcon /> {copy.cardStepBack}
-        </button>
-
-        <h3>{copy.cardStepTitle}</h3>
-
-        {plan ? (
-          <PaymentBrickCheckout
-            copy={copy.cardCheckout}
-            amount={plan.amount}
-            payerEmail={userEmail}
-            onSubmit={handleToken}
-            onError={setError}
-          />
-        ) : null}
-
-        {isSubmitting ? <p className="plan-flow-submitting">{copy.submitting}</p> : null}
-        {error ? <p className="plan-flow-error">{error}</p> : null}
-      </div>
-    )
   }
 
   return (
@@ -181,12 +90,8 @@ export function PlanPurchaseFlow({
       </div>
 
       {plan?.providerConfigured ? (
-        <button
-          type="button"
-          className="primary-button plan-card-cta"
-          onClick={onRequestExternalCheckout ?? (() => setStep('card'))}
-        >
-          {trialAvailable ? copy.buyTrialCta : copy.buyCta}
+        <button type="button" className="primary-button plan-card-cta" onClick={handleBuy} disabled={isRedirecting}>
+          {isRedirecting ? copy.redirecting : trialAvailable ? copy.buyTrialCta : copy.buyCta}
         </button>
       ) : (
         <p className="plan-card-hint">{copy.paymentsDisabled}</p>
@@ -197,15 +102,9 @@ export function PlanPurchaseFlow({
           {copy.trialUnavailable} {copy.trialReasons[trialDeniedReason] ?? ''}
         </p>
       ) : null}
-    </div>
-  )
-}
 
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
+      {error ? <p className="plan-flow-error">{error}</p> : null}
+    </div>
   )
 }
 
