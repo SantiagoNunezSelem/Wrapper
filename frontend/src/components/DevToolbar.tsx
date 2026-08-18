@@ -3,6 +3,7 @@ import { clearDevToolbarPosition, getDevToolbarPosition, setDevToolbarPosition, 
 import { Tooltip } from './Tooltip'
 
 export interface DevToolbarCopy {
+  menuLabel: string
   aiOn: string
   aiOff: string
   aiOnHint: string
@@ -12,12 +13,16 @@ export interface DevToolbarCopy {
   vipHint: string
   unlocksReset: string
   unlocksHint: string
+  recaptchaV3On: string
+  recaptchaV3Off: string
+  recaptchaV3OnHint: string
+  recaptchaV3OffHint: string
   signInFirst: string
   badge: string
   dragHint: string
 }
 
-/** How far the pointer has to move before a press on the grip counts as a drag rather
+/** How far the pointer has to move before a press on the button counts as a drag rather
  * than a click — mostly relevant for touch, where a tap always wiggles a pixel or two. */
 const DRAG_THRESHOLD_PX = 3
 
@@ -26,20 +31,23 @@ const DRAG_THRESHOLD_PX = 3
  *
  * They solve the things that make this app annoying to work on: every chat import
  * spends real Gemini tokens, every look at the Pro experience would otherwise need a
- * real Mercado Pago payment, and the daily free unlocks would otherwise be testable
- * five times a day. The VIP switch is backed by an actual (flagged) subscription row
- * rather than a client-side boolean, so the server-side Pro gate is exercised too — a
- * fake that only convinced the UI would hide exactly the bugs worth catching.
+ * real Mercado Pago payment, the daily free unlocks would otherwise be testable five
+ * times a day, and the v2 reCAPTCHA fallback would otherwise only show up on an actual
+ * low v3 score. The VIP switch is backed by an actual (flagged) subscription row rather
+ * than a client-side boolean, so the server-side Pro gate is exercised too — a fake that
+ * only convinced the UI would hide exactly the bugs worth catching.
  *
  * The unlock reset is hidden while the VIP switch is on, because a Pro account has no
  * allowance to reset — showing a button whose only outcome is "nothing visibly changed"
  * is worse than not showing it.
  *
- * The whole bar is draggable by its grip handle, because a fixed top-right toolbar
- * inevitably ends up sitting on top of something (the account menu, in this app's case).
- * Position is kept in a ref during the drag and only committed to React state on release,
- * so dragging never fights the re-renders coming from `isBusy`/`isVipSimulated` changing
- * mid-drag.
+ * Collapsed to a small circular button by default — a full row of switches sitting on
+ * screen at all times is exactly the kind of thing that ends up covering something else
+ * (the account menu, a metric card). Clicking it opens the panel of switches; the same
+ * press-and-drag gesture still moves the button itself, since a fixed corner inevitably
+ * ends up on top of something regardless of shell. Position is kept in a ref during the
+ * drag and only committed to React state on release, so dragging never fights the
+ * re-renders coming from `isBusy`/`isVipSimulated` changing mid-drag.
  */
 export function DevToolbar({
   copy,
@@ -47,10 +55,12 @@ export function DevToolbar({
   isVipSimulated,
   canToggleVip,
   canResetUnlocks,
+  isRecaptchaV3Disabled,
   isBusy,
   onToggleAi,
   onToggleVip,
   onResetUnlocks,
+  onToggleRecaptchaV3,
 }: {
   copy: DevToolbarCopy
   isAiDisabled: boolean
@@ -58,10 +68,12 @@ export function DevToolbar({
   canToggleVip: boolean
   /** Signed in and without Pro — the only state where a daily allowance exists. */
   canResetUnlocks: boolean
+  isRecaptchaV3Disabled: boolean
   isBusy: boolean
   onToggleAi: () => void
   onToggleVip: () => void
   onResetUnlocks: () => void
+  onToggleRecaptchaV3: () => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [position, setPosition] = useState<ToolbarPosition | null>(() => {
@@ -69,6 +81,7 @@ export function DevToolbar({
     return stored ? clampToViewport(stored) : null
   })
   const [isDragging, setIsDragging] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   // A resize (rotating a tablet, shrinking the window) can strand the bar off-screen or
   // behind the edge — reclamp instead of leaving it somewhere the user can no longer
@@ -82,15 +95,42 @@ export function DevToolbar({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  function handleGripPointerDown(event: ReactPointerEvent<HTMLSpanElement>) {
+  // Closes on an outside click/tap and on Escape, like any other dropdown — otherwise the
+  // panel is only dismissible by clicking the button again, which people don't expect.
+  useEffect(() => {
+    if (!isExpanded) {
+      return
+    }
+
+    function handlePointerDownOutside(event: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsExpanded(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsExpanded(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDownOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDownOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isExpanded])
+
+  function handleButtonPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     // Only the primary button/touch/pen starts a drag — a right-click should still be
-    // able to open a context menu on the handle.
+    // able to open a context menu on the button.
     if (event.button !== 0) {
       return
     }
 
-    // Otherwise the browser's native text-selection drag kicks in on the grip's label
-    // and leaves a blue selection highlight trailing the pointer.
+    // Otherwise the browser's native text-selection drag kicks in and leaves a blue
+    // selection highlight trailing the pointer.
     event.preventDefault()
 
     const container = containerRef.current
@@ -125,6 +165,9 @@ export function DevToolbar({
         }
         dragging = true
         setIsDragging(true)
+        // A drag starting from a closed or open button always means "move me", not
+        // "toggle me" — collapse first so the panel doesn't trail the drag around.
+        setIsExpanded(false)
       }
 
       const rect = container!.getBoundingClientRect()
@@ -145,6 +188,9 @@ export function DevToolbar({
         setPosition(lastPosition)
         setDevToolbarPosition(lastPosition)
         setIsDragging(false)
+      } else {
+        // No movement past the threshold — a plain click/tap, not a drag.
+        setIsExpanded((current) => !current)
       }
     }
 
@@ -155,7 +201,7 @@ export function DevToolbar({
 
   // Snaps back to the default top-right corner — the escape hatch for when a drag lands
   // somewhere inconvenient and there is no other UI to fix it from.
-  function handleGripDoubleClick() {
+  function handleButtonDoubleClick() {
     setPosition(null)
     clearDevToolbarPosition()
   }
@@ -168,45 +214,61 @@ export function DevToolbar({
       style={position ? { top: position.top, left: position.left, right: 'auto', bottom: 'auto' } : undefined}
     >
       <Tooltip content={copy.dragHint}>
-        <span
-          className="dev-toolbar-grip"
-          role="button"
-          tabIndex={0}
-          aria-label={copy.dragHint}
-          onPointerDown={handleGripPointerDown}
-          onDoubleClick={handleGripDoubleClick}
-        >
-          <GripIcon />
-          {copy.badge}
-        </span>
-      </Tooltip>
-
-      <Tooltip content={isAiDisabled ? copy.aiOffHint : copy.aiOnHint}>
-        <button type="button" className={`dev-toggle ${isAiDisabled ? 'is-off' : 'is-on'}`} onClick={onToggleAi}>
-          <span className="dev-toggle-dot" aria-hidden="true" />
-          {isAiDisabled ? copy.aiOff : copy.aiOn}
-        </button>
-      </Tooltip>
-
-      <Tooltip content={canToggleVip ? copy.vipHint : copy.signInFirst}>
         <button
           type="button"
-          className={`dev-toggle ${isVipSimulated ? 'is-on' : 'is-off'}`}
-          onClick={onToggleVip}
-          disabled={!canToggleVip || isBusy}
+          className="dev-toolbar-fab"
+          aria-label={copy.menuLabel}
+          aria-expanded={isExpanded}
+          onPointerDown={handleButtonPointerDown}
+          onDoubleClick={handleButtonDoubleClick}
         >
-          <span className="dev-toggle-dot" aria-hidden="true" />
-          {isVipSimulated ? copy.vipOff : copy.vipOn}
+          <GripIcon />
         </button>
       </Tooltip>
 
-      {canResetUnlocks ? (
-        <Tooltip content={copy.unlocksHint}>
-          <button type="button" className="dev-toggle is-action" onClick={onResetUnlocks} disabled={isBusy}>
-            <span className="dev-toggle-dot" aria-hidden="true" />
-            {copy.unlocksReset}
-          </button>
-        </Tooltip>
+      {isExpanded ? (
+        <div className="dev-toolbar-panel" role="menu">
+          <p className="dev-toolbar-panel-title">{copy.badge}</p>
+
+          <Tooltip content={isAiDisabled ? copy.aiOffHint : copy.aiOnHint}>
+            <button type="button" className={`dev-toggle ${isAiDisabled ? 'is-off' : 'is-on'}`} onClick={onToggleAi}>
+              <span className="dev-toggle-dot" aria-hidden="true" />
+              {isAiDisabled ? copy.aiOff : copy.aiOn}
+            </button>
+          </Tooltip>
+
+          <Tooltip content={canToggleVip ? copy.vipHint : copy.signInFirst}>
+            <button
+              type="button"
+              className={`dev-toggle ${isVipSimulated ? 'is-on' : 'is-off'}`}
+              onClick={onToggleVip}
+              disabled={!canToggleVip || isBusy}
+            >
+              <span className="dev-toggle-dot" aria-hidden="true" />
+              {isVipSimulated ? copy.vipOff : copy.vipOn}
+            </button>
+          </Tooltip>
+
+          {canResetUnlocks ? (
+            <Tooltip content={copy.unlocksHint}>
+              <button type="button" className="dev-toggle is-action" onClick={onResetUnlocks} disabled={isBusy}>
+                <span className="dev-toggle-dot" aria-hidden="true" />
+                {copy.unlocksReset}
+              </button>
+            </Tooltip>
+          ) : null}
+
+          <Tooltip content={isRecaptchaV3Disabled ? copy.recaptchaV3OffHint : copy.recaptchaV3OnHint}>
+            <button
+              type="button"
+              className={`dev-toggle ${isRecaptchaV3Disabled ? 'is-off' : 'is-on'}`}
+              onClick={onToggleRecaptchaV3}
+            >
+              <span className="dev-toggle-dot" aria-hidden="true" />
+              {isRecaptchaV3Disabled ? copy.recaptchaV3Off : copy.recaptchaV3On}
+            </button>
+          </Tooltip>
+        </div>
       ) : null}
     </div>
   )
@@ -214,7 +276,7 @@ export function DevToolbar({
 
 function GripIcon() {
   return (
-    <svg viewBox="0 0 12 20" width={8} height={14} aria-hidden="true">
+    <svg viewBox="0 0 12 20" width={10} height={16} aria-hidden="true">
       {[2, 8, 14].map((y) =>
         [2, 8].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r={1.4} fill="currentColor" />),
       )}
@@ -226,8 +288,8 @@ function GripIcon() {
  * own measured size when available (falls back to a conservative estimate before first
  * paint, since a brand-new drag has no rect to measure from yet). */
 function clampToViewport(position: ToolbarPosition, rect?: DOMRect): ToolbarPosition {
-  const width = rect?.width ?? 260
-  const height = rect?.height ?? 48
+  const width = rect?.width ?? 40
+  const height = rect?.height ?? 40
   const maxLeft = Math.max(8, window.innerWidth - width - 8)
   const maxTop = Math.max(8, window.innerHeight - height - 8)
 

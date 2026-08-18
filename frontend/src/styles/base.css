@@ -2196,6 +2196,32 @@ button.chat-bubble-divider.is-expandable:active {
 }
 
 /* ==========================================================================
+   reCAPTCHA v3 (see lib/recaptcha.ts)
+   ========================================================================== */
+
+/* Google auto-injects this floating badge for every page that calls
+   grecaptcha.execute(). Hiding it is allowed by Google's own terms as long as the
+   attribution text is shown somewhere in the flow instead — see RecaptchaNotice.tsx,
+   rendered in the auth modal. `visibility: hidden` (not `display: none`) is Google's own
+   recommended way to hide it without breaking the widget. */
+.grecaptcha-badge {
+  visibility: hidden;
+}
+
+.recaptcha-notice {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--vz-text-dim);
+}
+
+.recaptcha-notice a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ==========================================================================
    Local dev toolbar (localhost only — see lib/devFlags.ts)
    ========================================================================== */
 
@@ -2207,15 +2233,6 @@ button.chat-bubble-divider.is-expandable:active {
      so it stays reachable while any of those is open. Still below .m-story, a
      deliberate full takeover with nothing else to interact with. */
   z-index: 70;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: var(--vz-radius-pill);
-  border: 1px solid var(--vz-surface-5);
-  background: rgba(15, 23, 42, 0.86);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
 }
 
 /* Dragging swaps to fixed left/top (set inline by DevToolbar.tsx), so the blur/shadow
@@ -2226,17 +2243,18 @@ button.chat-bubble-divider.is-expandable:active {
   user-select: none;
 }
 
-.dev-toolbar-grip {
-  display: inline-flex;
+.dev-toolbar-fab {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px 4px 8px;
-  border-radius: var(--vz-radius-pill);
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  background: rgba(148, 163, 184, 0.18);
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vz-surface-5);
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
   color: var(--vz-text-dim);
   cursor: grab;
   /* Own axis for the drag gesture: without this, a touch-drag also scrolls the page
@@ -2245,18 +2263,43 @@ button.chat-bubble-divider.is-expandable:active {
   user-select: none;
 }
 
-.dev-toolbar-grip:active,
-.dev-toolbar.is-dragging .dev-toolbar-grip {
+.dev-toolbar-fab:active,
+.dev-toolbar.is-dragging .dev-toolbar-fab {
   cursor: grabbing;
 }
 
-.dev-toolbar-grip svg {
-  flex-shrink: 0;
-  opacity: 0.7;
+.dev-toolbar-fab[aria-expanded='true'] {
+  color: var(--vz-text-soft);
+  border-color: rgba(129, 140, 248, 0.5);
+}
+
+.dev-toolbar-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--vz-surface-5);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+}
+
+.dev-toolbar-panel-title {
+  margin: 0 4px 2px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vz-text-dim);
 }
 
 .dev-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
   padding: 7px 13px;
@@ -2285,6 +2328,7 @@ button.chat-bubble-divider.is-expandable:active {
   height: 8px;
   border-radius: 50%;
   background: currentColor;
+  flex-shrink: 0;
 }
 
 .dev-toggle.is-on {
@@ -2305,15 +2349,18 @@ button.chat-bubble-divider.is-expandable:active {
 }
 
 /* En pantallas angostas se corre al pie: arriba a la derecha tapaba el
-   avatar de la cuenta en desktop y el menú en mobile. */
+   avatar de la cuenta en desktop y el menú en mobile. El panel se abre hacia
+   arriba en vez de hacia abajo para no nacer fuera de la pantalla. */
 @media (max-width: 720px) {
-  .dev-toolbar {  
-    top: auto;  
-    bottom: 14px;  
-    right: 10px;  
-    left: 10px;  
-    justify-content: center;  
-    flex-wrap: wrap;  
+  .dev-toolbar-panel {
+    top: auto;
+    bottom: calc(100% + 8px);
+  }
+
+  .dev-toolbar {
+    top: auto;
+    bottom: 14px;
+    right: 10px;
   }
 }
 

@@ -7,8 +7,11 @@ import { FileUploadZone } from '../../components/FileUploadZone'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { CrossButton } from '../../components/IconButton'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
+import { LockedPanel } from '../../components/LockedPanel'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricModal } from '../../components/MetricModal'
+import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
+import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipBadge } from '../../components/VipBadge'
@@ -59,6 +62,9 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    needsRecaptchaChallenge,
+    recaptchaSiteKeyV2,
+    recaptchaSiteKeyV3,
     isExportTutorialOpen,
     setIsExportTutorialOpen,
     isVipPopoverOpen,
@@ -71,6 +77,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     cancelFreeUnlock,
     showDevTools,
     devAiDisabled,
+    devRecaptchaV3Disabled,
     isDevBusy,
     navigateTo,
     goToSubscriptionPage,
@@ -80,11 +87,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     processFile,
     handleFileSelection,
     handleGoogleSuccess,
+    handleRecaptchaChallengeSuccess,
     handleConsentAccept,
     handleLogout,
     handleCancelSubscription,
     handleRefreshSubscription,
     handleToggleDevAi,
+    handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,
@@ -155,6 +164,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           isVipSimulated={Boolean(subscription?.current?.isDevSimulated && subscription.current.hasAccess)}
           canToggleVip={Boolean(token)}
           canResetUnlocks={Boolean(token) && !user?.hasVipAccess}
+          isRecaptchaV3Disabled={devRecaptchaV3Disabled}
           isBusy={isDevBusy}
           onToggleAi={handleToggleDevAi}
           onToggleVip={() => {
@@ -163,6 +173,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           onResetUnlocks={() => {
             void handleResetDevFreeUnlocks()
           }}
+          onToggleRecaptchaV3={handleToggleDevRecaptchaV3}
         />
       ) : null}
 
@@ -246,7 +257,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       {!hasGoogleClientId ? <p className="warning-banner">{copy.setupWarning}</p> : null}
       {error ? <p className="error-banner">{error}</p> : null}
 
-      {analysis ? (
+      {analysis && user ? (
         <main className="analytics-layout">
           <section className="analytics-hero panel">
             <div>
@@ -264,20 +275,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
 
           <div className="analytics-summary-row">
             <section className="analytics-main">
-              {activeChat && !user ? (
-                <div className="save-prompt">
-                  <span className="save-prompt-icon" aria-hidden="true">
-                    <SaveIcon />
-                  </span>
-                  <div className="save-prompt-copy">
-                    <strong>{copy.savePromptTitle}</strong>
-                    <p>{copy.savePromptBody}</p>
-                  </div>
-                  <button type="button" className="primary-button" onClick={() => setIsAuthModalOpen(true)}>
-                    {copy.login}
-                  </button>
-                </div>
-              ) : null}
               {showReprocessHint ? <p className="warning-banner">{copy.reprocessHint}</p> : null}
 
               <section className="panel summary-panel">
@@ -350,6 +347,23 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               ))}
             </div>
           </section>
+        </main>
+      ) : analysis && !user ? (
+        <main className="analytics-layout">
+          <section className="analytics-hero panel">
+            <div>
+              <p className="eyebrow">{copy.heroCaption}</p>
+              <h1>{copy.metricsTitle}</h1>
+              <p className="lead">{copy.metricsSubtitle}</p>
+            </div>
+          </section>
+
+          <LockedPanel
+            tall
+            preview={copy.loginRequiredPreview}
+            unlockLabel={copy.login}
+            onUnlock={() => setIsAuthModalOpen(true)}
+          />
         </main>
       ) : user ? (
         <main className="full-wrapped-layout">
@@ -567,18 +581,32 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         <div className="modal-backdrop" role="presentation" onClick={() => setIsAuthModalOpen(false)}>
           <section className="modal-card auth-modal" onClick={(event) => event.stopPropagation()}>
             <CrossButton label={copy.close} onClick={() => setIsAuthModalOpen(false)} className="close-button" />
-            <p className="eyebrow">Google Login</p>
-            <h2>{copy.loginHeadline}</h2>
-
-            <p className="panel-copy">{activeChat ? copy.loginAfterUpload : copy.saveInfo}</p>
-            {hasGoogleClientId ? (
-              <ResponsiveGoogleLogin
-                onSuccess={(credentialResponse) => {
-                  void handleGoogleSuccess(credentialResponse)
+            {needsRecaptchaChallenge ? (
+              <RecaptchaChallenge
+                siteKey={recaptchaSiteKeyV2}
+                title={copy.recaptchaChallengeTitle}
+                body={copy.recaptchaChallengeBody}
+                onSolved={(token) => {
+                  void handleRecaptchaChallengeSuccess(token)
                 }}
-                onError={() => setError(copy.loadError)}
               />
-            ) : null}
+            ) : (
+              <>
+                <p className="eyebrow">Google Login</p>
+                <h2>{copy.loginHeadline}</h2>
+
+                <p className="panel-copy">{activeChat ? copy.loginAfterUpload : copy.saveInfo}</p>
+                {hasGoogleClientId ? (
+                  <ResponsiveGoogleLogin
+                    onSuccess={(credentialResponse) => {
+                      void handleGoogleSuccess(credentialResponse)
+                    }}
+                    onError={() => setError(copy.loadError)}
+                  />
+                ) : null}
+              </>
+            )}
+            {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
           </section>
         </div>
       ) : null}
@@ -667,15 +695,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
       ) : null}
     </div>
-  )
-}
-
-function SaveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
-      <path d="M17 21v-8H7v8M7 3v5h8" />
-    </svg>
   )
 }
 

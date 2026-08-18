@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using backend.Data;
 using backend.Endpoints;
 using backend.Models;
@@ -8,11 +9,22 @@ using backend.Services;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+EnsureProductionSecrets(builder);
+
+// Kestrel's own default is 30 MB. Nothing this API accepts comes anywhere near that: the
+// largest legitimate body is one analysis' aggregated JSON (see SavedAnalysisLimits, half
+// this). Leaving the default in place means any anonymous caller — the Mercado Pago
+// webhook route reads the whole body into a string before it can check the signature —
+// can make the server allocate 30 MB per request purely on request.
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 4 * 1024 * 1024);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));
@@ -20,6 +32,46 @@ builder.Services.Configure<AdminSeedOptions>(builder.Configuration.GetSection(Ad
 builder.Services.Configure<GoogleAiOptions>(builder.Configuration.GetSection(GoogleAiOptions.SectionName));
 builder.Services.Configure<MercadoPagoOptions>(builder.Configuration.GetSection(MercadoPagoOptions.SectionName));
 builder.Services.Configure<TrialGuardOptions>(builder.Configuration.GetSection(TrialGuardOptions.SectionName));
+builder.Services.Configure<RecaptchaOptions>(builder.Configuration.GetSection(RecaptchaOptions.SectionName));
+
+// Behind a proxy, the socket address is the proxy's — the same value for every visitor.
+// Rewriting HttpContext.Connection.RemoteIpAddress from X-Forwarded-For here means the
+// rate limiter, the trial guard and the logs all see the real client without each one
+// having to parse that header itself (and disagree about how).
+var trialGuardOptions = builder.Configuration.GetSection(TrialGuardOptions.SectionName).Get<TrialGuardOptions>() ?? new TrialGuardOptions();
+if (trialGuardOptions.TrustProxyHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+        // One hop by default: the proxy in front. Raising this without knowing the exact
+        // chain length lets a client prepend its own entries and choose what we read.
+        options.ForwardLimit = 1;
+
+        if (trialGuardOptions.KnownProxies.Length > 0)
+        {
+            options.KnownProxies.Clear();
+            options.KnownNetworks.Clear();
+
+            foreach (var proxy in trialGuardOptions.KnownProxies)
+            {
+                if (System.Net.IPAddress.TryParse(proxy.Trim(), out var address))
+                {
+                    options.KnownProxies.Add(address);
+                }
+            }
+        }
+        else
+        {
+            // No allow-list given: accept the header from anywhere. Only sound when the
+            // app is unreachable except through the proxy — LogSecurityConfiguration warns
+            // about exactly this at boot.
+            options.KnownProxies.Clear();
+            options.KnownNetworks.Clear();
+        }
+    });
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -32,6 +84,7 @@ builder.Services.AddScoped<AiMetricService>();
 builder.Services.AddHttpClient<MercadoPagoClient>();
 builder.Services.AddSingleton<MercadoPagoSignatureValidator>();
 builder.Services.AddSingleton<ClientFingerprint>();
+builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddOpenApi();
@@ -57,6 +110,63 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Without this the client only learns "too many requests", never when to try again.
+    // Both limiters below use a 1-minute window, so that's what's advertised — simpler
+    // and just as accurate as reading it back out of lease metadata, which the built-in
+    // fixed/sliding window limiters don't reliably populate on an immediate rejection.
+    options.OnRejected = (context, _) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        return ValueTask.CompletedTask;
+    };
+
+    // A blunt, generous net across every endpoint — not tuned per route, just enough to
+    // stop a runaway script from hammering the API. Authenticated routes already cost an
+    // attacker a valid login; this is the backstop for the ones that don't.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 200,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    // Login is the one unauthenticated POST in the whole API — the endpoint a script that
+    // skips the frontend (and its reCAPTCHA token) entirely would hit directly. Tighter
+    // than the global limit on purpose.
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(RateLimitPartitionKey(httpContext), _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 8,
+            Window = TimeSpan.FromMinutes(1),
+            SegmentsPerWindow = 4,
+            QueueLimit = 0,
+        }));
+
+    // The only routes that spend money per call. Partitioned by account, not by address:
+    // an attacker can have as many addresses as they like, but every one of these requests
+    // has to come from an account that already holds Pro access, and that is the thing
+    // worth rationing. Deliberately low — the real client makes one of these per chat, not
+    // one per second.
+    options.AddPolicy("ai", httpContext =>
+        RateLimitPartition.GetTokenBucketLimiter(AiRateLimitPartitionKey(httpContext), _ => new TokenBucketRateLimiterOptions
+        {
+            // Room for the handful of metrics a genuine upload fires off back-to-back…
+            TokenLimit = 12,
+            // …then down to a trickle, so a script gets minutes-per-call rather than
+            // hundreds-per-minute. The daily cap in AiMetricService is the harder ceiling;
+            // this is what stops a burst from reaching it in seconds.
+            TokensPerPeriod = 4,
+            ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+});
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"];
 builder.Services.AddCors(options =>
@@ -86,9 +196,20 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// First in the pipeline, before anything reads the client address — the rate limiter and
+// the trial guard both depend on it being the real one by the time they look.
+if (trialGuardOptions.TrustProxyHeaders)
+{
+    app.UseForwardedHeaders();
+}
+
 app.UseHttpsRedirection();
 app.UseCors("frontend");
 app.UseAuthentication();
+// After authentication on purpose: the AI policy partitions by account id, and the claim
+// it reads only exists once the JWT has been validated. Partitioning AI spend by IP would
+// be pointless anyway — addresses are free, and it is the account that carries Pro access.
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
@@ -98,11 +219,30 @@ app.MapPost("/api/auth/google", async (
     AppDbContext db,
     IConfiguration configuration,
     TokenService tokenService,
+    RecaptchaClient recaptcha,
+    IOptions<RecaptchaOptions> recaptchaOptions,
+    ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.IdToken))
     {
         return Results.BadRequest(new { message = "Missing Google ID token." });
+    }
+
+    // Checked before anything else touches Google: no point spending that round-trip on
+    // traffic reCAPTCHA already flagged. Unconfigured deployments skip this entirely and
+    // behave exactly as they did before reCAPTCHA existed.
+    if (recaptchaOptions.Value.IsConfigured &&
+        !await PassesRecaptchaAsync(
+            request,
+            recaptchaOptions.Value,
+            recaptcha,
+            loggerFactory.CreateLogger("Recaptcha"),
+            cancellationToken))
+    {
+        return Results.Json(
+            new { message = "Verificación de seguridad requerida.", code = "recaptcha_required" },
+            statusCode: StatusCodes.Status403Forbidden);
     }
 
     var googleOptions = configuration.GetSection(GoogleAuthOptions.SectionName).Get<GoogleAuthOptions>() ?? new GoogleAuthOptions();
@@ -185,7 +325,7 @@ app.MapPost("/api/auth/google", async (
     var paymentOptions = configuration.GetSection(MercadoPagoOptions.SectionName).Get<MercadoPagoOptions>() ?? new MercadoPagoOptions();
     var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured, paymentOptions.IsConfigured);
     return Results.Ok(response);
-});
+}).RequireRateLimiting("auth");
 
 app.MapGet("/api/auth/me", [Authorize] async (
     ClaimsPrincipal principal,
@@ -229,9 +369,22 @@ app.MapPost("/api/analyses", [Authorize] async (
         return Results.BadRequest(new { message = "ChatName and ResultsJson are required." });
     }
 
-    if (string.IsNullOrWhiteSpace(request.SourceHash))
+    if (!IsValidSourceHash(request.SourceHash))
     {
-        return Results.BadRequest(new { message = "SourceHash is required." });
+        return Results.BadRequest(new { message = "A valid SourceHash is required." });
+    }
+
+    // Everything below is attacker-controlled text that gets written to disk and kept.
+    // Without ceilings, an ordinary signed-in account can grow the database until the
+    // volume fills — which takes the whole app down, not just this feature.
+    if (request.ResultsJson.Length > SavedAnalysisLimits.MaxResultsJsonChars)
+    {
+        return Results.BadRequest(new { message = "ResultsJson is too large." });
+    }
+
+    if (request.ChatName.Length > SavedAnalysisLimits.MaxChatNameChars || request.DateRangeLabel.Length > SavedAnalysisLimits.MaxDateRangeLabelChars)
+    {
+        return Results.BadRequest(new { message = "ChatName or DateRangeLabel is too long." });
     }
 
     // Re-uploading the exact same export (identical source text, fingerprinted
@@ -253,6 +406,19 @@ app.MapPost("/api/analyses", [Authorize] async (
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(SavedAnalysisResponse.FromEntity(existing));
+    }
+
+    // An update to an existing chat is always allowed (bounded by the size caps above);
+    // it is only *new* rows that grow the table, so that is what the ceiling counts.
+    if (await db.Analyses.CountAsync(item => item.UserId == userId, cancellationToken) >= SavedAnalysisLimits.MaxAnalysesPerUser)
+    {
+        return Results.Json(
+            new
+            {
+                message = $"This account has reached the limit of {SavedAnalysisLimits.MaxAnalysesPerUser} saved analyses.",
+                code = "analysis_limit_reached",
+            },
+            statusCode: StatusCodes.Status409Conflict);
     }
 
     var analysis = new SavedAnalysis
@@ -317,9 +483,9 @@ app.MapGet("/api/ai/metrics", [Authorize] async (
         return access.Failure;
     }
 
-    if (string.IsNullOrWhiteSpace(sourceHash))
+    if (!IsValidSourceHash(sourceHash))
     {
-        return Results.BadRequest(new { message = "sourceHash is required." });
+        return Results.BadRequest(new { message = "A valid sourceHash is required." });
     }
 
     return Results.Ok(new AiMetricsResponse(await service.GetAsync(access.User!.Id, sourceHash, cancellationToken)));
@@ -345,19 +511,35 @@ app.MapPost("/api/ai/metrics", [Authorize] async (
             statusCode: StatusCodes.Status403Forbidden);
     }
 
-    if (string.IsNullOrWhiteSpace(request.SourceHash))
+    if (!IsValidSourceHash(request.SourceHash))
     {
-        return Results.BadRequest(new { message = "SourceHash is required." });
+        return Results.BadRequest(new { message = "A valid SourceHash is required." });
     }
 
-    var results = await service.AnalyzeAsync(
-        access.User.Id,
-        request.SourceHash,
-        request.Metrics ?? [],
-        cancellationToken);
+    // The client asks for at most the handful of AI metrics that exist. A longer list is
+    // not a real client, and each entry is a separate run of Gemini batches.
+    if (request.Metrics is { Count: > AiMetricService.MaxMetricsPerRequest })
+    {
+        return Results.BadRequest(new { message = "Too many metrics in one request." });
+    }
 
-    return Results.Ok(new AiMetricsResponse(results));
-});
+    try
+    {
+        var results = await service.AnalyzeAsync(
+            access.User.Id,
+            request.SourceHash,
+            request.Metrics ?? [],
+            cancellationToken);
+
+        return Results.Ok(new AiMetricsResponse(results));
+    }
+    catch (AiDailyLimitReachedException exception)
+    {
+        return Results.Json(
+            new { message = exception.Message, code = "ai_daily_limit_reached" },
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+}).RequireRateLimiting("ai");
 
 app.MapPost("/api/ai/metrics/retry", [Authorize] async (
     AiRetryRequest request,
@@ -379,22 +561,23 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
             statusCode: StatusCodes.Status403Forbidden);
     }
 
-    if (string.IsNullOrWhiteSpace(request.SourceHash))
+    if (!IsValidSourceHash(request.SourceHash))
     {
-        return Results.BadRequest(new { message = "SourceHash is required." });
+        return Results.BadRequest(new { message = "A valid SourceHash is required." });
     }
 
     // Retries only ever touch metrics currently marked failed, and only once their
     // stored cooldown has elapsed — the button can't be used to hammer the quota.
     var results = await service.RetryFailedAsync(access.User.Id, request.SourceHash, cancellationToken);
     return Results.Ok(new AiMetricsResponse(results));
-});
+}).RequireRateLimiting("ai");
 
 app.MapSubscriptionEndpoints();
 app.MapFreeUnlockEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);
+LogSecurityConfiguration(app);
 
 app.Run();
 
@@ -432,7 +615,219 @@ static void LogPaymentsConfiguration(WebApplication app)
     }
 }
 
-record GoogleLoginRequest(string IdToken);
+/// <summary>
+/// Says, on every boot, which anti-abuse defences are actually standing. Each of these can
+/// be switched off by nothing more than an empty config value, and every one of them fails
+/// silently — the app keeps serving traffic exactly as before, just unprotected. A line in
+/// the startup log is the only thing that makes "we thought reCAPTCHA was on" discoverable
+/// before an incident rather than after one.
+/// </summary>
+static void LogSecurityConfiguration(WebApplication app)
+{
+    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Security");
+    var recaptcha = app.Configuration.GetSection(RecaptchaOptions.SectionName).Get<RecaptchaOptions>() ?? new RecaptchaOptions();
+    var trialGuard = app.Configuration.GetSection(TrialGuardOptions.SectionName).Get<TrialGuardOptions>() ?? new TrialGuardOptions();
+
+    if (recaptcha.IsPartiallyConfigured)
+    {
+        logger.LogError(
+            "reCAPTCHA is HALF configured (only one of Recaptcha:SecretKeyV3 / Recaptcha:SecretKeyV2 is set), " +
+            "so it is switched OFF entirely. Both keys are required — the login endpoint lets the client say " +
+            "which check it is answering, so a single-key setup would leave the other path unverifiable.");
+    }
+    else if (!recaptcha.IsConfigured)
+    {
+        logger.LogWarning(
+            "reCAPTCHA is not configured — login is protected by rate limiting alone. " +
+            "Set Recaptcha:SecretKeyV3 and Recaptcha:SecretKeyV2 to enable it.");
+    }
+    else
+    {
+        logger.LogInformation(
+            "reCAPTCHA ready: v3 threshold {Threshold}, action \"{Action}\", {FailMode} if Google is unreachable.",
+            recaptcha.ScoreThreshold,
+            recaptcha.LoginAction,
+            recaptcha.FailOpenOnProviderOutage ? "allowing logins" : "rejecting logins");
+    }
+
+    // The rate limiter partitions by client IP. Behind a proxy that address is the
+    // proxy's unless forwarded headers are trusted — which would put every visitor in one
+    // bucket and let a handful of requests exhaust the login limit for everybody.
+    if (!trialGuard.TrustProxyHeaders && !app.Environment.IsDevelopment())
+    {
+        logger.LogWarning(
+            "TrialGuard:TrustProxyHeaders is false. If this deployment sits behind a proxy, CDN or load " +
+            "balancer, every request looks like it comes from that one address: rate limits would then be " +
+            "shared by all visitors (a few requests could lock everyone out of login) and the trial guard " +
+            "would treat unrelated people as the same client. Set it to true — and list the proxy in " +
+            "TrialGuard:KnownProxies — only once the app is genuinely unreachable except through that proxy.");
+    }
+
+    if (trialGuard.TrustProxyHeaders && trialGuard.KnownProxies.Length == 0)
+    {
+        logger.LogWarning(
+            "TrialGuard:TrustProxyHeaders is on with an empty TrialGuard:KnownProxies list, so X-Forwarded-For " +
+            "is trusted from ANY source. If this app can be reached directly (not only through the proxy), " +
+            "anyone can forge that header to get a fresh rate-limit bucket per request and a fresh free trial.");
+    }
+}
+
+/// <summary>
+/// Refuses to boot with a signing key anyone can read. The repository ships placeholder
+/// keys so a fresh clone runs without setup, which is convenient right up until one of
+/// them reaches production — at which point anybody with the repo can mint a token for
+/// any user, including an admin one. Failing to start is the only reliable way to catch
+/// that: a warning in a log nobody reads is exactly how it would ship.
+/// </summary>
+static void EnsureProductionSecrets(WebApplicationBuilder builder)
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        return;
+    }
+
+    var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+
+    // The values committed to appsettings.json / appsettings.Development.json.
+    string[] knownPlaceholders =
+    [
+        "change-this-before-production-use-a-long-random-secret-key",
+        "wrapper-crm-development-signing-key-change-me-before-production",
+    ];
+
+    if (knownPlaceholders.Contains(jwt.SigningKey, StringComparer.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "Jwt:SigningKey is still the placeholder committed to this repository. Anyone who can read the " +
+            "source could forge a token for any account. Set a unique random value (for example " +
+            "`openssl rand -base64 48`) via the Jwt__SigningKey environment variable before deploying.");
+    }
+
+    // HMAC-SHA256 derives its strength from the key; a short one is brute-forceable
+    // offline from a single captured token.
+    if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
+    {
+        throw new InvalidOperationException(
+            "Jwt:SigningKey is shorter than 32 bytes, which is too weak for HS256. Set a longer random value " +
+            "via the Jwt__SigningKey environment variable.");
+    }
+}
+
+/// <summary>
+/// Rate limit partitions share the same IP hash the trial-guard system already computes
+/// (<see cref="ClientFingerprint"/>) instead of reading the connection address a second
+/// way — that hash already respects <c>TrialGuard:TrustProxyHeaders</c>, so it can't be
+/// spoofed with a forged <c>X-Forwarded-For</c> on a deployment that isn't behind a proxy.
+/// </summary>
+static string RateLimitPartitionKey(HttpContext httpContext) =>
+    httpContext.RequestServices.GetRequiredService<ClientFingerprint>().Describe(httpContext, null).IpHash ?? "unknown";
+
+/// <summary>
+/// Partition key for the AI routes: the signed-in account, falling back to the address for
+/// anything that somehow reaches them unauthenticated (which the [Authorize] attribute
+/// already refuses — this only exists so the key is never null).
+/// </summary>
+static string AiRateLimitPartitionKey(HttpContext httpContext) =>
+    httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) is { Length: > 0 } userId
+        ? $"user:{userId}"
+        : $"ip:{RateLimitPartitionKey(httpContext)}";
+
+/// <summary>
+/// The browser fingerprints a chat with a SHA-256 hex digest. Checking the shape matters
+/// because this value is a primary lookup key for stored verdicts <em>and</em> the cache
+/// key that decides whether a request costs Gemini tokens: an unbounded, free-form string
+/// lets a caller mint a fresh cache miss on every request, and bloats the index it is
+/// stored in while doing so.
+/// </summary>
+static bool IsValidSourceHash(string? value) =>
+    value is { Length: >= 16 and <= 64 } && value.All(char.IsAsciiHexDigit);
+
+/// <summary>
+/// True if the login attempt clears reCAPTCHA. The v3 score check and the v2 fallback
+/// share this path but need different secrets and different pass conditions (v2 has no
+/// score — a solved checkbox is a solved checkbox).
+///
+/// <para>
+/// Every early return here is a <em>rejection</em>, never a pass. That is the whole point:
+/// the client chooses which of the two checks it claims to be answering, so any branch
+/// that let a missing key or an unverifiable token through would be a bypass anyone could
+/// trigger by flipping one field in the request body. The single "let it through" case is
+/// a deliberate operator choice (see
+/// <see cref="RecaptchaOptions.FailOpenOnProviderOutage"/>), and it only applies when
+/// Google itself is unreachable — never when Google answers "no".
+/// </para>
+///
+/// <para>
+/// The fallback path is genuinely weaker than the score path — an attacker who wants a
+/// checkbox solved can buy that — but it is still a real cost per attempt, and the "auth"
+/// rate-limit policy is what actually bounds how fast it can be spent.
+/// </para>
+/// </summary>
+static async Task<bool> PassesRecaptchaAsync(
+    GoogleLoginRequest request,
+    RecaptchaOptions options,
+    RecaptchaClient recaptcha,
+    ILogger logger,
+    CancellationToken cancellationToken)
+{
+    var secret = request.RecaptchaIsFallback ? options.SecretKeyV2 : options.SecretKeyV3;
+
+    // Unreachable while IsConfigured demands both keys, but this is the exact spot where
+    // a future "only one key needed" change would silently open the door — so it is
+    // written as a refusal rather than left to be inferred.
+    if (string.IsNullOrWhiteSpace(secret))
+    {
+        logger.LogError(
+            "Refusing a login: no reCAPTCHA secret is configured for the {Path} path.",
+            request.RecaptchaIsFallback ? "v2 fallback" : "v3");
+        return false;
+    }
+
+    if (string.IsNullOrWhiteSpace(request.RecaptchaToken))
+    {
+        return false;
+    }
+
+    var verification = await recaptcha.VerifyAsync(secret, request.RecaptchaToken, cancellationToken);
+
+    // null means Google could not be reached at all — an outage, not a verdict.
+    if (verification is null)
+    {
+        if (options.FailOpenOnProviderOutage)
+        {
+            logger.LogWarning("Allowing a login unverified: reCAPTCHA siteverify is unreachable.");
+            return true;
+        }
+
+        return false;
+    }
+
+    if (!verification.Success)
+    {
+        return false;
+    }
+
+    // v2 has no score and no action — a solved checkbox is the whole verdict.
+    if (request.RecaptchaIsFallback)
+    {
+        return true;
+    }
+
+    // A v3 token is minted for one action. Without this check, a token harvested from any
+    // other action on the same site key would be accepted here.
+    if (!string.Equals(verification.Action, options.LoginAction, StringComparison.Ordinal))
+    {
+        logger.LogWarning(
+            "Rejecting a login: reCAPTCHA token was minted for action {Action}, expected {Expected}.",
+            verification.Action ?? "(none)",
+            options.LoginAction);
+        return false;
+    }
+
+    return (verification.Score ?? 0) >= options.ScoreThreshold;
+}
+
+record GoogleLoginRequest(string IdToken, string? RecaptchaToken = null, bool RecaptchaIsFallback = false);
 
 record AiAnalyzeRequest(string SourceHash, List<AiMetricRequestItem>? Metrics);
 
@@ -476,6 +871,32 @@ static class AiAccess
 }
 
 record AiAccessResult(User? User, IResult? Failure);
+
+/// <summary>
+/// Ceilings on the one thing this API stores on behalf of a user. The aggregated results
+/// of a very large chat run to a few hundred kilobytes; a megabyte is comfortably above
+/// any real export and comfortably below "an account can fill the disk".
+/// </summary>
+static class SavedAnalysisLimits
+{
+    /// <summary>
+    /// Two megabytes of aggregated JSON. An 85k-message export produces a couple of
+    /// hundred kilobytes here — the results are counts, rankings and samples, never the
+    /// chat itself — so this leaves an order of magnitude of headroom over anything real
+    /// while still being a hard bound. Kestrel's own body limit is set to twice this, so
+    /// an over-large payload trips this friendlier check rather than a bare 413.
+    /// </summary>
+    public const int MaxResultsJsonChars = 2_000_000;
+    public const int MaxChatNameChars = 200;
+    public const int MaxDateRangeLabelChars = 120;
+
+    /// <summary>
+    /// Rows one account may keep. Well past anyone's real history, while still bounding
+    /// what a single sign-in can cost in storage — each row can be up to
+    /// <see cref="MaxResultsJsonChars"/>.
+    /// </summary>
+    public const int MaxAnalysesPerUser = 200;
+}
 
 record SaveAnalysisRequest(
     string ChatName,

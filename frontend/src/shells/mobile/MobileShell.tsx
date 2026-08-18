@@ -3,6 +3,9 @@ import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
+import { LockedPanel } from '../../components/LockedPanel'
+import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
+import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
@@ -56,6 +59,9 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    needsRecaptchaChallenge,
+    recaptchaSiteKeyV2,
+    recaptchaSiteKeyV3,
     isExportTutorialOpen,
     setIsExportTutorialOpen,
     isVipPopoverOpen,
@@ -68,8 +74,10 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     cancelFreeUnlock,
     showDevTools,
     devAiDisabled,
+    devRecaptchaV3Disabled,
     isDevBusy,
     handleToggleDevAi,
+    handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     navigateTo,
@@ -79,6 +87,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     openFilePicker,
     handleFileSelection,
     handleGoogleSuccess,
+    handleRecaptchaChallengeSuccess,
     handleLogout,
     handleConsentAccept,
     handleCancelSubscription,
@@ -148,6 +157,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           isVipSimulated={Boolean(subscription?.current?.isDevSimulated && subscription.current.hasAccess)}
           canToggleVip={Boolean(token)}
           canResetUnlocks={Boolean(token) && !user?.hasVipAccess}
+          isRecaptchaV3Disabled={devRecaptchaV3Disabled}
           isBusy={isDevBusy}
           onToggleAi={handleToggleDevAi}
           onToggleVip={() => {
@@ -156,6 +166,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           onResetUnlocks={() => {
             void handleResetDevFreeUnlocks()
           }}
+          onToggleRecaptchaV3={handleToggleDevRecaptchaV3}
         />
       ) : null}
 
@@ -195,7 +206,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
 
             <button type="button" className="m-brand" onClick={() => goTo('home')}>
               <span className="brand-orb" />
-              <span className="m-brand-name">{view === 'metrics' && analysis ? analysis.chatName : 'Vistazo'}</span>
+              <span className="m-brand-name">{view === 'metrics' && analysis && user ? analysis.chatName : 'Vistazo'}</span>
             </button>
 
             {user ? (
@@ -226,17 +237,30 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             ) : null}
 
             {view === 'metrics' && analysis ? (
-              <MetricList
-                analysis={analysis}
-                metrics={interleavedMetrics}
-                copy={copy}
-                language={language}
-                generatedAt={generatedAt}
-                showReprocessHint={showReprocessHint}
-                ai={aiPanel}
-                onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
-                onStartStory={() => setIsStoryOpen(true)}
-              />
+              user ? (
+                <MetricList
+                  analysis={analysis}
+                  metrics={interleavedMetrics}
+                  copy={copy}
+                  language={language}
+                  generatedAt={generatedAt}
+                  showReprocessHint={showReprocessHint}
+                  ai={aiPanel}
+                  onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
+                  onStartStory={() => setIsStoryOpen(true)}
+                />
+              ) : (
+                <div className="m-locked-results">
+                  <p className="eyebrow">{copy.heroCaption}</p>
+                  <h1>{copy.metricsTitle}</h1>
+                  <LockedPanel
+                    tall
+                    preview={copy.loginRequiredPreview}
+                    unlockLabel={copy.login}
+                    onUnlock={() => setIsAuthModalOpen(true)}
+                  />
+                </div>
+              )
             ) : null}
 
             {view === 'history' ? (
@@ -345,15 +369,22 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             <span className="m-grabber" aria-hidden="true" />
             <header className="m-sheet-head">
               <div className="m-sheet-title">
-                <h2>{copy.loginHeadline}</h2>
-                <p>{analysis ? copy.loginAfterUpload : copy.saveInfo}</p>
+                <h2>{needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}</h2>
+                <p>{needsRecaptchaChallenge ? copy.recaptchaChallengeBody : analysis ? copy.loginAfterUpload : copy.saveInfo}</p>
               </div>
               <button type="button" className="m-sheet-close" onClick={() => setIsAuthModalOpen(false)} aria-label={copy.close}>
                 ✕
               </button>
             </header>
             <div className="m-sheet-body m-center">
-              {hasGoogleClientId ? (
+              {needsRecaptchaChallenge ? (
+                <RecaptchaChallenge
+                  siteKey={recaptchaSiteKeyV2}
+                  onSolved={(token) => {
+                    void handleRecaptchaChallengeSuccess(token)
+                  }}
+                />
+              ) : hasGoogleClientId ? (
                 <ResponsiveGoogleLogin
                   onSuccess={(credentialResponse) => {
                     void handleGoogleSuccess(credentialResponse)
@@ -361,6 +392,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                   onError={() => setError(copy.loadError)}
                 />
               ) : null}
+              {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
             </div>
           </section>
         </div>

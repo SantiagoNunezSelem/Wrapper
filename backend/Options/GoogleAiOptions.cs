@@ -42,6 +42,20 @@ public sealed class GoogleAiOptions
     public int RetryCooldownSeconds { get; set; } = 120;
 
     /// <summary>
+    /// How many distinct chats one account may have analysed by the AI in a UTC day.
+    /// <para>
+    /// This is the ceiling on what a single account can cost. Verdicts are cached per
+    /// (account, chat, metric), so re-reading an already-analysed chat is free forever —
+    /// but a <em>new</em> chat fingerprint always misses that cache and always spends
+    /// tokens, and the fingerprint comes from the request. Without this cap, one
+    /// subscription (or one week-long free trial) is enough to drain the entire Gemini
+    /// quota by looping with a fresh hash each time. Ten is far above what a real person
+    /// does in a day and far below what an attack needs.
+    /// </para>
+    /// </summary>
+    public int MaxChatsPerDay { get; set; } = 10;
+
+    /// <summary>
     /// Reasoning-token budget. 0 disables "thinking" on Gemini 2.5 models, which is
     /// pure savings for a yes/no classification. Set to -1 to omit the field entirely
     /// if you switch to a model that rejects it (e.g. the 2.0 series).

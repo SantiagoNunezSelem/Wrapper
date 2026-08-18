@@ -1,4 +1,5 @@
 const aiDisabledKey = 'vistazo-dev-ai-disabled'
+const recaptchaV3DisabledKey = 'vistazo-dev-recaptcha-v3-disabled'
 const toolbarPositionKey = 'vistazo-dev-toolbar-pos'
 
 /**
@@ -31,6 +32,30 @@ export function isAiDisabled(): boolean {
 export function setAiDisabled(value: boolean): void {
   try {
     localStorage.setItem(aiDisabledKey, String(value))
+  } catch {
+    // Nothing to do: the in-memory state still holds for this session.
+  }
+}
+
+/** Lets the v2 fallback be tested on demand instead of waiting for a real low v3 score —
+ * skips `executeRecaptchaV3` entirely, so the login POST carries no v3 token and the
+ * backend (which has no way to tell "skipped" from "failed") sends back the same
+ * `recaptcha_required` it would for genuine bot traffic. */
+export function isRecaptchaV3Disabled(): boolean {
+  if (!isLocalhost()) {
+    return false
+  }
+
+  try {
+    return localStorage.getItem(recaptchaV3DisabledKey) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setRecaptchaV3Disabled(value: boolean): void {
+  try {
+    localStorage.setItem(recaptchaV3DisabledKey, String(value))
   } catch {
     // Nothing to do: the in-memory state still holds for this session.
   }
