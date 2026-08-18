@@ -22,8 +22,15 @@ import {
   syncSubscription,
   toggleDevSubscription,
 } from '../lib/api'
-import { isAiDisabled as readAiDisabled, isLocalhost, setAiDisabled } from '../lib/devFlags'
+import {
+  isAiDisabled as readAiDisabled,
+  isLocalhost,
+  isRecaptchaV3Disabled as readRecaptchaV3Disabled,
+  setAiDisabled,
+  setRecaptchaV3Disabled,
+} from '../lib/devFlags'
 import { getLandingPreviewCards } from '../lib/landingPreview'
+import { executeRecaptchaV3 } from '../lib/recaptcha'
 import {
   aiMetricIds,
   gateAnalysis,
@@ -87,6 +94,12 @@ export function useVistazo() {
   const [analysisProgress, setAnalysisProgress] = useState<number | null>(null)
   const [error, setError] = useState<string>('')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  // True once the backend has rejected a login for a low reCAPTCHA v3 score — swaps the
+  // Google button in the auth modal for the v2 checkbox fallback.
+  const [needsRecaptchaChallenge, setNeedsRecaptchaChallenge] = useState(false)
+  // The Google id-token from the attempt that triggered the challenge above, so solving
+  // the checkbox can retry login without asking Google for a fresh one.
+  const pendingGoogleIdToken = useRef<string | null>(null)
   const [isExportTutorialOpen, setIsExportTutorialOpen] = useState(false)
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null)
   const [aiStates, setAiStates] = useState<AiCardStates>({})
@@ -123,10 +136,13 @@ export function useVistazo() {
   // build never even renders the toolbar.
   const showDevTools = useMemo(() => isLocalhost(), [])
   const [devAiDisabled, setDevAiDisabled] = useState(() => readAiDisabled())
+  const [devRecaptchaV3Disabled, setDevRecaptchaV3Disabled] = useState(() => readRecaptchaV3Disabled())
   const [isDevBusy, setIsDevBusy] = useState(false)
 
   const copy = shellCopy[language]
   const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
+  const recaptchaSiteKeyV3 = import.meta.env.VITE_RECAPTCHA_SITE_KEY_V3 ?? ''
+  const recaptchaSiteKeyV2 = import.meta.env.VITE_RECAPTCHA_SITE_KEY_V2 ?? ''
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // The expensive part of analysis (every metric, computed in a Web Worker) never
@@ -518,6 +534,14 @@ export function useVistazo() {
     })
   }
 
+  function handleToggleDevRecaptchaV3() {
+    setDevRecaptchaV3Disabled((current) => {
+      const next = !current
+      setRecaptchaV3Disabled(next)
+      return next
+    })
+  }
+
   async function handleToggleDevSubscription() {
     if (!token) {
       return
@@ -541,21 +565,21 @@ export function useVistazo() {
     }
   }
 
-  async function handleGoogleSuccess(response: CredentialResponse) {
-    if (!response.credential) {
-      setError(copy.loadError)
-      return
-    }
-
+  /** Shared by a fresh Google sign-in and a retry after the v2 challenge — everything
+   * past "we have an id-token and maybe a reCAPTCHA token" is identical. */
+  async function finishGoogleLogin(idToken: string, recaptcha?: { token?: string; isFallback?: boolean }) {
     setError('')
-    // The modal's own job is done once we have a credential — close it and hand
-    // off to the full-screen overlay so there's a clear "still working" signal
-    // for however long sign-in (and, if a chat is loaded, re-gating it) takes.
+    // The modal's own job is done once we have something to submit — close it and hand
+    // off to the full-screen overlay so there's a clear "still working" signal for
+    // however long sign-in takes. Reopened below only if reCAPTCHA sends us back for a
+    // challenge.
     setIsAuthModalOpen(false)
     setBusyMessage(copy.loggingIn)
 
     try {
-      const auth = await loginWithGoogle(response.credential)
+      const auth = await loginWithGoogle(idToken, recaptcha)
+      pendingGoogleIdToken.current = null
+      setNeedsRecaptchaChallenge(false)
       localStorage.setItem(authTokenKey, auth.token)
       setToken(auth.token)
       setUser(auth.user)
@@ -568,10 +592,47 @@ export function useVistazo() {
       }
     } catch (caught) {
       console.error(caught)
-      setError(caught instanceof Error ? caught.message : copy.loadError)
+
+      // Score too low (or, for the fallback attempt, the checkbox wasn't solved): stay
+      // on the modal and swap in the v2 widget instead of showing a dead-end error.
+      if (caught instanceof ApiError && caught.code === 'recaptcha_required') {
+        pendingGoogleIdToken.current = idToken
+        setNeedsRecaptchaChallenge(true)
+        setIsAuthModalOpen(true)
+      } else {
+        setError(caught instanceof Error ? caught.message : copy.loadError)
+      }
     } finally {
       setBusyMessage('')
     }
+  }
+
+  async function handleGoogleSuccess(response: CredentialResponse) {
+    if (!response.credential) {
+      setError(copy.loadError)
+      return
+    }
+
+    // Dev-only escape hatch (see DevToolbar): skipping v3 here is indistinguishable to the
+    // backend from a token that failed, so it sends back the same recaptcha_required that
+    // real bot traffic would — the fastest way to exercise the v2 fallback UI on demand
+    // instead of waiting for an actual low score.
+    const recaptchaToken = devRecaptchaV3Disabled
+      ? undefined
+      : await executeRecaptchaV3(recaptchaSiteKeyV3, 'login').catch(() => undefined)
+    await finishGoogleLogin(response.credential, { token: recaptchaToken })
+  }
+
+  /** Called once the v2 checkbox is solved — retries the same login with the id-token
+   * saved when the v3 score first came back too low. */
+  async function handleRecaptchaChallengeSuccess(v2Token: string) {
+    const idToken = pendingGoogleIdToken.current
+    if (!idToken) {
+      setError(copy.loadError)
+      return
+    }
+
+    await finishGoogleLogin(idToken, { token: v2Token, isFallback: true })
   }
 
   function handleLogout() {
@@ -1026,6 +1087,9 @@ export function useVistazo() {
     subscriptionError,
     isAuthModalOpen,
     setIsAuthModalOpen,
+    needsRecaptchaChallenge,
+    recaptchaSiteKeyV2,
+    recaptchaSiteKeyV3,
     isExportTutorialOpen,
     setIsExportTutorialOpen,
     isVipPopoverOpen,
@@ -1042,6 +1106,7 @@ export function useVistazo() {
     // --- sólo en localhost ---
     showDevTools,
     devAiDisabled,
+    devRecaptchaV3Disabled,
     isDevBusy,
 
     // --- acciones ---
@@ -1054,12 +1119,14 @@ export function useVistazo() {
     processFile,
     handleFileSelection,
     handleGoogleSuccess,
+    handleRecaptchaChallengeSuccess,
     handleLogout,
     handleCancelSubscription,
     handleRefreshSubscription,
     handleAiRetry,
     handleConsentAccept,
     handleToggleDevAi,
+    handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,

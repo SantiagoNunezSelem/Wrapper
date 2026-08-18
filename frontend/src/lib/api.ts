@@ -54,12 +54,19 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
   return (await response.json()) as T
 }
 
-export async function loginWithGoogle(idToken: string): Promise<AuthResponse> {
+export async function loginWithGoogle(
+  idToken: string,
+  recaptcha?: { token?: string; isFallback?: boolean },
+): Promise<AuthResponse> {
   return request<AuthResponse>(
     '/api/auth/google',
     {
       method: 'POST',
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({
+        idToken,
+        recaptchaToken: recaptcha?.token,
+        recaptchaIsFallback: recaptcha?.isFallback ?? false,
+      }),
     },
   )
 }

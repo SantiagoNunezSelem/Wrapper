@@ -9,3 +9,5 @@ backend/*.db-wal
 
 # Per-developer local Claude Code settings (machine-specific permissions)
 .claude/settings.local.json
+.vercel
+.env*

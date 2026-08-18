@@ -9,6 +9,13 @@ using Microsoft.Extensions.Options;
 
 namespace backend.Services;
 
+/// <summary>
+/// Thrown when an account has already had its day's worth of chats analysed. Surfaced to
+/// the caller as a 429 rather than swallowed: silently returning empty results would look
+/// like the AI failed, and send the user to the retry button in a loop.
+/// </summary>
+public sealed class AiDailyLimitReachedException(string message) : Exception(message);
+
 /// <summary>One already-filtered fragment of chat, as the browser built it.</summary>
 public sealed record AiSnippetInput(string Id, string Keyword, string Text);
 
@@ -36,6 +43,13 @@ public sealed class AiMetricService(
 {
     /// <summary>Ceiling on one snippet's length. A client can't make us pay for a novel.</summary>
     private const int MaxSnippetChars = 1200;
+
+    /// <summary>
+    /// Most metrics one request may ask for. There are only a handful of AI metrics in the
+    /// product; a longer list is not a real client, and every entry is its own run of
+    /// Gemini batches.
+    /// </summary>
+    public const int MaxMetricsPerRequest = 12;
 
     /// <summary>
     /// ASCII unit separator, used only to build the input fingerprint. Between fields so
@@ -68,9 +82,11 @@ public sealed class AiMetricService(
         IReadOnlyList<AiMetricRequestItem> requests,
         CancellationToken cancellationToken)
     {
+        await EnsureDailyChatBudgetAsync(userId, sourceHash, cancellationToken);
+
         var results = new List<AiMetricStateDto>();
 
-        foreach (var request in requests)
+        foreach (var request in requests.Take(MaxMetricsPerRequest))
         {
             if (!AiMetricPrompts.IsSupported(request.MetricId))
             {
@@ -114,6 +130,47 @@ public sealed class AiMetricService(
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// The hard ceiling on what one account can cost in a day.
+    /// <para>
+    /// Counted in <em>distinct chats</em> rather than requests or tokens, because that is
+    /// the thing the caller controls and the thing that actually causes spend: a chat
+    /// already analysed is answered from cache forever, so repeat traffic is free no matter
+    /// how much of it there is, while a chat fingerprint never seen before always reaches
+    /// Gemini. Anything already counted today passes straight through — the cap must never
+    /// strand someone halfway through the chat they are actually looking at.
+    /// </para>
+    /// </summary>
+    private async Task EnsureDailyChatBudgetAsync(Guid userId, string sourceHash, CancellationToken cancellationToken)
+    {
+        var limit = _options.MaxChatsPerDay;
+        if (limit <= 0)
+        {
+            return;
+        }
+
+        var since = DateTime.UtcNow.Date;
+
+        var chatsToday = await db.AiMetricResults
+            .Where(item => item.UserId == userId && item.CreatedAtUtc >= since)
+            .Select(item => item.SourceHash)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (chatsToday.Count < limit || chatsToday.Contains(sourceHash, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        logger.LogWarning(
+            "User {UserId} hit the daily AI chat limit ({Limit}). Refusing to analyse another chat today.",
+            userId,
+            limit);
+
+        throw new AiDailyLimitReachedException(
+            $"This account has already had {limit} chats analysed by the AI today. The allowance resets at UTC midnight.");
     }
 
     private async Task<AiMetricStateDto> ResolveAsync(

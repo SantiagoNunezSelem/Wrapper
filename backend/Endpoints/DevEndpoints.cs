@@ -149,6 +149,16 @@ public static class DevEndpoints
 
     private static bool IsLoopback(HttpContext http)
     {
+        // When forwarded headers are trusted, the middleware overwrites RemoteIpAddress
+        // with whatever X-Forwarded-For claimed — which would let a remote caller assert
+        // "127.0.0.1" and walk straight through this gate into the free-Pro switch. The
+        // middleware leaves X-Original-For behind whenever it rewrites, so its presence is
+        // proof the address was not observed on the socket and must not be believed here.
+        if (http.Request.Headers.ContainsKey("X-Original-For"))
+        {
+            return false;
+        }
+
         var address = http.Connection.RemoteIpAddress;
         return address is not null &&
                (IPAddress.IsLoopback(address) ||

@@ -43,8 +43,24 @@ public sealed class TrialGuardOptions
     /// <c>CF-IPCountry</c> style headers. Off by default because any client can send
     /// those headers: switch it on only once the app sits behind a proxy or CDN that
     /// overwrites them. Left off, the socket address is used instead.
+    /// <para>
+    /// This setting reaches further than the trial guard it is named for: the rate limiter
+    /// partitions by the same resolved address. Left off behind a real proxy, every
+    /// visitor shares one partition and a handful of requests can exhaust the login limit
+    /// for everybody — so getting this right is an availability concern, not only an
+    /// anti-abuse one.
+    /// </para>
     /// </summary>
     public bool TrustProxyHeaders { get; set; }
+
+    /// <summary>
+    /// Addresses of the proxies whose forwarded headers may be believed, e.g.
+    /// <c>["10.0.0.7"]</c>. Empty means "believe them from anywhere", which is only safe
+    /// when the app cannot be reached except through the proxy — otherwise anyone can
+    /// forge <c>X-Forwarded-For</c> and hand themselves a private rate-limit bucket and an
+    /// endless supply of free trials. Ignored unless <see cref="TrustProxyHeaders"/> is on.
+    /// </summary>
+    public string[] KnownProxies { get; set; } = [];
 
     /// <summary>Salt for the stored IP/device hashes. Falls back to the JWT signing key
     /// when empty, so the raw address is never written to disk either way.</summary>
