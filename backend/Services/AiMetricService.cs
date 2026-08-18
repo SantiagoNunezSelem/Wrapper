@@ -211,9 +211,11 @@ public sealed class AiMetricService(
     /// "PROHIBITED_CONTENT"</c> — even with every <c>safetySettings</c> category set to
     /// <c>BLOCK_NONE</c>, apparently from the sheer density of genuinely explicit messages
     /// landing in the same call (exactly the content "tonopicante" exists to find). Halving
-    /// and retrying resolved it every time in testing — even the single most explicit
-    /// message in that batch classified fine completely alone — so this recurses down
-    /// instead of failing the whole metric over one dense stretch of real hits.
+    /// and retrying resolved it that time — but verified again empirically (2026-08-18)
+    /// against a different real chat: a single message, sent completely alone, can still
+    /// trip the same floor. There is no smaller batch to fall back to at that point, so
+    /// (see the base case below) it is excluded from the metric instead of failing every
+    /// other candidate that already classified fine.
     /// Quota/unavailable/config/invalid failures are not retried here: a smaller batch
     /// wouldn't fix an exhausted quota or a bad key, only waste calls before failing anyway.
     /// </summary>
@@ -232,7 +234,21 @@ public sealed class AiMetricService(
             return (outcome.AcceptedIds.Where(batchIds.Contains).ToList(), null);
         }
 
-        if (outcome.ErrorCode != AiErrorCode.Blocked || batch.Count <= 1)
+        if (outcome.ErrorCode == AiErrorCode.Blocked && batch.Count <= 1)
+        {
+            // A lone message that Gemini's safety floor still refuses to even look at.
+            // "Ante la duda, excluí" (see AiMetricPrompts) already governs every borderline
+            // verdict the model does return — an input it can't answer at all is the most
+            // uncertain case there is, so it gets the same treatment: left out, not counted
+            // as a hit, and — critically — not allowed to sink every other candidate in this
+            // metric that Gemini did manage to classify.
+            logger.LogInformation(
+                "Gemini's safety floor would not classify message {Id} even alone; excluding it from the metric.",
+                batch[0].Id);
+            return ([], null);
+        }
+
+        if (outcome.ErrorCode != AiErrorCode.Blocked)
         {
             return ([], outcome);
         }
