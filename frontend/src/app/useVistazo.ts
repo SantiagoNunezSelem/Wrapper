@@ -40,6 +40,7 @@ import {
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { takeSharedFile } from '../lib/shareTargetFile'
 import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
@@ -224,6 +225,30 @@ export function useVistazo() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // El manifest declara `share_target`: cuando alguien comparte un archivo desde otra
+  // app (por ejemplo, "Exportar chat" en WhatsApp) con Vistazo ya instalada, `sw.js`
+  // intercepta esa navegación, guarda el archivo en IndexedDB y redirige acá con esta
+  // marca — así entra por el mismo camino que una carga manual, con toda la UI de
+  // progreso y errores ya resuelta.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('share-target') !== '1') {
+      return
+    }
+
+    params.delete('share-target')
+    const query = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+
+    void takeSharedFile().then((file) => {
+      if (file) {
+        void processFile(file)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function navigateTo(path: string) {

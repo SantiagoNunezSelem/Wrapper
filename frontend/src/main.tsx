@@ -14,6 +14,14 @@ const recaptchaSiteKeyV3 = import.meta.env.VITE_RECAPTCHA_SITE_KEY_V3 ?? ''
 // already in place to produce a token instantly instead of waiting on it mid-click.
 void loadRecaptchaScript(recaptchaSiteKeyV3)
 
+// Requisito de instalabilidad (junto con el manifest): sin esto, Chrome/Edge
+// no ofrecen `beforeinstallprompt` y el botón de instalar nunca aparece.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js')
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <GoogleOAuthProvider clientId={googleClientId}>
