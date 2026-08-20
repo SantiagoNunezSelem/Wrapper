@@ -9,6 +9,7 @@ import {
   analyzeAiMetrics,
   ApiError,
   cancelSubscription,
+  createShare,
   getCurrentUser,
   getFreeUnlocks,
   getSubscription,
@@ -40,6 +41,8 @@ import {
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { buildSharePayload, readShareSlug, shareUrlFor } from '../lib/shareStory'
+import { takeSharedFile } from '../lib/shareTargetFile'
 import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
@@ -131,6 +134,12 @@ export function useVistazo() {
   const [route, setRoute] = useState<'app' | 'subscription'>(() =>
     window.location.pathname === '/suscripcion' ? 'subscription' : 'app',
   )
+
+  // A shared story (`/s/{slug}`) is read once, at load, and never changes for the life of
+  // the tab: it is a public page someone opened from a link, not somewhere the app
+  // navigates to. Kept out of `route` for that reason — that state is about which screen
+  // of the app is showing, and this is the case where the app is not showing at all.
+  const shareSlug = useMemo(() => readShareSlug(window.location.pathname), [])
 
   // Dev-only switches. `showDevTools` is resolved once from the hostname so a production
   // build never even renders the toolbar.
@@ -224,6 +233,30 @@ export function useVistazo() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // El manifest declara `share_target`: cuando alguien comparte un archivo desde otra
+  // app (por ejemplo, "Exportar chat" en WhatsApp) con Vistazo ya instalada, `sw.js`
+  // intercepta esa navegación, guarda el archivo en IndexedDB y redirige acá con esta
+  // marca — así entra por el mismo camino que una carga manual, con toda la UI de
+  // progreso y errores ya resuelta.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('share-target') !== '1') {
+      return
+    }
+
+    params.delete('share-target')
+    const query = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+
+    void takeSharedFile().then((file) => {
+      if (file) {
+        void processFile(file)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function navigateTo(path: string) {
@@ -1046,6 +1079,36 @@ export function useVistazo() {
     [interleavedMetrics, pendingFreeUnlockId],
   )
 
+  /**
+   * Publishes the current run as a public link and returns its URL.
+   *
+   * Shares what the viewer can *see right now* — `interleavedMetrics` is the already-gated
+   * list, so a Pro subscriber shares everything and a free account shares the free cards
+   * plus whatever today's unlocks opened. That is the whole contract of the link: it is a
+   * snapshot of this viewer's access at this moment, and it stops changing the instant it
+   * is created.
+   *
+   * Literal message text is dropped by `buildSharePayload` before the request is built, so
+   * it never leaves the browser (the server strips it again — see SharePayloadSanitizer).
+   */
+  async function createStoryLink(): Promise<string> {
+    if (!token || !analysis) {
+      throw new Error('A signed-in session and a loaded chat are required to share.')
+    }
+
+    const { slug } = await createShare(token, {
+      chatName: analysis.chatName,
+      dateRangeLabel: analysis.dateRangeLabel,
+      sourceHash: analysis.sourceHash,
+      language,
+      messageCount: analysis.messageCount,
+      participantCount: analysis.participantCount,
+      cardsJson: JSON.stringify(buildSharePayload(interleavedMetrics)),
+    })
+
+    return shareUrlFor(slug)
+  }
+
   return {
     // --- sesión e idioma ---
     language,
@@ -1110,6 +1173,10 @@ export function useVistazo() {
     isDevBusy,
 
     // --- acciones ---
+    // --- recorrido compartido ---
+    shareSlug,
+    createStoryLink,
+
     navigateTo,
     goToSubscriptionPage,
     openVipPopover,

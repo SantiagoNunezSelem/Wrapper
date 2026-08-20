@@ -46,10 +46,31 @@ const LOCK_ACCENT = 'tier-gold'
  * pantalla que dice cuántas quedan, así el usuario gratis ve doce pantallas
  * limpias y un momento de venta al final, en vez de trece candados salteados.
  */
+/** Cómo se comparte este recorrido. `createLink` devuelve la URL pública —
+ * creándola si hace falta— y es lo único que cambia entre el recorrido propio
+ * (crea el link contra el backend) y uno ya compartido (devuelve el que se está
+ * mirando). */
+export interface StoryShare {
+  createLink: () => Promise<string>
+}
+
+/** Reemplaza la pantalla de cierre. El recorrido propio cierra vendiendo las
+ * métricas Pro que faltan; uno compartido no tiene nada que vender a alguien que
+ * todavía no usó la app, así que cierra invitándolo a analizar su propio chat. */
+export interface StoryOutro {
+  title: string
+  caption: string
+  ctaLabel: string
+  onCta: () => void
+}
+
 export function StoryMode({
   metrics,
   chatName,
   copy,
+  suspended = false,
+  share,
+  outro,
   onClose,
   onOpenDetail,
   onUnlock,
@@ -57,6 +78,13 @@ export function StoryMode({
   metrics: MetricCard[]
   chatName: string
   copy: ShellCopy
+  share?: StoryShare
+  outro?: StoryOutro
+  /** Hay otra capa abierta encima (el detalle de la métrica). El recorrido sigue
+   * montado y en su misma pantalla, pero congelado: no avanza solo, no escucha el
+   * teclado y no responde a gestos, así cerrar esa capa devuelve al usuario
+   * exactamente donde estaba. */
+  suspended?: boolean
   onClose: () => void
   onOpenDetail: (card: MetricCard) => void
   onUnlock: () => void
@@ -76,7 +104,9 @@ export function StoryMode({
     [metrics],
   )
 
-  const hasOutro = lockedCount > 0
+  // Un recorrido compartido siempre cierra con su pantalla propia; el propio sólo
+  // cuando hay algo bloqueado que mostrar.
+  const hasOutro = Boolean(outro) || lockedCount > 0
   const total = visible.length + (hasOutro ? 1 : 0)
 
   /* Se lee una sola vez: nadie cambia esta preferencia a mitad de un recorrido
@@ -89,6 +119,9 @@ export function StoryMode({
      tenía respuesta visual propia. */
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [copied, setCopied] = useState(false)
+  /* Crear el link es un viaje al servidor, así que el botón tiene que decir que
+     está trabajando — y decirlo si falla, en vez de no hacer nada. */
+  const [shareState, setShareState] = useState<'idle' | 'busy' | 'error'>('idle')
   const touchStart = useRef<{ x: number; y: number } | null>(null)
 
   /* El recorrido tipo Wrapped: cada pantalla pasa sola pasado STORY_DURATION_MS,
@@ -127,6 +160,10 @@ export function StoryMode({
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      // Con el detalle abierto encima, el teclado le pertenece a esa capa: sin
+      // esto un Escape cerraría las dos a la vez y una flecha avanzaría el
+      // recorrido por detrás de algo que el usuario está leyendo.
+      if (suspended) return
       if (event.key === 'Escape') onClose()
       if (event.key === 'ArrowRight' || event.key === ' ') goNext()
       if (event.key === 'ArrowLeft') goPrev()
@@ -140,7 +177,7 @@ export function StoryMode({
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', handleKey)
     }
-  }, [onClose, goNext, goPrev])
+  }, [onClose, goNext, goPrev, suspended])
 
   useEffect(() => {
     return () => clearHoldTimeout()
@@ -151,6 +188,7 @@ export function StoryMode({
   // arrastrarlo hasta la siguiente métrica no tendría sentido.
   useEffect(() => {
     setCopied(false)
+    setShareState('idle')
   }, [index])
 
   // Pantalla nueva, cronómetro nuevo: sin esto, pasar de pantalla con tiempo
@@ -172,21 +210,24 @@ export function StoryMode({
   // activa, pausada como todo lo demás, y nunca con movimiento reducido — ahí
   // se muestra la lista fija en vez de esto (ver más abajo).
   useEffect(() => {
-    if (!isOutro || paused || reducedMotion || lockedNames.length < 2) {
+    if (!isOutro || paused || suspended || reducedMotion || lockedNames.length < 2) {
       return
     }
     const interval = setInterval(() => {
       setTickerIndex((current) => (current + 1) % lockedNames.length)
     }, TICKER_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [isOutro, paused, reducedMotion, lockedNames])
+  }, [isOutro, paused, suspended, reducedMotion, lockedNames])
 
   // El reloj de la pantalla actual. Pausado no arranca nada; al reanudar,
   // retoma desde `elapsedRef` en vez de reiniciar la barra. `index` es
   // dependencia a propósito aunque no se lea directo: es lo que dispara el
   // cronómetro nuevo del efecto de arriba en cada pantalla.
   useEffect(() => {
-    if (paused) {
+    // `suspended` congela igual que un dedo apoyado: la limpieza de abajo guarda
+    // lo transcurrido en `elapsedRef`, así que al cerrar el detalle la barra
+    // retoma donde quedó en vez de reiniciarse.
+    if (paused || suspended) {
       return
     }
 
@@ -206,7 +247,7 @@ export function StoryMode({
       elapsedRef.current += Date.now() - start
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paused, index, goNext])
+  }, [paused, suspended, index, goNext])
 
   useEffect(() => {
     if (!copied) {
@@ -224,6 +265,11 @@ export function StoryMode({
   }
 
   function handleTouchStart(event: React.TouchEvent) {
+    // La capa de detalle tapa la pantalla entera, así que en la práctica no
+    // llegan gestos hasta acá; el corte igual va explícito para que el recorrido
+    // no se mueva por debajo durante la animación de entrada o salida de esa capa.
+    if (suspended) return
+
     const touch = event.touches[0]
     touchStart.current = { x: touch.clientX, y: touch.clientY }
 
@@ -238,6 +284,8 @@ export function StoryMode({
   }
 
   function handleTouchMove(event: React.TouchEvent) {
+    if (suspended) return
+
     const start = touchStart.current
     if (!start || holdEngagedRef.current) {
       return
@@ -254,6 +302,8 @@ export function StoryMode({
   }
 
   function handleTouchEnd(event: React.TouchEvent) {
+    if (suspended) return
+
     clearHoldTimeout()
 
     if (holdEngagedRef.current) {
@@ -289,26 +339,45 @@ export function StoryMode({
     }
   }
 
-  /** Comparte con la hoja nativa del sistema, que es lo que la gente espera en
-   * un teléfono. Donde no existe (escritorio, navegadores viejos) cae al
-   * portapapeles y lo avisa, en vez de no hacer nada. */
+  /**
+   * Comparte el recorrido entero como un link, no la pantalla suelta en la que
+   * esté parado el usuario: quien lo recibe abre todas las métricas —con sus
+   * detalles— sin instalar nada ni iniciar sesión.
+   *
+   * Usa la hoja nativa del sistema, que es lo que la gente espera en un
+   * teléfono. Donde no existe (escritorio, navegadores viejos) cae al
+   * portapapeles y lo avisa, en vez de no hacer nada.
+   */
   async function handleShare() {
-    if (!card?.basic) {
+    if (!share || shareState === 'busy') {
       return
     }
 
-    const text = `${card.title}: ${card.basic.value} — ${card.basic.label}\n\n${m.shareTag.replace('{chat}', chatName)}`
+    setShareState('busy')
+
+    let url: string
+    try {
+      url = await share.createLink()
+    } catch {
+      setShareState('error')
+      return
+    }
+
+    setShareState('idle')
+
+    const text = m.shareTag.replace('{chat}', chatName)
 
     try {
       if (navigator.share) {
-        await navigator.share({ title: card.title, text })
+        await navigator.share({ title: chatName, text, url })
         return
       }
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(`${text}\n${url}`)
       setCopied(true)
     } catch {
       // Cancelar la hoja de compartir tira una excepción y no es un error:
-      // el usuario decidió no compartir, no hay nada que informarle.
+      // el usuario decidió no compartir, no hay nada que informarle. El link ya
+      // quedó creado, así que volver a tocar el botón lo reutiliza.
     }
   }
 
@@ -344,32 +413,51 @@ export function StoryMode({
       <button type="button" className="m-story-tap is-right" onClick={goNext} aria-label={m.next} />
 
       {isOutro ? (
-        <div className={`m-story-body is-${direction}`} key="outro">
-          {/* La ficha: una marca de color y el título arriba, el contador debajo.
-              Sin ícono — el número de abajo es el único protagonista. */}
-          <div className={`m-story-plate ${LOCK_ACCENT}`}>
-            <span className="m-story-tick" aria-hidden="true" />
-            <h2 className="m-story-kicker">Vistazo Pro</h2>
-            <span className="m-story-count">
-              {chatName} · {index + 1} / {total}
-            </span>
-          </div>
-          <span className="m-story-rule" aria-hidden="true" />
-
-          {/* ANTES: <strong className="m-story-huge gradient-text">{lockedCount}</strong> */}
-          <strong className="m-story-huge gradient-text">{lockedCountValue}</strong>
-          <p className="m-story-label">{m.outroTitle}</p>
-          {reducedMotion || lockedNames.length === 0 ? (
-            <p className="m-story-teaser">{buildTeaser(metrics, lockedCount, m.outroMore)}</p>
-          ) : (
-            <div className="m-story-ticker-row">
-              <span className="m-story-ticker-caption">{m.outroCaption}</span>
-              <span className="m-story-ticker-name" key={tickerIndex}>
-                {lockedNames[tickerIndex % lockedNames.length]}
+        outro ? (
+          /* El cierre de un recorrido compartido: quien lo abrió no tiene nada
+             que desbloquear todavía, así que en vez de vender Pro cuenta cuánto
+             acaba de ver e invita a hacer el suyo. */
+          <div className={`m-story-body is-${direction}`} key="outro">
+            <div className={`m-story-plate ${LOCK_ACCENT}`}>
+              <span className="m-story-tick" aria-hidden="true" />
+              <h2 className="m-story-kicker">{outro.caption}</h2>
+              <span className="m-story-count">
+                {chatName} · {index + 1} / {total}
               </span>
             </div>
-          )}
-        </div>
+            <span className="m-story-rule" aria-hidden="true" />
+
+            <strong className="m-story-huge gradient-text">{visible.length}</strong>
+            <p className="m-story-label">{outro.title}</p>
+          </div>
+        ) : (
+          <div className={`m-story-body is-${direction}`} key="outro">
+            {/* La ficha: una marca de color y el título arriba, el contador debajo.
+                Sin ícono — el número de abajo es el único protagonista. */}
+            <div className={`m-story-plate ${LOCK_ACCENT}`}>
+              <span className="m-story-tick" aria-hidden="true" />
+              <h2 className="m-story-kicker">Vistazo Pro</h2>
+              <span className="m-story-count">
+                {chatName} · {index + 1} / {total}
+              </span>
+            </div>
+            <span className="m-story-rule" aria-hidden="true" />
+
+            {/* ANTES: <strong className="m-story-huge gradient-text">{lockedCount}</strong> */}
+            <strong className="m-story-huge gradient-text">{lockedCountValue}</strong>
+            <p className="m-story-label">{m.outroTitle}</p>
+            {reducedMotion || lockedNames.length === 0 ? (
+              <p className="m-story-teaser">{buildTeaser(metrics, lockedCount, m.outroMore)}</p>
+            ) : (
+              <div className="m-story-ticker-row">
+                <span className="m-story-ticker-caption">{m.outroCaption}</span>
+                <span className="m-story-ticker-name" key={tickerIndex}>
+                  {lockedNames[tickerIndex % lockedNames.length]}
+                </span>
+              </div>
+            )}
+          </div>
+        )
       ) : card?.basic ? (
         <div className={`m-story-body is-${direction}`} key={card.id}>
           {/* La ficha: una marca de color y el título arriba, el contador debajo.
@@ -417,14 +505,25 @@ export function StoryMode({
 
       <footer className="m-story-foot">
         {isOutro ? (
-          <button type="button" className="primary-button m-full" onClick={onUnlock}>
-            {m.outroCta}
+          <button type="button" className="primary-button m-full" onClick={outro ? outro.onCta : onUnlock}>
+            {outro ? outro.ctaLabel : m.outroCta}
           </button>
-        ) : (
-          <button type="button" className="primary-button m-full" onClick={() => void handleShare()}>
-            {copied ? m.copied : m.share}
+        ) : share ? (
+          <button
+            type="button"
+            className="primary-button m-full"
+            onClick={() => void handleShare()}
+            disabled={shareState === 'busy'}
+          >
+            {shareState === 'busy'
+              ? m.creatingLink
+              : shareState === 'error'
+                ? m.linkError
+                : copied
+                  ? m.linkCopied
+                  : m.share}
           </button>
-        )}
+        ) : null}
       </footer>
 
       {/* Sólo aparece cuando quedan pantallas: en la última el pie ya dice qué

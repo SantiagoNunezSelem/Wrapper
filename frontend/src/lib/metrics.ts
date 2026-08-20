@@ -420,7 +420,11 @@ const weekdayLabels: Record<Language, string[]> = {
 }
 
 interface MetricMeta {
+  /** Plain-language phrase saying exactly what the metric measures — the card's
+   * heading, so a first-time viewer gets it without reading further. */
   title: string
+  /** The metric's playful nickname (e.g. "El Spammer"), demoted to a tagline
+   * under the title. Always visible, even locked. */
   description: string
   preview: string
 }
@@ -429,100 +433,100 @@ type MetaDictionary = Record<string, Record<Language, MetricMeta>>
 
 const metricMeta: MetaDictionary = {
   spammer: {
-    es: { title: 'El Spammer vs El Silencioso', description: 'Qué porcentaje del chat aporta cada participante.', preview: 'Reparto por integrante y cómo cambió mes a mes.' },
-    en: { title: 'Spammer vs The Quiet One', description: 'How much of the chat each participant contributes.', preview: 'Per-participant split and how it shifted month by month.' },
+    es: { title: 'Quién manda más mensajes', description: 'El Spammer vs El Silencioso', preview: 'Reparto por integrante y cómo cambió mes a mes.' },
+    en: { title: 'Who sends the most messages', description: 'Spammer vs The Quiet One', preview: 'Per-participant split and how it shifted month by month.' },
   },
   monologuista: {
-    es: { title: 'El Monologuista', description: 'La racha más larga de mensajes seguidos sin respuesta.', preview: 'Ranking de rachas y los bloques literales de cada una.' },
-    en: { title: 'The Monologuist', description: 'The longest streak of messages sent without a reply.', preview: 'Streak ranking and the literal blocks behind each one.' },
+    es: { title: 'Quién manda más mensajes seguidos sin respuesta', description: 'El Monologuista', preview: 'Ranking de rachas y los bloques literales de cada una.' },
+    en: { title: 'Who sends the most messages in a row without a reply', description: 'The Monologuist', preview: 'Streak ranking and the literal blocks behind each one.' },
   },
   reloj: {
-    es: { title: 'El Reloj Biológico', description: 'A qué hora del día vive este chat.', preview: 'Heatmap horario individual de cada integrante.' },
-    en: { title: 'The Body Clock', description: 'What time of day this chat comes alive.', preview: "Each participant's own hourly heatmap." },
+    es: { title: 'A qué hora está más activo el chat', description: 'El Reloj Biológico', preview: 'Heatmap horario individual de cada integrante.' },
+    en: { title: 'What time of day the chat is most active', description: 'The Body Clock', preview: "Each participant's own hourly heatmap." },
   },
   rompehielo: {
-    es: { title: 'El Rompehielo', description: 'Quién arranca la conversación la mayoría de los días.', preview: 'Porcentajes de apertura y el primer mensaje de cada día.' },
-    en: { title: 'The Icebreaker', description: 'Who starts the conversation on most days.', preview: "Opening percentages and each day's first message." },
+    es: { title: 'Quién arranca la conversación casi siempre', description: 'El Rompehielo', preview: 'Porcentajes de apertura y el primer mensaje de cada día.' },
+    en: { title: 'Who starts the conversation most days', description: 'The Icebreaker', preview: "Opening percentages and each day's first message." },
   },
   emojis: {
-    es: { title: 'Guerra de Emojis', description: 'Los emojis que más se repiten en el chat.', preview: 'Top personal de emojis de cada integrante.' },
-    en: { title: 'Emoji Wars', description: 'The emojis that show up the most in the chat.', preview: "Each participant's personal emoji top." },
+    es: { title: 'Los emojis más usados del chat', description: 'Guerra de Emojis', preview: 'Top personal de emojis de cada integrante.' },
+    en: { title: 'The most used emojis in the chat', description: 'Emoji Wars', preview: "Each participant's personal emoji top." },
   },
   'racha-dias': {
-    es: { title: 'Días de Racha', description: 'Cuántos días seguidos hubo al menos un mensaje.', preview: 'Calendario de rachas y quién más participó en ellas.' },
-    en: { title: 'Daily Streak', description: 'How many days in a row had at least one message.', preview: 'Streak calendar and who carried each one.' },
+    es: { title: 'Cuántos días seguidos estuvo activo el chat', description: 'Días de Racha', preview: 'Calendario de rachas y quién más participó en ellas.' },
+    en: { title: 'How many days in a row the chat was active', description: 'Daily Streak', preview: 'Streak calendar and who carried each one.' },
   },
   testamento: {
-    es: { title: 'El Testamento', description: 'El mensaje con más caracteres de todo el chat.', preview: 'Top 10 de mensajes más largos por integrante.' },
-    en: { title: 'The Testament', description: 'The message with the most characters in the whole chat.', preview: "Each participant's top 10 longest messages." },
+    es: { title: 'El mensaje más largo del chat', description: 'El Testamento', preview: 'Top 10 de mensajes más largos por integrante.' },
+    en: { title: 'The longest message in the chat', description: 'The Testament', preview: "Each participant's top 10 longest messages." },
   },
   multimedia: {
-    es: { title: 'El Fan de la Multimedia', description: 'Quién manda más fotos, videos y audios.', preview: 'Línea de tiempo de los días con más envíos.' },
-    en: { title: 'The Multimedia Fan', description: 'Who sends the most photos, videos, and voice notes.', preview: 'Timeline of the days with the biggest media spikes.' },
+    es: { title: 'Quién manda más fotos, videos y audios', description: 'El Fan de la Multimedia', preview: 'Línea de tiempo de los días con más envíos.' },
+    en: { title: 'Who sends the most photos, videos, and voice notes', description: 'The Multimedia Fan', preview: 'Timeline of the days with the biggest media spikes.' },
   },
   'top-dias': {
-    es: { title: 'El Mes Más Intenso', description: 'El día con más mensajes en toda la historia del chat.', preview: 'Top 10 de días pico y quién los empujó.' },
-    en: { title: 'Most Intense Day', description: 'The single busiest day in the whole chat history.', preview: 'Top 10 peak days and who drove them.' },
+    es: { title: 'El día con más mensajes de toda la historia', description: 'El Mes Más Intenso', preview: 'Top 10 de días pico y quién los empujó.' },
+    en: { title: "The single busiest day in the chat's history", description: 'Most Intense Day', preview: 'Top 10 peak days and who drove them.' },
   },
   velocista: {
-    es: { title: 'El Velocista', description: 'Quién escribe los mensajes más cortos en promedio.', preview: 'Histograma de mensajes cortos, medios y largos.' },
-    en: { title: 'The Speedster', description: 'Who writes the shortest messages on average.', preview: 'Histogram of short, medium, and long messages.' },
+    es: { title: 'Quién escribe los mensajes más cortos', description: 'El Velocista', preview: 'Histograma de mensajes cortos, medios y largos.' },
+    en: { title: 'Who writes the shortest messages', description: 'The Speedster', preview: 'Histogram of short, medium, and long messages.' },
   },
   'heatmap-anual': {
-    es: { title: 'El Pulso del Chat', description: 'Cómo varió la actividad a lo largo del tiempo.', preview: 'Una curva propia para cada integrante.' },
-    en: { title: "The Chat's Pulse", description: "How the conversation's pace shifted over time.", preview: "Each participant's own curve." },
+    es: { title: 'Cómo cambió la actividad del chat con el tiempo', description: 'El Pulso del Chat', preview: 'Una curva propia para cada integrante.' },
+    en: { title: "How the chat's activity changed over time", description: "The Chat's Pulse", preview: "Each participant's own curve." },
   },
   termometro: {
-    es: { title: 'Termómetro Semanal', description: 'Qué día de la semana concentra más mensajes.', preview: 'Radar semanal individual de cada integrante.' },
-    en: { title: 'Weekly Thermometer', description: 'Which weekday carries the most messages.', preview: "Each participant's own weekly radar." },
+    es: { title: 'Qué día de la semana se habla más', description: 'Termómetro Semanal', preview: 'Radar semanal individual de cada integrante.' },
+    en: { title: 'Which day of the week you talk the most', description: 'Weekly Thermometer', preview: "Each participant's own weekly radar." },
   },
   clavavistos: {
-    es: { title: 'El Clavavistos', description: 'Quién tarda más en responder cuando le escriben.', preview: 'Historial completo de las peores demoras, con fecha y mensaje.' },
-    en: { title: 'Seen-Zone Champion', description: 'Who takes the longest to reply when messaged.', preview: 'Full history of the worst delays, with date and message.' },
+    es: { title: 'Quién tarda más en responder', description: 'El Clavavistos', preview: 'Historial completo de las peores demoras, con fecha y mensaje.' },
+    en: { title: 'Who takes the longest to reply', description: 'Seen-Zone Champion', preview: 'Full history of the worst delays, with date and message.' },
   },
   inactividad: {
-    es: { title: 'Rachas de Inactividad', description: 'Los silencios más largos de toda la conversación.', preview: 'Cronología de silencios y quién rompió el hielo cada vez.' },
-    en: { title: 'Inactivity Streaks', description: 'The longest silences in the whole conversation.', preview: 'Chronology of silences and who broke the ice each time.' },
+    es: { title: 'Los silencios más largos del chat', description: 'Rachas de Inactividad', preview: 'Cronología de silencios y quién rompió el hielo cada vez.' },
+    en: { title: 'The longest silences in the chat', description: 'Inactivity Streaks', preview: 'Chronology of silences and who broke the ice each time.' },
   },
   wordcloud: {
-    es: { title: 'Nube de Palabras Avanzada', description: 'El vocabulario más repetido, sin artículos ni muletillas.', preview: 'Nube personal y buscador por integrante.' },
-    en: { title: 'Advanced Word Cloud', description: 'The most repeated vocabulary, filtered of filler words.', preview: 'Personal cloud and search per participant.' },
+    es: { title: 'Las palabras que más se repiten', description: 'Nube de Palabras Avanzada', preview: 'Nube personal y buscador por integrante.' },
+    en: { title: 'The words that come up the most', description: 'Advanced Word Cloud', preview: 'Personal cloud and search per participant.' },
   },
   redflags: {
-    es: { title: 'Detector de Red Flags', description: 'Un puntaje de tensión a partir de silencios, borrados y palabras clave.', preview: 'Desglose de patrones y momentos señalados.' },
-    en: { title: 'Red Flag Detector', description: 'A tension score built from silences, deletions, and keywords.', preview: 'Pattern breakdown and flagged moments.' },
+    es: { title: 'Qué tan tensa está la conversación', description: 'Detector de Red Flags', preview: 'Desglose de patrones y momentos señalados.' },
+    en: { title: 'How tense the conversation gets', description: 'Red Flag Detector', preview: 'Pattern breakdown and flagged moments.' },
   },
   arrepentido: {
-    es: { title: 'El Arrepentido', description: 'Cuántos mensajes borró cada quien después de mandarlos.', preview: 'Evolución de los borrados a lo largo del tiempo.' },
-    en: { title: 'The Regret Counter', description: 'How many messages each person deleted after sending.', preview: 'How deletions evolved over time.' },
+    es: { title: 'Quién borra más mensajes después de mandarlos', description: 'El Arrepentido', preview: 'Evolución de los borrados a lo largo del tiempo.' },
+    en: { title: 'Who deletes the most messages after sending them', description: 'The Regret Counter', preview: 'How deletions evolved over time.' },
   },
   poliglota: {
-    es: { title: 'El Políglota', description: 'Quién mezcla más inglés y anglicismos en la charla.', preview: 'Términos importados favoritos de cada integrante.' },
-    en: { title: 'The Polyglot', description: 'Who mixes in the most English and imported terms.', preview: "Each participant's favorite imported terms." },
+    es: { title: 'Quién mezcla más inglés en la charla', description: 'El Políglota', preview: 'Términos importados favoritos de cada integrante.' },
+    en: { title: 'Who mixes in the most English', description: 'The Polyglot', preview: "Each participant's favorite imported terms." },
   },
   jajaja: {
-    es: { title: 'El Jajaja Analítico', description: 'El estilo de risa que domina el chat.', preview: 'Distribución de estilos de risa por integrante.' },
-    en: { title: 'The Laugh Analyzer', description: 'The laugh style that dominates the chat.', preview: "Each participant's laugh-style breakdown." },
+    es: { title: 'Cómo se ríe más el grupo', description: 'El Jajaja Analítico', preview: 'Distribución de estilos de risa por integrante.' },
+    en: { title: 'How the group laughs the most', description: 'The Laugh Analyzer', preview: "Each participant's laugh-style breakdown." },
   },
   metralleta: {
-    es: { title: 'El Metralleta', description: 'Quién fragmenta una idea en ráfagas de mensajes cortos.', preview: 'Los combos más grandes, con el bloque literal.' },
-    en: { title: 'The Machine Gun', description: 'Who breaks one thought into a burst of tiny messages.', preview: 'The biggest combos, with the literal block.' },
+    es: { title: 'Quién manda ráfagas de mensajes cortos', description: 'El Metralleta', preview: 'Los combos más grandes, con el bloque literal.' },
+    en: { title: 'Who sends bursts of short messages', description: 'The Machine Gun', preview: 'The biggest combos, with the literal block.' },
   },
   interrogador: {
-    es: { title: 'El Interrogador', description: 'Quién pregunta más en proporción al resto del grupo.', preview: 'Reparto de preguntas por integrante.' },
-    en: { title: 'The Interrogator', description: 'Who asks the most, relative to the rest of the group.', preview: 'Question share by participant.' },
+    es: { title: 'Quién pregunta más que el resto', description: 'El Interrogador', preview: 'Reparto de preguntas por integrante.' },
+    en: { title: 'Who asks the most questions', description: 'The Interrogator', preview: 'Question share by participant.' },
   },
   dramatico: {
-    es: { title: 'El Dramático', description: 'Quién manda más mensajes enteramente en MAYÚSCULAS.', preview: 'Top 3 de mensajes más gritados por integrante.' },
-    en: { title: 'The Dramatic One', description: 'Who sends the most messages entirely in ALL CAPS.', preview: "Each participant's top 3 loudest messages." },
+    es: { title: 'Quién escribe más en MAYÚSCULAS', description: 'El Dramático', preview: 'Top 3 de mensajes más gritados por integrante.' },
+    en: { title: 'Who writes the most in ALL CAPS', description: 'The Dramatic One', preview: "Each participant's top 3 loudest messages." },
   },
   tonopicante: {
-    es: { title: 'El Tono Picante', description: 'Quién manda más mensajes subidos de tono (+18, heurístico).', preview: 'Horarios preferidos, palabras más usadas y los mensajes exactos.' },
-    en: { title: 'The Spicy Tone', description: 'Who sends the most suggestive messages (+18, heuristic).', preview: 'Preferred hours, the most used words, and the exact messages.' },
+    es: { title: 'Quién manda los mensajes más subidos de tono', description: 'El Tono Picante', preview: 'Horarios preferidos, palabras más usadas y los mensajes exactos.' },
+    en: { title: 'Who sends the most suggestive messages', description: 'The Spicy Tone', preview: 'Preferred hours, the most used words, and the exact messages.' },
   },
   curador: {
-    es: { title: 'El Curador de Contenidos', description: 'Quién comparte más links de YouTube, TikTok y redes.', preview: 'Categorías de contenido compartidas por integrante.' },
-    en: { title: 'The Content Curator', description: 'Who shares the most YouTube, TikTok, and social links.', preview: "Content categories shared by each participant." },
+    es: { title: 'Quién comparte más videos y links', description: 'El Curador de Contenidos', preview: 'Categorías de contenido compartidas por integrante.' },
+    en: { title: 'Who shares the most videos and links', description: 'The Content Curator', preview: "Content categories shared by each participant." },
   },
 }
 

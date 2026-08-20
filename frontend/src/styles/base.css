@@ -101,6 +101,21 @@
   left: 130%;
 }
 
+.install-app-note {
+  max-width: 220px;
+  color: var(--vz-text-dim);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.tutorial-install-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--vz-radius-md);
+  box-shadow: var(--vz-shadow-panel);
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -568,13 +583,14 @@ h3 {
   display: grid;
   place-items: center;
   padding: 20px;
-  /* Above .m-layer (60, mobile.css): a modal like VipUnlockPopover or
-     FreeUnlockConfirm can be opened from inside an already-open metric sheet
-     (see MetricSheet's onUnlock), and has to land on top of it, not behind it —
-     otherwise it renders but stays invisible until the sheet is closed. Still
-     below .m-story (80), which is a deliberate full takeover with nothing else
-     to interact with. */
-  z-index: 65;
+  /* Above every mobile layer: a modal like VipUnlockPopover or FreeUnlockConfirm
+     can be opened from inside an already-open metric sheet (see MetricSheet's
+     onUnlock), and has to land on top of it, not behind it — otherwise it
+     renders but stays invisible until the sheet is closed. That sheet can now
+     itself sit above the story (.m-layer.is-over-story, 84, mobile.css) when the
+     detail is opened from inside the Wrapped run, so this has to clear 84 too —
+     a locked metric's unlock prompt is reachable from exactly there. */
+  z-index: 88;
   overflow-y: auto;
 }
 

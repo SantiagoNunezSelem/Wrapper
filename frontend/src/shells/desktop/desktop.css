@@ -1621,6 +1621,16 @@
   max-height: 560px;
 }
 
+.tutorial-install-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 320px;
+  padding: 24px;
+}
+
 .tutorial-foot {
   margin-top: 20px;
   display: flex;

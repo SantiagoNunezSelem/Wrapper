@@ -1010,6 +1010,16 @@
   z-index: 60;
 }
 
+/* El detalle abierto DESDE el recorrido: tiene que quedar por encima de
+   .m-story (80), que en su uso normal es una toma completa de la pantalla. El
+   recorrido sigue montado y congelado por debajo (ver `suspended` en
+   StoryMode), así que cerrar esta hoja devuelve al usuario a la misma pantalla.
+   Los modales que salen desde acá —VipUnlockPopover, FreeUnlockConfirm— viven
+   en .modal-backdrop, por encima de esto (ver base.css). */
+.m-layer.is-over-story {
+  z-index: 84;
+}
+
 .m-scrim {
   position: absolute;
   inset: 0;
@@ -1982,6 +1992,16 @@
   overflow: hidden;
 }
 
+.m-tutorial-install-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 220px;
+  padding: 20px 10px;
+}
+
 .m-tutorial-step-copy {
   display: flex;
   gap: 12px;
@@ -2062,4 +2082,45 @@
   .m-mascot-sparkles i {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   Recorrido compartido: estados previos al recorrido
+
+   Lo que ve alguien que abrió un link mientras carga, o cuando el link ya
+   venció. Es la primera pantalla de la app para una persona que nunca la usó,
+   así que lleva la marca y una salida clara en vez de un error pelado.
+   ========================================================================== */
+
+.m-shared-state {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom, 0px));
+  text-align: center;
+}
+
+.m-shared-state h1 {
+  font-size: 1.35rem;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.m-shared-state p {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--vz-text-soft);
+  line-height: 1.5;
+}
+
+.m-shared-state .brand-orb {
+  width: 44px;
+  height: 44px;
+}
+
+.m-shared-state .primary-button {
+  margin-top: 8px;
 }

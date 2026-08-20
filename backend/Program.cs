@@ -166,6 +166,29 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true,
         }));
+
+    // Creating a share writes a row holding a few hundred kilobytes of JSON, so this is the
+    // endpoint that grows the database on demand. A person shares a chat once and maybe
+    // re-shares it after unlocking another metric; nobody legitimately does it in a loop.
+    options.AddPolicy("share", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(10),
+            QueueLimit = 0,
+        }));
+
+    // Reading one is the only anonymous GET in the API, and a link that goes around a big
+    // group chat genuinely does get opened in bursts. Generous enough never to bother real
+    // traffic, tight enough that scraping the slug space stays pointless — which matters
+    // here more than elsewhere, since this route answers without a session at all.
+    options.AddPolicy("share-read", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"];
@@ -574,6 +597,7 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
 
 app.MapSubscriptionEndpoints();
 app.MapFreeUnlockEndpoints();
+app.MapShareEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);

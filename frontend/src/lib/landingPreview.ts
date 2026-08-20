@@ -16,10 +16,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
   return [
     {
       id: 'demo-monologuista',
-      title: es ? 'El Monologuista' : 'The Monologuist',
-      description: es
-        ? 'La racha más larga de mensajes seguidos sin respuesta.'
-        : 'The longest streak of messages sent without a reply.',
+      title: es ? 'Quién manda más mensajes seguidos sin respuesta' : 'Who sends the most messages in a row without a reply',
+      description: es ? 'El Monologuista' : 'The Monologuist',
       tier: 'free',
       accent: 'tier-pink',
       hasData: true,
@@ -79,8 +77,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
     },
     {
       id: 'demo-reloj',
-      title: es ? 'El Reloj Biológico' : 'The Body Clock',
-      description: es ? 'A qué hora del día vive este chat.' : 'What time of day this chat comes alive.',
+      title: es ? 'A qué hora está más activo el chat' : 'What time of day the chat is most active',
+      description: es ? 'El Reloj Biológico' : 'The Body Clock',
       tier: 'free',
       accent: 'tier-orange',
       hasData: true,
@@ -117,10 +115,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
     },
     {
       id: 'demo-wordcloud',
-      title: es ? 'Nube de Palabras Avanzada' : 'Advanced Word Cloud',
-      description: es
-        ? 'El vocabulario más repetido, sin artículos ni muletillas.'
-        : 'The most repeated vocabulary, filtered of filler words.',
+      title: es ? 'Las palabras que más se repiten' : 'The words that come up the most',
+      description: es ? 'Nube de Palabras Avanzada' : 'Advanced Word Cloud',
       tier: 'vip',
       accent: 'tier-cyan',
       hasData: true,
@@ -209,8 +205,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
     },
     {
       id: 'demo-jajaja',
-      title: es ? 'El Jajaja Analítico' : 'The Laugh Analyzer',
-      description: es ? 'El estilo de risa que domina el chat.' : 'The laugh style that dominates the chat.',
+      title: es ? 'Cómo se ríe más el grupo' : 'How the group laughs the most',
+      description: es ? 'El Jajaja Analítico' : 'The Laugh Analyzer',
       tier: 'free',
       accent: 'tier-yellow',
       hasData: true,
@@ -250,10 +246,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
     },
     {
       id: 'demo-redflags',
-      title: es ? 'Detector de Red Flags' : 'Red Flag Detector',
-      description: es
-        ? 'Un puntaje de tensión a partir de silencios, borrados y palabras clave.'
-        : 'A tension score built from silences, deletions, and keywords.',
+      title: es ? 'Qué tan tensa está la conversación' : 'How tense the conversation gets',
+      description: es ? 'Detector de Red Flags' : 'Red Flag Detector',
       tier: 'vip',
       accent: 'tier-red',
       hasData: true,
@@ -290,10 +284,8 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
     },
     {
       id: 'demo-tonopicante',
-      title: es ? 'El Tono Picante' : 'The Spicy Tone',
-      description: es
-        ? 'Quién manda más mensajes subidos de tono (+18, heurístico).'
-        : 'Who sends the most suggestive messages (+18, heuristic).',
+      title: es ? 'Quién manda los mensajes más subidos de tono' : 'Who sends the most suggestive messages',
+      description: es ? 'El Tono Picante' : 'The Spicy Tone',
       tier: 'vip',
       accent: 'tier-magenta',
       hasData: true,
