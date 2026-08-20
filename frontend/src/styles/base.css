@@ -101,6 +101,21 @@
   left: 130%;
 }
 
+.install-app-note {
+  max-width: 220px;
+  color: var(--vz-text-dim);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.tutorial-install-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--vz-radius-md);
+  box-shadow: var(--vz-shadow-panel);
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
