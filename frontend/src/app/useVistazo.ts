@@ -9,6 +9,7 @@ import {
   analyzeAiMetrics,
   ApiError,
   cancelSubscription,
+  createShare,
   getCurrentUser,
   getFreeUnlocks,
   getSubscription,
@@ -40,6 +41,7 @@ import {
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { buildSharePayload, readShareSlug, shareUrlFor } from '../lib/shareStory'
 import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
@@ -131,6 +133,12 @@ export function useVistazo() {
   const [route, setRoute] = useState<'app' | 'subscription'>(() =>
     window.location.pathname === '/suscripcion' ? 'subscription' : 'app',
   )
+
+  // A shared story (`/s/{slug}`) is read once, at load, and never changes for the life of
+  // the tab: it is a public page someone opened from a link, not somewhere the app
+  // navigates to. Kept out of `route` for that reason — that state is about which screen
+  // of the app is showing, and this is the case where the app is not showing at all.
+  const shareSlug = useMemo(() => readShareSlug(window.location.pathname), [])
 
   // Dev-only switches. `showDevTools` is resolved once from the hostname so a production
   // build never even renders the toolbar.
@@ -1046,6 +1054,36 @@ export function useVistazo() {
     [interleavedMetrics, pendingFreeUnlockId],
   )
 
+  /**
+   * Publishes the current run as a public link and returns its URL.
+   *
+   * Shares what the viewer can *see right now* — `interleavedMetrics` is the already-gated
+   * list, so a Pro subscriber shares everything and a free account shares the free cards
+   * plus whatever today's unlocks opened. That is the whole contract of the link: it is a
+   * snapshot of this viewer's access at this moment, and it stops changing the instant it
+   * is created.
+   *
+   * Literal message text is dropped by `buildSharePayload` before the request is built, so
+   * it never leaves the browser (the server strips it again — see SharePayloadSanitizer).
+   */
+  async function createStoryLink(): Promise<string> {
+    if (!token || !analysis) {
+      throw new Error('A signed-in session and a loaded chat are required to share.')
+    }
+
+    const { slug } = await createShare(token, {
+      chatName: analysis.chatName,
+      dateRangeLabel: analysis.dateRangeLabel,
+      sourceHash: analysis.sourceHash,
+      language,
+      messageCount: analysis.messageCount,
+      participantCount: analysis.participantCount,
+      cardsJson: JSON.stringify(buildSharePayload(interleavedMetrics)),
+    })
+
+    return shareUrlFor(slug)
+  }
+
   return {
     // --- sesión e idioma ---
     language,
@@ -1110,6 +1148,10 @@ export function useVistazo() {
     isDevBusy,
 
     // --- acciones ---
+    // --- recorrido compartido ---
+    shareSlug,
+    createStoryLink,
+
     navigateTo,
     goToSubscriptionPage,
     openVipPopover,

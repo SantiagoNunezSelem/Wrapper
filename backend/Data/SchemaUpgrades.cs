@@ -234,6 +234,56 @@ public static class SchemaUpgrades
                 ON "FreeMetricUnlocks" ("UserId", "DayKeyUtc", "SourceHash", "MetricId");
             """,
             cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // Public share links
+        // ---------------------------------------------------------------------
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SharedStories" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SharedStories" PRIMARY KEY,
+                "Slug" TEXT NULL,
+                "UserId" TEXT NOT NULL,
+                "SourceHash" TEXT NULL,
+                "ChatName" TEXT NULL,
+                "DateRangeLabel" TEXT NULL,
+                "MessageCount" INTEGER NOT NULL DEFAULT 0,
+                "ParticipantCount" INTEGER NOT NULL DEFAULT 0,
+                "Language" TEXT NULL,
+                "PayloadJson" TEXT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "ExpiresAtUtc" TEXT NOT NULL,
+                "ViewCount" INTEGER NOT NULL DEFAULT 0,
+                CONSTRAINT "FK_SharedStories_Users_UserId" FOREIGN KEY ("UserId")
+                    REFERENCES "Users" ("Id") ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SharedStories_Slug" ON "SharedStories" ("Slug");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SharedStories_UserId_SourceHash"
+                ON "SharedStories" ("UserId", "SourceHash");
+            """,
+            cancellationToken);
+
+        // Expired rows are dead weight — nothing can read them again (see the read
+        // endpoint, which treats expired as missing), so they are cleared on startup
+        // rather than left to grow the file forever. No background job: a restart is
+        // frequent enough for a table this small, and it keeps the cleanup somewhere
+        // obvious instead of in a timer nobody remembers.
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DELETE FROM "SharedStories" WHERE "ExpiresAtUtc" <= datetime('now');
+            """,
+            cancellationToken);
     }
 
     private static async Task AddColumnIfMissingAsync(

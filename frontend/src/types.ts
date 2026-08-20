@@ -335,7 +335,8 @@ export interface MetricDetail {
 export interface MetricCard {
   id: string
   title: string
-  /** Short, single-sentence, plain-language explanation. Always visible, even locked. */
+  /** The metric's playful nickname, shown as a tagline under the title. Always
+   * visible, even locked. */
   description: string
   tier: 'free' | 'vip'
   accent: string

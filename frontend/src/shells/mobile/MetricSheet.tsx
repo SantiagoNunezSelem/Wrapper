@@ -37,6 +37,7 @@ export function MetricSheet({
   ai,
   freeUnlock,
   isRevealingFreeUnlock = false,
+  overStory = false,
   onClose,
   onPrev,
   onNext,
@@ -52,6 +53,11 @@ export function MetricSheet({
   /** True for the few seconds right after this card's free unlock was confirmed —
    * see `revealingFreeUnlockId` in useVistazo. */
   isRevealingFreeUnlock?: boolean
+  /** Abierta desde el recorrido tipo historia, que queda montado y congelado por
+   * debajo. Sube la hoja por encima de esa capa y le saca el paso a la métrica
+   * siguiente: acá el detalle pertenece a LA pantalla que el usuario estaba
+   * mirando, y cerrarlo lo devuelve justo ahí. */
+  overStory?: boolean
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -74,6 +80,10 @@ export function MetricSheet({
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose()
+      // Sobre el recorrido no hay paso a la métrica siguiente (ver `overStory`),
+      // así que las flechas tampoco lo hacen: moverían la hoja a una métrica que
+      // no es la de la pantalla congelada abajo.
+      if (overStory) return
       if (event.key === 'ArrowRight') onNext()
       if (event.key === 'ArrowLeft') onPrev()
     }
@@ -84,7 +94,7 @@ export function MetricSheet({
       document.body.style.overflow = previous
       document.removeEventListener('keydown', handleKey)
     }
-  }, [onClose, onNext, onPrev])
+  }, [onClose, onNext, onPrev, overStory])
 
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
@@ -108,7 +118,12 @@ export function MetricSheet({
   const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
 
   return (
-    <div className="m-layer" role="dialog" aria-modal="true" aria-label={card.title}>
+    <div
+      className={`m-layer ${overStory ? 'is-over-story' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={card.title}
+    >
       <button type="button" className="m-scrim" onClick={onClose} aria-label={copy.close} />
 
       <section className="m-sheet">
@@ -247,32 +262,37 @@ export function MetricSheet({
           )}
         </div>
 
-        <footer className="m-sheet-foot">
-          <button
-            type="button"
-            className="m-sheet-step"
-            onClick={onPrev}
-            disabled={index === 0}
-            aria-label={m.sheet.prev}
-          >
-            <span className="m-flip">
-              <ChevronIcon size={16} />
+        {/* Sobre el recorrido el pie no va: las barras de la historia ya dicen en
+            qué pantalla está, y pasar a otra métrica desde acá dejaría la hoja
+            mostrando una cosa y el recorrido congelado en otra. */}
+        {overStory ? null : (
+          <footer className="m-sheet-foot">
+            <button
+              type="button"
+              className="m-sheet-step"
+              onClick={onPrev}
+              disabled={index === 0}
+              aria-label={m.sheet.prev}
+            >
+              <span className="m-flip">
+                <ChevronIcon size={16} />
+              </span>
+            </button>
+
+            <span className="m-sheet-count">
+              {index + 1} / {total}
             </span>
-          </button>
 
-          <span className="m-sheet-count">
-            {index + 1} / {total}
-          </span>
-
-          <button
-            type="button"
-            className="m-sheet-step"
-            onClick={onNext}
-            aria-label={index === total - 1 ? m.sheet.backToList : m.sheet.next}
-          >
-            <ChevronIcon size={16} />
-          </button>
-        </footer>
+            <button
+              type="button"
+              className="m-sheet-step"
+              onClick={onNext}
+              aria-label={index === total - 1 ? m.sheet.backToList : m.sheet.next}
+            >
+              <ChevronIcon size={16} />
+            </button>
+          </footer>
+        )}
       </section>
     </div>
   )

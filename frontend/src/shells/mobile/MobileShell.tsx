@@ -80,6 +80,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
+    createStoryLink,
     navigateTo,
     goToSubscriptionPage,
     requestUnlock,
@@ -99,6 +100,10 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [openMetricId, setOpenMetricId] = useState<string | null>(null)
   const [isStoryOpen, setIsStoryOpen] = useState(false)
+  /* El detalle se abrió desde el recorrido, no desde la lista. Cambia dos cosas:
+     la hoja se monta por encima de la historia (que queda congelada abajo en su
+     misma pantalla) y pierde el paso a la métrica siguiente. */
+  const [isDetailOverStory, setIsDetailOverStory] = useState(false)
 
   /* Terminar de analizar un chat lleva sola a las métricas: el usuario acaba de
      subir el archivo justamente para verlas, hacerle tocar una pestaña sería
@@ -126,8 +131,16 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
   function goTo(next: MobileView) {
     setIsDrawerOpen(false)
     setOpenMetricId(null)
+    setIsDetailOverStory(false)
     setIsStoryOpen(false)
     setView(next)
+  }
+
+  /** Cierra el detalle. Si se había abierto desde el recorrido, éste sigue
+   * montado abajo y vuelve a correr solo desde donde había quedado. */
+  function closeDetail() {
+    setOpenMetricId(null)
+    setIsDetailOverStory(false)
   }
 
   const subscriptionLabel =
@@ -246,7 +259,10 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                   generatedAt={generatedAt}
                   showReprocessHint={showReprocessHint}
                   ai={aiPanel}
-                  onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
+                  onOpenMetric={(card: MetricCard) => {
+                    setOpenMetricId(card.id)
+                    setIsDetailOverStory(false)
+                  }}
                   onStartStory={() => setIsStoryOpen(true)}
                 />
               ) : (
@@ -326,13 +342,14 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               metrics={interleavedMetrics}
               chatName={analysis.chatName}
               copy={copy}
+              // El detalle se abre ENCIMA del recorrido, que se queda quieto en
+              // su pantalla mientras tanto — cerrarlo devuelve al usuario ahí.
+              suspended={isDetailOverStory && openMetric !== null}
+              share={{ createLink: createStoryLink }}
               onClose={() => setIsStoryOpen(false)}
               onOpenDetail={(card) => {
-                // Salir del recorrido al abrir el detalle: volver después a la
-                // misma pantalla del recorrido sería una pila de dos capas sobre
-                // una pantalla de 6 pulgadas.
-                setIsStoryOpen(false)
                 setOpenMetricId(card.id)
+                setIsDetailOverStory(true)
               }}
               onUnlock={() => {
                 setIsStoryOpen(false)
@@ -350,7 +367,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               ai={aiPanel}
               freeUnlock={freeUnlockFor(openMetric)}
               isRevealingFreeUnlock={revealingFreeUnlockId === openMetric.id}
-              onClose={() => setOpenMetricId(null)}
+              overStory={isDetailOverStory}
+              onClose={closeDetail}
               onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {
                 const next = interleavedMetrics[openMetricIndex + 1]

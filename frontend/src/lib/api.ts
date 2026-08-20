@@ -8,6 +8,7 @@ import type {
   UserProfile,
 } from '../types'
 import { getDeviceId } from './deviceId'
+import type { SharedStoryPayload } from './shareStory'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5175'
 
@@ -246,6 +247,38 @@ export async function toggleDevSubscription(token: string): Promise<{ simulatedS
 export async function resetDevFreeUnlocks(token: string, sourceHash?: string): Promise<FreeUnlockState> {
   const query = sourceHash ? `?sourceHash=${encodeURIComponent(sourceHash)}` : ''
   return request<FreeUnlockState>(`/api/dev/free-unlocks/reset${query}`, { method: 'POST' }, token)
+}
+
+/**
+ * Publica el recorrido y devuelve el slug del link.
+ *
+ * `cardsJson` viaja ya recortado por `buildSharePayload` — el texto literal de
+ * los mensajes nunca sale del navegador. El backend igual lo vuelve a recortar
+ * por su cuenta antes de guardar nada.
+ */
+export async function createShare(
+  token: string,
+  payload: {
+    chatName: string
+    dateRangeLabel: string
+    sourceHash: string
+    language: string
+    messageCount: number
+    participantCount: number
+    cardsJson: string
+  },
+): Promise<{ slug: string; expiresAtUtc: string }> {
+  return request<{ slug: string; expiresAtUtc: string }>(
+    '/api/shares',
+    { method: 'POST', body: JSON.stringify(payload) },
+    token,
+  )
+}
+
+/** Lee un recorrido compartido. Deliberadamente sin token: es la única ruta de
+ * la API que responde sin sesión, que es justamente el punto del link. */
+export async function getSharedStory(slug: string): Promise<SharedStoryPayload> {
+  return request<SharedStoryPayload>(`/api/shares/${encodeURIComponent(slug)}`)
 }
 
 export async function saveAnalysis(
