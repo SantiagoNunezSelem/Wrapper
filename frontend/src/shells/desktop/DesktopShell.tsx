@@ -103,7 +103,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
   // Las secciones de la landing aparecen al entrar en viewport, cada una por
   // su cuenta para que la página se arme por etapas y no toda de golpe.
   const heroReveal = useInView<HTMLElement>()
-  const infoReveal = useInView<HTMLElement>()
   const stepsReveal = useInView<HTMLElement>()
   const examplesReveal = useInView<HTMLElement>()
   const uploadReveal = useInView<HTMLElement>()
@@ -463,33 +462,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               <span className="floating-chip chip-3" aria-hidden="true">
                 🔥
               </span>
-            </div>
-          </section>
-
-          <section className={`panel landing-info reveal ${infoReveal.inView ? 'is-visible' : ''}`} ref={infoReveal.ref}>
-            <div>
-              <h2>{copy.whatItDoesTitle}</h2>
-              <p className="panel-copy">{copy.whatItDoesBody}</p>
-            </div>
-
-            <h3 className="why-heading">{copy.whyTitle}</h3>
-
-            <div className="why-grid">
-              {copy.whyCards.map((item, index) => (
-                <article
-                  key={item.title}
-                  className={`why-card reveal-child ${infoReveal.inView ? 'is-visible' : ''}`}
-                  style={{ transitionDelay: `${index * 90}ms` }}
-                >
-                  <span className="why-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <div>
-                    <h4>{item.title}</h4>
-                    <p>{item.body}</p>
-                  </div>
-                </article>
-              ))}
             </div>
           </section>
 
