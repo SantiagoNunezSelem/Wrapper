@@ -349,36 +349,6 @@
   animation: driftC 30s ease-in-out infinite;
 }
 
-/* ---------------------------------------------------------------------- */
-/* Marquee — an auto-scrolling feature ticker between the hero and the     */
-/* rest of the page; pauses on hover so it never fights with a click.     */
-/* ---------------------------------------------------------------------- */
-
-.marquee {
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
-  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
-  padding: 6px 0;
-}
-
-.marquee-track {
-  display: flex;
-  gap: 32px;
-  width: max-content;
-  animation: marqueeScroll 30s linear infinite;
-}
-
-.marquee:hover .marquee-track {
-  animation-play-state: paused;
-}
-
-.marquee-item {
-  white-space: nowrap;
-  font-weight: 700;
-  font-size: 0.9rem;
-  color: var(--vz-text-muted);
-  opacity: 0.85;
-}
 .mockup-stat,
 .why-card,
 .history-item {

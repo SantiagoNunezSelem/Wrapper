@@ -42,12 +42,6 @@ export function MobileHome({
 
       <DropZone copy={copy} busyMessage={busyMessage} onUpload={onUpload} />
 
-      <ul className="m-trust">
-        {copy.trustBadges.map((badge) => (
-          <li key={badge}>{badge}</li>
-        ))}
-      </ul>
-
       {saved.length > 0 ? (
         <>
           <p className="m-section-label m-section-split">

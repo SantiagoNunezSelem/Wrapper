@@ -466,16 +466,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             </div>
           </section>
 
-          <div className="marquee" aria-hidden="true">
-            <div className="marquee-track">
-              {[...copy.marqueeItems, ...copy.marqueeItems].map((item, index) => (
-                <span className="marquee-item" key={index}>
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-
           <section className={`panel landing-info reveal ${infoReveal.inView ? 'is-visible' : ''}`} ref={infoReveal.ref}>
             <div>
               <h2>{copy.whatItDoesTitle}</h2>

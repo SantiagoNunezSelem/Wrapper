@@ -1615,15 +1615,6 @@ button.chat-bubble-divider.is-expandable:active {
   }
 }
 
-@keyframes marqueeScroll {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
 @keyframes gradientShift {
   0%,
   100% {
