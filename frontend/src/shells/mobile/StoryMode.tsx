@@ -358,7 +358,10 @@ export function StoryMode({
     let url: string
     try {
       url = await share.createLink()
-    } catch {
+    } catch (err) {
+      // El botón sólo puede mostrar un mensaje genérico (`m.linkError`), pero la causa real
+      // (401, 429, 500, un error de red) sí sirve para diagnosticar — que quede en consola.
+      console.error('No se pudo crear el link para compartir:', err)
       setShareState('error')
       return
     }
@@ -419,29 +422,25 @@ export function StoryMode({
              acaba de ver e invita a hacer el suyo. */
           <div className={`m-story-body is-${direction}`} key="outro">
             <div className={`m-story-plate ${LOCK_ACCENT}`}>
-              <span className="m-story-tick" aria-hidden="true" />
               <h2 className="m-story-kicker">{outro.caption}</h2>
               <span className="m-story-count">
                 {chatName} · {index + 1} / {total}
               </span>
             </div>
-            <span className="m-story-rule" aria-hidden="true" />
 
             <strong className="m-story-huge gradient-text">{visible.length}</strong>
             <p className="m-story-label">{outro.title}</p>
           </div>
         ) : (
           <div className={`m-story-body is-${direction}`} key="outro">
-            {/* La ficha: una marca de color y el título arriba, el contador debajo.
-                Sin ícono — el número de abajo es el único protagonista. */}
+            {/* La ficha: el título como titular, con una barra de color al costado
+                y el contador debajo. */}
             <div className={`m-story-plate ${LOCK_ACCENT}`}>
-              <span className="m-story-tick" aria-hidden="true" />
               <h2 className="m-story-kicker">Vistazo Pro</h2>
               <span className="m-story-count">
                 {chatName} · {index + 1} / {total}
               </span>
             </div>
-            <span className="m-story-rule" aria-hidden="true" />
 
             {/* ANTES: <strong className="m-story-huge gradient-text">{lockedCount}</strong> */}
             <strong className="m-story-huge gradient-text">{lockedCountValue}</strong>
@@ -460,16 +459,14 @@ export function StoryMode({
         )
       ) : card?.basic ? (
         <div className={`m-story-body is-${direction}`} key={card.id}>
-          {/* La ficha: una marca de color y el título arriba, el contador debajo.
-              Sin ícono — el número de abajo es el único protagonista. */}
+          {/* La ficha: el título como titular, con una barra de color al costado
+              y el contador debajo. */}
           <div className={`m-story-plate ${card.accent}`}>
-            <span className="m-story-tick" aria-hidden="true" />
             <h2 className="m-story-kicker">{card.title}</h2>
             <span className="m-story-count">
               {chatName} · {index + 1} / {total}
             </span>
           </div>
-          <span className="m-story-rule" aria-hidden="true" />
 
           {revealed ? (
             <>

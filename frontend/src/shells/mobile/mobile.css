@@ -1630,47 +1630,44 @@
 /* --- FIN NUEVO: la mascota ------------------------------------------------ */
 
 /* --- la ficha de la métrica ---
-   Una marca de color y el título, sin ícono: da estructura y deja claro de qué
-   métrica se trata antes de que el ojo llegue al número, sin depender de un
-   emoji que el sistema operativo dibuja distinto en cada teléfono. */
+   El título es el protagonista: texto grande junto a una barra vertical con
+   el acento de la métrica, como una cita destacada — no una etiqueta caps
+   diminuta que se pierde antes de que el ojo llegue al número. */
 .m-story-plate {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  position: relative;
+  padding-left: 14px;
   /* Cada métrica trae su acento en `--vz-accent`; sin él cae en el violeta. */
   --vz-accent: var(--vz-brand-violet-rgb);
 }
 
-.m-story-tick {
-  width: 22px;
-  height: 3px;
-  border-radius: 3px;
+.m-story-plate::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  border-radius: 4px;
   background: rgb(var(--vz-accent));
 }
 
 .m-story-kicker {
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  line-height: 1.35;
-  color: rgb(var(--vz-accent));
+  font-size: clamp(1.3rem, 6vw, 1.6rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.18;
+  color: var(--vz-text-strong);
 }
 
 .m-story-count {
   display: block;
+  margin-top: 8px;
   font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--vz-text-faint);
   font-variant-numeric: tabular-nums;
-}
-
-/* Se desvanece hacia la derecha en el color de la métrica: cierra la ficha sin
-   trazar una línea dura que parta la pantalla en dos. */
-.m-story-rule {
-  display: block;
-  height: 1px;
-  margin: 2px 0 6px;
-  background: linear-gradient(90deg, rgba(var(--vz-accent), 0.5), transparent);
 }
 
 .m-story-plate.tier-purple { --vz-accent: var(--vz-tier-purple); }
@@ -1691,26 +1688,6 @@
 .m-story-plate.tier-violet { --vz-accent: var(--vz-tier-violet); }
 .m-story-plate.tier-magenta { --vz-accent: var(--vz-tier-magenta); }
 .m-story-plate.tier-sky { --vz-accent: var(--vz-tier-sky); }
-
-/* La regla vive fuera de la ficha, así que hereda el acento de su hermana. */
-.m-story-plate.tier-purple ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-purple), 0.5), transparent); }
-.m-story-plate.tier-pink ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-pink), 0.5), transparent); }
-.m-story-plate.tier-orange ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-orange), 0.5), transparent); }
-.m-story-plate.tier-blue ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-blue), 0.5), transparent); }
-.m-story-plate.tier-cyan ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-cyan), 0.5), transparent); }
-.m-story-plate.tier-lime ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-lime), 0.5), transparent); }
-.m-story-plate.tier-gold ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-gold), 0.5), transparent); }
-.m-story-plate.tier-rose ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-rose), 0.5), transparent); }
-.m-story-plate.tier-indigo ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-indigo), 0.5), transparent); }
-.m-story-plate.tier-mint ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-mint), 0.5), transparent); }
-.m-story-plate.tier-slate ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-slate), 0.5), transparent); }
-.m-story-plate.tier-red ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-red), 0.5), transparent); }
-.m-story-plate.tier-green ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-green), 0.5), transparent); }
-.m-story-plate.tier-yellow ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-yellow), 0.5), transparent); }
-.m-story-plate.tier-teal ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-teal), 0.5), transparent); }
-.m-story-plate.tier-violet ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-violet), 0.5), transparent); }
-.m-story-plate.tier-magenta ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-magenta), 0.5), transparent); }
-.m-story-plate.tier-sky ~ .m-story-rule { background: linear-gradient(90deg, rgba(var(--vz-tier-sky), 0.5), transparent); }
 
 /* El valor es el protagonista. `anywhere` porque puede ser "Madrugadores" o
    "😂 ×1.243", no sólo un porcentaje de tres caracteres. */
