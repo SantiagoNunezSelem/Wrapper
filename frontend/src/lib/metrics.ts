@@ -2124,9 +2124,10 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
 }
 
 function metricCurador(ctx: MetricContext): MetricResult {
-  const { textMessages, language } = ctx
+  const { textMessages, participants, language } = ctx
   const linksBySender = new Map<string, number>()
   const categoryCount = new Map<string, number>()
+  const categoryBySender = new Map<string, Map<string, number>>()
 
   for (const message of textMessages) {
     if (!message.sender) {
@@ -2139,10 +2140,13 @@ function metricCurador(ctx: MetricContext): MetricResult {
     }
 
     linksBySender.set(message.sender, (linksBySender.get(message.sender) ?? 0) + urls.length)
+    const senderCategories = categoryBySender.get(message.sender) ?? new Map<string, number>()
     for (const url of urls) {
       const category = categorizeLink(url, language)
       categoryCount.set(category, (categoryCount.get(category) ?? 0) + 1)
+      senderCategories.set(category, (senderCategories.get(category) ?? 0) + 1)
     }
+    categoryBySender.set(message.sender, senderCategories)
   }
 
   const top = topEntry(linksBySender)
@@ -2152,6 +2156,17 @@ function metricCurador(ctx: MetricContext): MetricResult {
   }
 
   const total = [...linksBySender.values()].reduce((sum, value) => sum + value, 0)
+
+  // One donut per participant, alongside the whole-chat one above — lets the
+  // reader compare "the group mostly shares YouTube" against "but Fran is all TikTok".
+  const series: MetricSeriesEntry[] = participants
+    .map((name) => {
+      const categories = categoryBySender.get(name)
+      const items = categories ? [...categories.entries()].map(([label, value]) => ({ label, value })) : []
+      return { name, items }
+    })
+    .filter((entry) => entry.items.length > 0)
+    .map((entry) => ({ name: entry.name, chart: { kind: 'donut', items: entry.items } as ChartData }))
 
   return {
     hasData: true,
@@ -2167,6 +2182,7 @@ function metricCurador(ctx: MetricContext): MetricResult {
           : 'What kind of content each participant shares the most.',
       chart: { kind: 'donut', items: [...categoryCount.entries()].map(([label, value]) => ({ label, value })) },
       breakdown: breakdownPercent(linksBySender, total),
+      series,
     },
   }
 }

@@ -24,8 +24,14 @@ export async function parseChatFile(file: File): Promise<ParsedChat> {
 }
 
 async function readFileText(file: File): Promise<string> {
-  if (file.name.toLowerCase().endsWith('.zip')) {
-    const archive = await JSZip.loadAsync(await file.arrayBuffer())
+  // No confiamos en el nombre para distinguir zip de texto plano: el share-target de
+  // WhatsApp no siempre preserva la extensión original (a veces llega sin ".zip" o con
+  // un nombre genérico), así que sniffeamos la firma real del archivo ("PK", los dos
+  // primeros bytes de todo .zip) en vez de mirar `file.name`.
+  const buffer = await file.arrayBuffer()
+
+  if (isZipSignature(buffer)) {
+    const archive = await JSZip.loadAsync(buffer)
     const txtFile = archive.file(/\.txt$/i)[0]
 
     if (!txtFile) {
@@ -35,7 +41,12 @@ async function readFileText(file: File): Promise<string> {
     return txtFile.async('text')
   }
 
-  return file.text()
+  return new TextDecoder('utf-8').decode(buffer)
+}
+
+function isZipSignature(buffer: ArrayBuffer): boolean {
+  const bytes = new Uint8Array(buffer, 0, Math.min(2, buffer.byteLength))
+  return bytes.length === 2 && bytes[0] === 0x50 && bytes[1] === 0x4b
 }
 
 export async function parseChatText(text: string): Promise<ParsedChat> {
