@@ -296,6 +296,10 @@ export const shellCopy = {
     messages: 'Mensajes',
     generatedAt: 'Generado',
     loadError: 'No pude completar la acción.',
+    shareTargetError:
+      'No pudimos recibir el archivo compartido desde WhatsApp. Guardalo en el celular y subilo manualmente desde acá.',
+    emptyChatError:
+      'No encontramos mensajes en este archivo. Puede haber llegado vacío o dañado — probá exportar el chat de nuevo.',
     login: 'Iniciar sesión',
     backToLanding: 'Volver a la landing',
     seeMore: 'Ver más',
@@ -662,6 +666,10 @@ export const shellCopy = {
     messages: 'Messages',
     generatedAt: 'Generated',
     loadError: 'I could not complete the action.',
+    shareTargetError:
+      "We couldn't receive the file shared from WhatsApp. Save it on your phone and upload it manually from here.",
+    emptyChatError:
+      "We couldn't find any messages in this file. It may have arrived empty or corrupted — try exporting the chat again.",
     login: 'Sign in',
     backToLanding: 'Back to landing',
     seeMore: 'See more',

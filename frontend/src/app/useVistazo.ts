@@ -251,9 +251,17 @@ export function useVistazo() {
     const query = params.toString()
     window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
 
-    void takeSharedFile().then((file) => {
+    void takeSharedFile().then(({ file, debug }) => {
+      if (debug) {
+        // Visible con chrome://inspect sobre la pestaña normal de la app — no hace
+        // falta cazar la consola efímera del service worker durante el share.
+        console.info('[share-target]', debug)
+      }
+
       if (file) {
         void processFile(file)
+      } else {
+        setError(copy.shareTargetError)
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -816,6 +824,14 @@ export function useVistazo() {
 
     try {
       const { messages, sourceHash } = await parseChatFile(file)
+
+      if (messages.length === 0) {
+        // Un archivo que "parsea" pero no matchea ni una línea es, en la práctica,
+        // indistinguible de uno vacío o corrupto — mejor un error accionable que
+        // una pantalla de 0 personas / 0 mensajes que parece haber funcionado.
+        throw new Error(copy.emptyChatError)
+      }
+
       setIsReplay(false)
       setReplayedAnalysis(null)
       // Per-chat state: cleared here, then rebuilt by the AI effect (which will read

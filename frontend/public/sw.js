@@ -26,16 +26,33 @@ self.addEventListener('fetch', (event) => {
 })
 
 async function handleShareTarget(request) {
+  // Diagnóstico de qué llegó realmente en el POST — se guarda siempre, haya
+  // archivo o no, y la app lo loguea al arrancar. Es la única forma práctica de
+  // ver, desde el lado del cliente, si WhatsApp/Android entregaron el stream
+  // completo o si esto nunca tuvo bytes reales para empezar.
+  const debug = { receivedAt: new Date().toISOString() }
+
   try {
     const formData = await request.formData()
     const file = formData.get('chat')
 
-    if (file) {
-      await storeSharedFile(file)
+    debug.fieldPresent = formData.has('chat')
+
+    if (file instanceof File) {
+      debug.name = file.name
+      debug.type = file.type
+      debug.size = file.size
+    } else if (typeof file === 'string') {
+      // Algunos remitentes mandan el campo como texto plano en vez de stream —
+      // esto lo distingue de un File real en vez de fallar silenciosamente.
+      debug.receivedAsText = true
+      debug.textLength = file.length
     }
-  } catch {
-    // Nada compartido, o el formato vino roto: seguimos igual — la app arranca
-    // normal y simplemente no encuentra ningún archivo pendiente que abrir.
+
+    await storeSharedFile(file instanceof File && file.size > 0 ? file : null, debug)
+  } catch (err) {
+    debug.error = err instanceof Error ? err.message : String(err)
+    await storeSharedFile(null, debug).catch(() => {})
   }
 
   // 303: la única forma de convertir esta navegación POST en un GET normal, así
@@ -43,7 +60,7 @@ async function handleShareTarget(request) {
   return Response.redirect('/?share-target=1', 303)
 }
 
-function storeSharedFile(file) {
+function storeSharedFile(file, debug) {
   return new Promise((resolve, reject) => {
     const openRequest = indexedDB.open(SHARE_DB_NAME, 1)
 
@@ -54,7 +71,7 @@ function storeSharedFile(file) {
     openRequest.onsuccess = () => {
       const db = openRequest.result
       const tx = db.transaction(SHARE_STORE, 'readwrite')
-      tx.objectStore(SHARE_STORE).put(file, SHARE_KEY)
+      tx.objectStore(SHARE_STORE).put({ file, debug }, SHARE_KEY)
       tx.oncomplete = () => {
         db.close()
         resolve()
