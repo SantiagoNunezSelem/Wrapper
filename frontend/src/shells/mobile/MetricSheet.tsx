@@ -10,6 +10,7 @@ import { useCountUp } from '../../components/useCountUp'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
+import { isParticipantBarChart } from '../../lib/metrics'
 import type { ChartData, MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 
@@ -106,6 +107,11 @@ export function MetricSheet({
   const hasWordCloud =
     card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
 
+  // The hero bar chart and the "by participant" breakdown below are often the same
+  // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
+  const heroChartRepeatsBreakdown =
+    isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
+
   const filteredDetailChart = useMemo(
     () => (card.detail?.chart ? filterWordCloud(card.detail.chart, wordSearch) : undefined),
     [card.detail?.chart, wordSearch],
@@ -156,7 +162,7 @@ export function MetricSheet({
               </strong>
               <span>{card.basic.label}</span>
               {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
-              {card.basic.chart ? <Chart chart={card.basic.chart} /> : null}
+              {card.basic.chart && !heroChartRepeatsBreakdown ? <Chart chart={card.basic.chart} /> : null}
             </div>
           ) : null}
 

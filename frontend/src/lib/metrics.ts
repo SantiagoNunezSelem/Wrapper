@@ -853,6 +853,17 @@ function withParticipantColors(chart: ChartData, participants: string[]): ChartD
   return chart
 }
 
+/** True when a bar chart is a ranking of participants rather than of some other
+ * axis (laugh styles, link categories, etc) — every bar carries a participant
+ * color (see `colorForParticipant`, stamped once in `colorizeResult`). Several
+ * metrics build their `basic.chart` and `detail.breakdown` from the same
+ * per-sender map, just capped at 8 vs not and formatted as a count vs a percent —
+ * so when both are about to render on the same screen, this tells the UI the
+ * hero chart would just repeat the breakdown below it. */
+export function isParticipantBarChart(chart: ChartData | undefined): boolean {
+  return chart?.kind === 'bar' && chart.items.length > 0 && chart.items.every((item) => Boolean(item.color))
+}
+
 /** Stamps participant colors onto a freshly computed result — the one place this
  * runs, so every path that turns a `MetricResult` into what the UI renders (the
  * initial build in `createMetric`, and the AI re-pass in `applyAiVerdicts`) gets
