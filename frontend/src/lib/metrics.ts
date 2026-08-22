@@ -1094,8 +1094,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
     return { hasData: false }
   }
 
-  const bySenderDominant = new Map<string, number>()
-  const bySenderStyle = new Map<string, string>()
   const series: MetricSeriesEntry[] = []
 
   for (const name of participants) {
@@ -1108,12 +1106,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
           styles.set(label, (styles.get(label) ?? 0) + 1)
         }
       }
-    }
-
-    const dominant = topEntry(styles)
-    if (dominant) {
-      bySenderDominant.set(name, dominant.value)
-      bySenderStyle.set(name, dominant.key)
     }
 
     if (styles.size > 0) {
@@ -1136,9 +1128,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
         language === 'es'
           ? 'Cómo se ríe cada integrante, de la risa seca a la caótica.'
           : 'How each participant laughs, from the dry "ja" to full keyboard chaos.',
-      breakdown: [...bySenderDominant.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .map(([name, value]) => ({ name, value, displayValue: bySenderStyle.get(name) ?? '' })),
       series,
     },
   }
