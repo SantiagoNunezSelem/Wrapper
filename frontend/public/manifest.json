@@ -15,7 +15,14 @@
       "files": [
         {
           "name": "chat",
-          "accept": ["text/plain", "application/zip", "application/x-zip-compressed", ".txt", ".zip"]
+          "accept": [
+            "text/plain",
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/octet-stream",
+            ".txt",
+            ".zip"
+          ]
         }
       ]
     }

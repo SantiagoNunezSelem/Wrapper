@@ -252,16 +252,18 @@ export function useVistazo() {
     window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
 
     void takeSharedFile().then(({ file, debug }) => {
+      // Puesto directo en el mensaje de error (no sólo en consola): sin cable ni PC a
+      // mano, esto es lo único que deja ver qué llegó realmente en el POST del share.
+      const debugSuffix = debug ? ` [debug: ${JSON.stringify(debug)}]` : ''
+
       if (debug) {
-        // Visible con chrome://inspect sobre la pestaña normal de la app — no hace
-        // falta cazar la consola efímera del service worker durante el share.
         console.info('[share-target]', debug)
       }
 
       if (file) {
-        void processFile(file)
+        void processFile(file, debugSuffix)
       } else {
-        setError(copy.shareTargetError)
+        setError(`${copy.shareTargetError}${debugSuffix}`)
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -818,7 +820,7 @@ export function useVistazo() {
     }
   }
 
-  async function processFile(file: File) {
+  async function processFile(file: File, diagnosticSuffix = '') {
     setError('')
     setBusyMessage(copy.processing)
 
@@ -827,9 +829,11 @@ export function useVistazo() {
 
       if (messages.length === 0) {
         // Un archivo que "parsea" pero no matchea ni una línea es, en la práctica,
-        // indistinguible de uno vacío o corrupto — mejor un error accionable que
-        // una pantalla de 0 personas / 0 mensajes que parece haber funcionado.
-        throw new Error(copy.emptyChatError)
+        // indistinguible de uno vacío o corrupto — mejor un error accionable (con los
+        // datos reales del File recibido) que una pantalla de 0 personas / 0 mensajes
+        // que parece haber funcionado.
+        const fileInfo = `${file.name || 'sin nombre'} · ${file.type || 'sin tipo'} · ${file.size} bytes`
+        throw new Error(`${copy.emptyChatError} [${fileInfo}]${diagnosticSuffix}`)
       }
 
       setIsReplay(false)
