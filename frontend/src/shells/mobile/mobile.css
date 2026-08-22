@@ -1638,6 +1638,10 @@
   padding-left: 14px;
   /* Cada métrica trae su acento en `--vz-accent`; sin él cae en el violeta. */
   --vz-accent: var(--vz-brand-violet-rgb);
+  /* `card.accent` (tier-purple, tier-pink…) también es la clase que usan
+     .m-row y .metric-card para dibujarse un anillo completo — acá no hay
+     tarjeta que bordear, sólo esta barra, así que ese anillo se anula. */
+  box-shadow: none;
 }
 
 .m-story-plate::before {
@@ -1659,9 +1663,20 @@
   color: var(--vz-text-strong);
 }
 
-.m-story-count {
-  display: block;
-  margin-top: 8px;
+/* De qué chat es y en qué pantalla — fijo arriba, junto a la cruz, en vez de
+   repetido dentro de cada ficha (ver .m-story-x). */
+.m-story-context {
+  position: absolute;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: 18px;
+  right: 56px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;

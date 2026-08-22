@@ -406,6 +406,13 @@ export function StoryMode({
         ))}
       </div>
 
+      {/* El contexto (de qué chat es, en qué pantalla) vive acá arriba, fijo,
+          en vez de repetirse dentro de cada ficha: es el mismo dato en las
+          trece pantallas, no algo que cambie con la métrica. */}
+      <div className="m-story-context">
+        {chatName} · {index + 1} / {total}
+      </div>
+
       <button type="button" className="m-story-x" onClick={onClose} aria-label={m.exit}>
         ✕
       </button>
@@ -423,9 +430,6 @@ export function StoryMode({
           <div className={`m-story-body is-${direction}`} key="outro">
             <div className={`m-story-plate ${LOCK_ACCENT}`}>
               <h2 className="m-story-kicker">{outro.caption}</h2>
-              <span className="m-story-count">
-                {chatName} · {index + 1} / {total}
-              </span>
             </div>
 
             <strong className="m-story-huge gradient-text">{visible.length}</strong>
@@ -433,13 +437,9 @@ export function StoryMode({
           </div>
         ) : (
           <div className={`m-story-body is-${direction}`} key="outro">
-            {/* La ficha: el título como titular, con una barra de color al costado
-                y el contador debajo. */}
+            {/* La ficha: el título como titular, con una barra de color al costado. */}
             <div className={`m-story-plate ${LOCK_ACCENT}`}>
               <h2 className="m-story-kicker">Vistazo Pro</h2>
-              <span className="m-story-count">
-                {chatName} · {index + 1} / {total}
-              </span>
             </div>
 
             {/* ANTES: <strong className="m-story-huge gradient-text">{lockedCount}</strong> */}
@@ -459,13 +459,9 @@ export function StoryMode({
         )
       ) : card?.basic ? (
         <div className={`m-story-body is-${direction}`} key={card.id}>
-          {/* La ficha: el título como titular, con una barra de color al costado
-              y el contador debajo. */}
+          {/* La ficha: el título como titular, con una barra de color al costado. */}
           <div className={`m-story-plate ${card.accent}`}>
             <h2 className="m-story-kicker">{card.title}</h2>
-            <span className="m-story-count">
-              {chatName} · {index + 1} / {total}
-            </span>
           </div>
 
           {revealed ? (
