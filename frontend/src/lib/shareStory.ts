@@ -1,4 +1,4 @@
-import type { MetricCard } from '../types'
+import type { MessageGroup, MetricCard } from '../types'
 
 /**
  * Un recorrido publicado, tal como lo devuelve `GET /api/shares/{slug}`.
@@ -21,12 +21,20 @@ export interface SharedStoryPayload {
   cards: SharedCard[]
 }
 
+/** El encabezado de un grupo de mensajes, sin sus `bubbles`: es lo único de `groups`
+ * que sale del navegador (ver `toSharedCard`). Alcanza para dibujar el contenedor
+ * cerrado en el link compartido; el contenido real queda detrás del aviso de
+ * privacidad (`isSharedStory` en `MessageGroupItem`). */
+export type SharedMessageGroupHeading = Pick<MessageGroup, 'id' | 'heading'>
+
 /** Una tarjeta publicable: `MetricCard` sin lo privado ni lo que deja de tener
  * sentido una vez congelado (`preview` y `ai` describen estados de bloqueo o
  * espera, y una tarjeta compartida no está en ninguno de los dos). */
 export type SharedCard = Pick<MetricCard, 'id' | 'title' | 'description' | 'tier' | 'accent'> & {
   basic?: Omit<NonNullable<MetricCard['basic']>, 'note'>
-  detail?: Omit<NonNullable<MetricCard['detail']>, 'groups' | 'groupsLabel'>
+  detail?: Omit<NonNullable<MetricCard['detail']>, 'groups'> & {
+    groups?: SharedMessageGroupHeading[]
+  }
 }
 
 /**
@@ -36,14 +44,18 @@ export type SharedCard = Pick<MetricCard, 'id' | 'title' | 'description' | 'tier
  *
  * - `basic.note`, que en "El Testamento" es el mensaje más largo del chat citado
  *   textualmente (ver metricTestamento en lib/metrics.ts);
- * - `detail.groups`, las burbujas estilo WhatsApp —con los mensajes de alrededor
- *   como contexto— que usan varias métricas.
+ * - `detail.groups[].bubbles`, las burbujas estilo WhatsApp —con los mensajes de
+ *   alrededor como contexto— que usan varias métricas.
  *
  * Publicar eso expondría conversaciones de gente que nunca aceptó nada, así que
  * ni siquiera salen del navegador: se recortan acá, antes de enviar. El backend
  * vuelve a recortarlos por su cuenta (ver SharePayloadSanitizer.cs) — esto no lo
  * reemplaza, lo complementa: uno evita transmitirlos, el otro evita publicarlos
  * aunque alguien manipule el cliente.
+ *
+ * El `heading` de cada grupo sí viaja (sin sus `bubbles`): es lo que deja mostrar
+ * el contenedor cerrado en el link compartido, con el aviso de privacidad al
+ * tocarlo en vez del contenido real.
  */
 export function toSharedCard(card: MetricCard): SharedCard {
   const shared: SharedCard = {
@@ -60,8 +72,11 @@ export function toSharedCard(card: MetricCard): SharedCard {
   }
 
   if (card.detail) {
-    const { groups: _groups, groupsLabel: _groupsLabel, ...safeDetail } = card.detail
-    shared.detail = safeDetail
+    const { groups, ...safeDetail } = card.detail
+    shared.detail = {
+      ...safeDetail,
+      groups: groups?.map(({ id, heading }) => ({ id, heading })),
+    }
   }
 
   return shared

@@ -38,6 +38,7 @@ export function MetricSheet({
   freeUnlock,
   isRevealingFreeUnlock = false,
   overStory = false,
+  isSharedStory = false,
   onClose,
   onPrev,
   onNext,
@@ -58,6 +59,8 @@ export function MetricSheet({
    * siguiente: acá el detalle pertenece a LA pantalla que el usuario estaba
    * mirando, y cerrarlo lo devuelve justo ahí. */
   overStory?: boolean
+  /** True cuando se visualiza desde una historia compartida (usuario anónimo). */
+  isSharedStory?: boolean
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -225,6 +228,7 @@ export function MetricSheet({
                             key={group.id}
                             group={group}
                             isNew={groups.revealedFrom !== null && position >= groups.revealedFrom}
+                            isSharedStory={isSharedStory}
                           />
                         ))}
                       </div>
