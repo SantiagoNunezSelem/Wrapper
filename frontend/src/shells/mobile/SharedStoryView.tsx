@@ -56,10 +56,12 @@ export function SharedStoryView({ slug }: { slug: string }) {
   const copy = shellCopy[payload?.language ?? 'es']
   const s = copy.shared
 
-  /* Las tarjetas compartidas ya vienen sin `note` ni `groups` (ver
-     SharePayloadSanitizer.cs). Volver a ponerlos como `undefined` no es adorno:
-     es lo que las convierte en el `MetricCard` que StoryMode y MetricSheet
-     esperan, sin tener que enseñarles una segunda forma de tarjeta. */
+  /* Las tarjetas compartidas ya vienen sin `note` ni sin los `bubbles` de cada
+     grupo (ver SharePayloadSanitizer.cs) — sólo el heading sobrevive. Reponer
+     `bubbles: []` acá no es adorno: es lo que convierte a la tarjeta en el
+     `MetricCard` que StoryMode y MetricSheet esperan, sin enseñarles una segunda
+     forma de tarjeta. Con `isSharedStory` en MetricSheet, tocar el contenedor no
+     llega a leer ese arreglo vacío: muestra el aviso de privacidad antes. */
   const metrics: MetricCard[] = useMemo(
     () => (payload ? payload.cards.map(toMetricCard) : []),
     [payload],
@@ -123,6 +125,7 @@ export function SharedStoryView({ slug }: { slug: string }) {
           total={metrics.length}
           copy={copy}
           overStory
+          isSharedStory
           onClose={() => setOpenMetricId(null)}
           // Sin paso a la métrica siguiente sobre el recorrido (ver `overStory`),
           // así que estos nunca se llaman.
@@ -147,7 +150,16 @@ function toMetricCard(card: SharedCard): MetricCard {
     accent: card.accent,
     hasData: true,
     basic: card.basic,
-    detail: card.detail,
+    detail: card.detail
+      ? {
+          ...card.detail,
+          // El heading llegó solo; `bubbles: []` completa la forma que pide
+          // MessageGroup sin volver a inventar mensajes que nunca viajaron. No
+          // se llega a mostrar: MetricSheet pasa `isSharedStory` acá, así que
+          // tocar el contenedor corta al aviso de privacidad antes de leerlo.
+          groups: card.detail.groups?.map((group) => ({ ...group, bubbles: [] })),
+        }
+      : undefined,
     // Nunca se renderiza: `preview` es el texto del panel bloqueado, y en un
     // recorrido compartido no hay paneles bloqueados.
     preview: '',

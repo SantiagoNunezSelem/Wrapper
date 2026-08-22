@@ -218,23 +218,6 @@
   line-height: 1.55;
 }
 
-.m-trust {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.m-trust li {
-  font-size: 0.8rem;
-  color: var(--vz-text-muted);
-  padding: 8px 12px;
-  border-radius: var(--vz-radius-xs);
-  background: var(--vz-surface-1);
-}
-
 /* ==========================================================================
    Zona de subida
    ========================================================================== */

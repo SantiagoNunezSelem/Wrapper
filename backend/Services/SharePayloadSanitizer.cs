@@ -9,12 +9,15 @@ namespace backend.Services;
 ///
 /// <para><b>What this defends against.</b> The app's own metric cards carry real message
 /// text in exactly two places: <c>basic.note</c> (which for "El Testamento" is the longest
-/// message, quoted verbatim) and <c>detail.groups</c> (the WhatsApp-style bubbles, complete
-/// with the messages around the highlighted one for context). Publishing those would expose
-/// conversations belonging to people who never agreed to anything. Neither field is modeled
-/// below, and the payload is *rebuilt* from these types rather than filtered — so the text
-/// cannot survive the round trip even if a tampered client sends it, and a metric added
-/// later cannot leak by being forgotten in a blocklist.</para>
+/// message, quoted verbatim) and <c>detail.groups[].bubbles</c> (the WhatsApp-style bubbles,
+/// complete with the messages around the highlighted one for context). Publishing those
+/// would expose conversations belonging to people who never agreed to anything. Neither
+/// field is modeled below — <see cref="SharedMessageGroup"/> keeps only <c>id</c>/<c>heading</c>,
+/// never a <c>bubbles</c> property — and the payload is *rebuilt* from these types rather
+/// than filtered — so the text cannot survive the round trip even if a tampered client sends
+/// it, and a metric added later cannot leak by being forgotten in a blocklist. The headings
+/// themselves (e.g. "Hele tardó 8.7 días en responder") are safe to publish: they are
+/// aggregates/labels, not quoted messages, the same category as a chart label.</para>
 ///
 /// <para><b>What this deliberately does not defend against.</b> Titles, stat labels and
 /// intros are free text by design ("mensajes seguidos de Fran sin respuesta"), so a
@@ -135,18 +138,32 @@ public sealed record SharedStat
     public JsonElement? Chart { get; init; }
 }
 
-/// <summary>The expanded view. <c>groups</c>/<c>groupsLabel</c> are absent on purpose —
-/// those are the chat bubbles. <c>paginatedItems</c> stays: it is documented client-side as
-/// the list for metrics with no messages to quote, and in practice only ever holds word
-/// tallies ("\"caliente\" se usó 6 veces").</summary>
+/// <summary>The expanded view. <c>groups</c> keeps only the heading of each message group
+/// (see <see cref="SharedMessageGroup"/>) — never the bubbles, which is what makes it safe to
+/// publish. <c>paginatedItems</c> stays: it is documented client-side as the list for metrics
+/// with no messages to quote, and in practice only ever holds word tallies ("\"caliente\" se
+/// usó 6 veces").</summary>
 public sealed record SharedDetail
 {
     public string? Intro { get; init; }
     public JsonElement? Chart { get; init; }
     public List<SharedBreakdownEntry>? Breakdown { get; init; }
     public List<SharedSeriesEntry>? Series { get; init; }
+    public List<SharedMessageGroup>? Groups { get; init; }
+    public string? GroupsLabel { get; init; }
     public List<string>? PaginatedItems { get; init; }
     public string? PaginatedItemsLabel { get; init; }
+}
+
+/// <summary>One collapsible group's heading, with its <c>bubbles</c> deliberately unmodeled —
+/// see the class-level remarks on <see cref="SharePayloadSanitizer"/>. A visitor sees the
+/// container ("Hele tardó 8.7 días en responder") but the app's own privacy notice instead of
+/// its messages when they tap it; only the account that generated the chat can open it for
+/// real (see <c>isSharedStory</c> in the client's <c>MessageGroupItem</c>).</summary>
+public sealed record SharedMessageGroup
+{
+    public string Id { get; init; } = string.Empty;
+    public string Heading { get; init; } = string.Empty;
 }
 
 public sealed record SharedBreakdownEntry

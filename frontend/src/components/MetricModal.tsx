@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { isParticipantBarChart } from '../lib/metrics'
 import type { ChartData, MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
@@ -54,6 +55,11 @@ export function MetricModal({
   const hasWordCloud =
     card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
 
+  // The hero bar chart and the "by participant" breakdown below are often the same
+  // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
+  const heroChartRepeatsBreakdown =
+    isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
+
   const filteredDetailChart = useMemo(
     () => (card.detail?.chart ? filterWordCloud(card.detail.chart, wordSearch) : undefined),
     [card.detail?.chart, wordSearch],
@@ -84,7 +90,7 @@ export function MetricModal({
               <span>{card.basic.label}</span>
             </div>
             {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
-            {card.basic.chart ? (
+            {card.basic.chart && !heroChartRepeatsBreakdown ? (
               <div className="modal-chart">
                 <ChartRenderer chart={card.basic.chart} />
               </div>

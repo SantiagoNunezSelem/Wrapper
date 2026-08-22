@@ -853,6 +853,17 @@ function withParticipantColors(chart: ChartData, participants: string[]): ChartD
   return chart
 }
 
+/** True when a bar chart is a ranking of participants rather than of some other
+ * axis (laugh styles, link categories, etc) — every bar carries a participant
+ * color (see `colorForParticipant`, stamped once in `colorizeResult`). Several
+ * metrics build their `basic.chart` and `detail.breakdown` from the same
+ * per-sender map, just capped at 8 vs not and formatted as a count vs a percent —
+ * so when both are about to render on the same screen, this tells the UI the
+ * hero chart would just repeat the breakdown below it. */
+export function isParticipantBarChart(chart: ChartData | undefined): boolean {
+  return chart?.kind === 'bar' && chart.items.length > 0 && chart.items.every((item) => Boolean(item.color))
+}
+
 /** Stamps participant colors onto a freshly computed result — the one place this
  * runs, so every path that turns a `MetricResult` into what the UI renders (the
  * initial build in `createMetric`, and the AI re-pass in `applyAiVerdicts`) gets
@@ -1083,8 +1094,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
     return { hasData: false }
   }
 
-  const bySenderDominant = new Map<string, number>()
-  const bySenderStyle = new Map<string, string>()
   const series: MetricSeriesEntry[] = []
 
   for (const name of participants) {
@@ -1097,12 +1106,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
           styles.set(label, (styles.get(label) ?? 0) + 1)
         }
       }
-    }
-
-    const dominant = topEntry(styles)
-    if (dominant) {
-      bySenderDominant.set(name, dominant.value)
-      bySenderStyle.set(name, dominant.key)
     }
 
     if (styles.size > 0) {
@@ -1125,9 +1128,6 @@ function metricJajaja(ctx: MetricContext): MetricResult {
         language === 'es'
           ? 'Cómo se ríe cada integrante, de la risa seca a la caótica.'
           : 'How each participant laughs, from the dry "ja" to full keyboard chaos.',
-      breakdown: [...bySenderDominant.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .map(([name, value]) => ({ name, value, displayValue: bySenderStyle.get(name) ?? '' })),
       series,
     },
   }
