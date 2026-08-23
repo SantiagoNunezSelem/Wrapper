@@ -825,15 +825,16 @@ export function useVistazo() {
     setBusyMessage(copy.processing)
 
     try {
-      const { messages, sourceHash } = await parseChatFile(file)
+      const { messages, sourceHash, rawTextPreview } = await parseChatFile(file)
 
       if (messages.length === 0) {
         // Un archivo que "parsea" pero no matchea ni una línea es, en la práctica,
         // indistinguible de uno vacío o corrupto — mejor un error accionable (con los
-        // datos reales del File recibido) que una pantalla de 0 personas / 0 mensajes
-        // que parece haber funcionado.
+        // datos reales del File recibido y una vista previa de su contenido) que una
+        // pantalla de 0 personas / 0 mensajes que parece haber funcionado.
         const fileInfo = `${file.name || 'sin nombre'} · ${file.type || 'sin tipo'} · ${file.size} bytes`
-        throw new Error(`${copy.emptyChatError} [${fileInfo}]${diagnosticSuffix}`)
+        const preview = rawTextPreview ? ` · content: "${rawTextPreview}"` : ''
+        throw new Error(`${copy.emptyChatError} [${fileInfo}${preview}]${diagnosticSuffix}`)
       }
 
       setIsReplay(false)

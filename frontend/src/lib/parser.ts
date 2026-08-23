@@ -16,6 +16,10 @@ interface RawEntry {
 export interface ParsedChat {
   messages: ChatMessage[]
   sourceHash: string
+  // Sólo para diagnóstico cuando `messages` termina vacío — los primeros caracteres
+  // del texto ya decodificado, para poder ver en el mensaje de error qué contenido
+  // llegó realmente sin necesitar acceso a la consola del dispositivo.
+  rawTextPreview: string
 }
 
 export async function parseChatFile(file: File): Promise<ParsedChat> {
@@ -81,6 +85,7 @@ export async function parseChatText(text: string): Promise<ParsedChat> {
     rawEntries[rawEntries.length - 1].body += `\n${line}`
   }
 
+  const rawTextPreview = normalized.slice(0, 200)
   const dateOrder = inferDateOrder(rawEntries)
 
   const messages: ChatMessage[] = rawEntries.map((entry, index) => {
@@ -106,7 +111,7 @@ export async function parseChatText(text: string): Promise<ParsedChat> {
     }
   })
 
-  return { messages, sourceHash }
+  return { messages, sourceHash, rawTextPreview }
 }
 
 function inferDateOrder(entries: RawEntry[]): DateOrder {
