@@ -35,6 +35,7 @@ async function handleShareTarget(request) {
   try {
     const formData = await request.formData()
     const file = formData.get('chat')
+    const text = formData.get('text')
 
     debug.fieldPresent = formData.has('chat')
 
@@ -47,6 +48,13 @@ async function handleShareTarget(request) {
       // esto lo distingue de un File real en vez de fallar silenciosamente.
       debug.receivedAsText = true
       debug.textLength = file.length
+    }
+
+    // Declarado aparte en el manifest (params.text): si WhatsApp manda EXTRA_TEXT
+    // junto con el adjunto real (como en un intent tipo "compartir por email"), esto
+    // debería quedarse con ese texto y dejar `chat` libre para el archivo de verdad.
+    if (typeof text === 'string' && text.length > 0) {
+      debug.text = text.slice(0, 300)
     }
 
     await storeSharedFile(file instanceof File && file.size > 0 ? file : null, debug)
