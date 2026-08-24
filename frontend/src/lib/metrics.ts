@@ -2447,19 +2447,35 @@ function tokenize(text: string): string[] {
   return (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).map((token) => token.normalize('NFC'))
 }
 
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Interpreta el valor que reciben los formateadores de abajo, que llega en dos formas:
+ * un timestamp ISO completo o una clave de día (ver `dayKey`).
+ *
+ * `new Date("2025-03-10")` es medianoche UTC, y formateada en cualquier zona al oeste de
+ * Greenwich —toda América, o sea el público de esta app— muestra el día anterior; sobre un
+ * 1 de enero se lleva puesto también el año. Anclar la clave a medianoche LOCAL la deja en
+ * la fecha que el usuario efectivamente vivió. Es el mismo recurso que ya usan `weekKey` y
+ * `formatWeekLabel`. Un timestamp completo ya trae zona y se parsea tal cual.
+ */
+function toLocalDate(value: string): Date {
+  return new Date(dateOnlyPattern.test(value) ? `${value}T00:00:00` : value)
+}
+
 function formatDate(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === 'es' ? 'es-AR' : 'en-US', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(value))
+  }).format(toLocalDate(value))
 }
 
 function formatDateTime(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === 'es' ? 'es-AR' : 'en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(new Date(value))
+  }).format(toLocalDate(value))
 }
 
 function formatMonthLabel(yearMonth: string, language: Language): string {

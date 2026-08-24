@@ -142,29 +142,19 @@ public class MercadoPagoClientTests
     }
 
     [Fact]
-    public async Task El_plan_sin_trial_manda_hoy_free_trial_en_null_documenta_el_bug()
+    public async Task El_plan_sin_trial_OMITE_el_campo_free_trial()
     {
-        // Bug abierto. `SendAsync` serializa con DefaultIgnoreCondition.WhenWritingNull,
-        // pero esa opción NO se aplica a los valores de un Dictionary<string, object?>:
-        // sólo a propiedades de un POCO. El resultado es que el plan sin prueba gratis
-        // viaja con "free_trial": null en vez de sin el campo — exactamente la clase de
-        // envío que el propio GoogleAiClient documenta como rechazado por su API.
-        // Ver "Hallazgos" en TESTING.md.
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-2"}"""));
-
-        await client.CreatePlanAsync(includeFreeTrial: false, default);
-
-        Assert.Contains("\"free_trial\":null", http.LastRequest.Body);
-    }
-
-    [Fact(Skip = "Bug abierto: el campo se manda en null en vez de omitirse. Ver TESTING.md.")]
-    public async Task El_plan_sin_trial_DEBERIA_omitir_el_campo_free_trial()
-    {
+        // No alcanza con ponerlo en null: el DefaultIgnoreCondition.WhenWritingNull del
+        // serializador NO se aplica a los valores de un Dictionary<string, object?> —
+        // sólo a propiedades de un POCO — así que un null viajaría tal cual, que es
+        // exactamente la clase de envío que GoogleAiClient documenta como rechazado por
+        // su API. La clave directamente no se agrega.
         var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-2"}"""));
 
         await client.CreatePlanAsync(includeFreeTrial: false, default);
 
         Assert.DoesNotContain("free_trial", http.LastRequest.Body);
+        Assert.DoesNotContain("null", http.LastRequest.Body);
     }
 
     [Fact]

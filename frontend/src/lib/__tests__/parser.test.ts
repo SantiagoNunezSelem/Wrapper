@@ -105,22 +105,33 @@ describe('parseChatText — inferencia del orden de fecha', () => {
   })
 
   it('sólo mira las primeras 50 líneas para votar', async () => {
-    // 50 líneas ambiguas y recién después una con día 20: se queda en MDY.
-    const ambiguous = Array.from(
-      { length: 50 },
-      (_, index) => `0${(index % 9) + 1}/0${(index % 9) + 1}/2025, 10:00 - Ana: ${index}`,
-    )
-    const { messages } = await parse([...ambiguous, '20/01/2025, 10:00 - Ana: tarde'].join('\n'))
+    // Un único voto MDY dentro de la ventana, contra diez votos DMY fuera de ella.
+    // Si contaran todas las líneas ganaría DMY; que gane MDY es la prueba del corte.
+    const inWindow = [
+      '01/20/2025, 10:00 - Ana: voto MDY',
+      ...Array.from({ length: 49 }, (_, index) => `0${(index % 9) + 1}/0${(index % 9) + 1}/2025, 10:00 - Ana: ${index}`),
+    ]
+    const outsideWindow = Array.from({ length: 10 }, () => '25/01/2025, 10:00 - Ana: voto DMY tardío')
 
-    // Con MDY, "20/01" se lee como mes 20 → Date normaliza a agosto de 2026.
-    const late = new Date(messages.at(-1)!.timestamp)
-    expect(late.getFullYear()).toBe(2026)
+    const { messages } = await parse([...inWindow, ...outsideWindow].join('\n'))
+
+    // Ganó MDY, así que "25/01" se lee como mes 25 y Date lo normaliza a enero de 2027.
+    expect(new Date(messages.at(-1)!.timestamp).getFullYear()).toBe(2027)
   })
 
-  it('cae en MDY cuando el archivo es completamente ambiguo', async () => {
+  it('un archivo ambiguo de 24 horas se lee como DMY', async () => {
+    // Ningún día pasa de 12, así que las cifras solas no deciden. El reloj de 24 horas
+    // descarta en-US, y día/mes es lo que usa el resto de los idiomas.
     const { messages } = await parse('03/04/2025, 10:00 - Ana: hola')
 
-    // Sin ninguna pista, la implementación elige MDY: 3 de abril leído como 4 de marzo.
+    expect(new Date(messages[0].timestamp).getDate()).toBe(3)
+    expect(new Date(messages[0].timestamp).getMonth()).toBe(3)
+  })
+
+  it('un archivo ambiguo con AM/PM se lee como MDY', async () => {
+    // El reloj de 12 horas es prácticamente exclusivo de en-US, que escribe mes/día.
+    const { messages } = await parse('03/04/25, 10:00 AM - Ana: hola')
+
     expect(new Date(messages[0].timestamp).getMonth()).toBe(2)
     expect(new Date(messages[0].timestamp).getDate()).toBe(4)
   })
@@ -427,41 +438,146 @@ describe('parseChatFile', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Variantes de export que la especificación pide soportar y hoy no se parsean.
-//
-// `it.fails` deja el caso documentado y ejecutándose sin romper CI: si alguien
-// arregla el parser, el test empieza a pasar y ESO hace fallar la suite, que es lo
-// que fuerza a convertirlo en un `it` normal en vez de olvidarlo.
-// Ver "Hallazgos" en TESTING.md.
-// ---------------------------------------------------------------------------
-describe('parseChatText — variantes no soportadas (bugs abiertos)', () => {
-  it.fails('debería parsear el export de iOS con corchetes y sin guion', async () => {
+describe('parseChatText — reloj de 12 horas', () => {
+  it('parsea el export en inglés con AM/PM', async () => {
+    const { messages } = await parse('3/13/25, 9:15 PM - Ana: hola')
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0].sender).toBe('Ana')
+    expect(new Date(messages[0].timestamp).getHours()).toBe(21)
+  })
+
+  it('parsea el AM/PM separado por el espacio angosto de las versiones nuevas', async () => {
+    // U+202F escrito como escape a propósito: pegado literal es invisible en el diff.
+    const { messages } = await parse('3/13/25, 9:15\u202fPM - Ana: hola')
+
+    expect(new Date(messages[0].timestamp).getHours()).toBe(21)
+  })
+
+  it.each([
+    ['12:00 AM', 0],
+    ['12:30 am', 0],
+    ['12:00 PM', 12],
+    ['1:00 AM', 1],
+    ['9:15 PM', 21],
+    ['9:15 pm', 21],
+    ['9:15 p.m.', 21],
+    ['9:15 p. m.', 21],
+    ['11:59 PM', 23],
+  ])('convierte %s a la hora %i del reloj de 24', async (time, expected) => {
+    const { messages } = await parse(`3/13/25, ${time} - Ana: hola`)
+
+    expect(new Date(messages[0].timestamp).getHours()).toBe(expected)
+  })
+
+  it('conserva los segundos junto al meridiano', async () => {
+    const { messages } = await parse('3/13/25, 9:15:42 PM - Ana: hola')
+
+    expect(new Date(messages[0].timestamp).getHours()).toBe(21)
+    expect(new Date(messages[0].timestamp).getSeconds()).toBe(42)
+  })
+
+  it('no rueda al día siguiente ante un dato malformado como "21:15 PM"', async () => {
+    // Sin el guard, 21 + 12 = 33, y `new Date` con hora 33 no falla: avanza un día en
+    // silencio. La aserción del día es la que caza ese desborde.
+    const parsed = new Date((await parse('3/13/25, 21:15 PM - Ana: hola')).messages[0].timestamp)
+
+    expect(parsed.getHours()).toBe(21)
+    expect(parsed.getDate()).toBe(13)
+  })
+
+  it('un mensaje que empieza con "am" no se confunde con un meridiano', async () => {
+    const { messages } = await parse('13/03/2025, 21:15 - Ana: amistad para siempre')
+
+    expect(messages[0].contentText).toBe('amistad para siempre')
+  })
+})
+
+describe('parseChatText — variantes del separador', () => {
+  it('parsea el export de iOS, con corchetes y sin guion', async () => {
     const { messages } = await parse('[13/03/2025, 21:15:00] Ana: hola')
 
     expect(messages).toHaveLength(1)
     expect(messages[0].sender).toBe('Ana')
-  })
-
-  it.fails('debería parsear el export en inglés con hora de 12 horas (AM/PM)', async () => {
-    const { messages } = await parse('3/13/25, 9:15 PM - Ana: hola')
-
-    expect(messages).toHaveLength(1)
     expect(new Date(messages[0].timestamp).getHours()).toBe(21)
   })
 
-  it.fails('debería parsear la variante sin coma entre fecha y hora', async () => {
+  it('parsea iOS en español con reloj de 12 horas', async () => {
+    const { messages } = await parse('[3/13/25, 9:15:00 p. m.] Ana: hola')
+
+    expect(messages[0].sender).toBe('Ana')
+    expect(new Date(messages[0].timestamp).getHours()).toBe(21)
+  })
+
+  it('parsea la variante sin coma entre fecha y hora', async () => {
     // Es el ejemplo textual de Project_Context/03_Procesamiento_Datos_y_Regex.md §1.
-    // El grupo `(?:,\s*)?` sólo consume el espacio si vino precedido de la coma.
     const { messages } = await parse('20/1/2026 15:30 - Juan: Hola, ¿cómo estás?')
 
     expect(messages).toHaveLength(1)
     expect(messages[0].sender).toBe('Juan')
   })
 
-  it.fails('debería parsear el AM/PM separado por espacio angosto (U+202F)', async () => {
-    const { messages } = await parse('3/13/25, 9:15 PM - Ana: hola')
+  it.each([
+    '[13/03/2025, 21:15:00]-Ana: hola',
+    '[13/03/2025, 21:15:00] -   Ana: hola',
+    '[13/03/2025 21:15:00] Ana: hola',
+    '13/03/2025,21:15 - Ana: hola',
+  ])('sigue reconociendo %j', async (line) => {
+    const { messages } = await parse(line)
 
-    expect(messages).toHaveLength(1)
+    expect(messages[0].sender).toBe('Ana')
+  })
+
+  it('no se come un guion que es parte del mensaje', async () => {
+    const { messages } = await parse('13/03/2025, 21:15 - - guion en el cuerpo')
+
+    expect(messages[0].message).toBe('- guion en el cuerpo')
   })
 })
+
+describe('parseChatText — qué NO parte un mensaje en dos', () => {
+  it.each([
+    '13/03/2025 21:15 hs - confirmado',
+    '20/1/2026 15:30 reunion con Juan',
+    '12.000 pesos - transferido',
+  ])('%j sigue siendo continuación del mensaje anterior', async (second) => {
+    const { messages } = await parse(['13/03/2025, 10:00 - Ana: primera', second].join('\n'))
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0].message).toContain(second)
+  })
+
+  it('una fecha con hora Y guion pegada adentro de un mensaje SÍ lo parte', async () => {
+    // Falso positivo aceptado a cambio de soportar la forma sin coma: un chat reenviado y
+    // pegado dentro de otro mensaje ahora arranca uno nuevo. Queda explícito para que
+    // nadie lo "arregle" sin advertir que rompe el formato sin coma.
+    const { messages } = await parse(
+      ['13/03/2025, 10:00 - Ana: mira lo que me mandaron', '12/03/2025 20:00 - Beto: hola'].join('\n'),
+    )
+
+    expect(messages).toHaveLength(2)
+    expect(messages[1].sender).toBe('Beto')
+  })
+
+  it('no se traba con una línea larguísima que no llega a ser un mensaje', async () => {
+    // Guard de performance: dos `\s*` adyacentes alrededor del grupo del meridiano vuelven
+    // la búsqueda cuadrática, y esto corre sobre cada línea del archivo que sube el
+    // usuario, en el hilo principal. Medido con la variante ingenua: 526 ms con 16.000
+    // espacios. Sin este test, un refactor futuro lo reintroduce sin que nadie lo note.
+    const started = performance.now()
+    await parse(`13/03/2025, 21:15${' '.repeat(20_000)}x`)
+
+    expect(performance.now() - started).toBeLessThan(100)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Formatos declarados FUERA DE ALCANCE — ver "Fuera de alcance" en TESTING.md.
+//
+// No van como `it.fails` porque no son bugs pendientes sino decisiones: soportarlos
+// exigiría tocar también `inferDateOrder` y `parseTimestamp`, y el separador de punto
+// choca con el de miles del español. Quedan acá como registro de que se evaluaron.
+//
+//   13.03.2025, 21:15 - Ana: hola   (locales de/ru/pl/fi)
+//   2025-03-13, 21:15 - Ana: hola   (locales zh/sv/hu/lt)
+// ---------------------------------------------------------------------------

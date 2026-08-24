@@ -21,6 +21,12 @@ public sealed class MercadoPagoClient(
 {
     private readonly MercadoPagoOptions _options = options.Value;
 
+    /// <remarks>
+    /// Ojo con <see cref="JsonIgnoreCondition.WhenWritingNull"/>: sólo alcanza a las
+    /// PROPIEDADES de un POCO, no a los valores de un <c>Dictionary</c>. Los cuerpos de
+    /// esta clase se arman como diccionarios, así que un null se serializa igual — una
+    /// clave que no corresponda no se agrega, en vez de ponerse en null.
+    /// </remarks>
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -36,23 +42,31 @@ public sealed class MercadoPagoClient(
     /// </summary>
     public async Task<PreapprovalPlan> CreatePlanAsync(bool includeFreeTrial, CancellationToken cancellationToken)
     {
+        var autoRecurring = new Dictionary<string, object?>
+        {
+            ["frequency"] = _options.Frequency,
+            ["frequency_type"] = _options.FrequencyType,
+            ["transaction_amount"] = _options.TransactionAmount,
+            ["currency_id"] = _options.CurrencyId,
+        };
+
+        // La clave se agrega sólo cuando corresponde, nunca en null: el
+        // DefaultIgnoreCondition de JsonOptions no alcanza a los valores de un Dictionary
+        // (ver la nota allá), así que un "free_trial": null viajaría tal cual — la misma
+        // clase de envío que GoogleAiClient documenta como rechazada por su API.
+        if (includeFreeTrial)
+        {
+            autoRecurring["free_trial"] = new Dictionary<string, object?>
+            {
+                ["frequency"] = _options.TrialFrequency,
+                ["frequency_type"] = _options.TrialFrequencyType,
+            };
+        }
+
         var body = new Dictionary<string, object?>
         {
             ["reason"] = includeFreeTrial ? _options.Reason : $"{_options.Reason} (sin prueba gratis)",
-            ["auto_recurring"] = new Dictionary<string, object?>
-            {
-                ["frequency"] = _options.Frequency,
-                ["frequency_type"] = _options.FrequencyType,
-                ["transaction_amount"] = _options.TransactionAmount,
-                ["currency_id"] = _options.CurrencyId,
-                ["free_trial"] = includeFreeTrial
-                    ? new Dictionary<string, object?>
-                    {
-                        ["frequency"] = _options.TrialFrequency,
-                        ["frequency_type"] = _options.TrialFrequencyType,
-                    }
-                    : null,
-            },
+            ["auto_recurring"] = autoRecurring,
             ["back_url"] = _options.CheckoutReturnUrl,
         };
 
