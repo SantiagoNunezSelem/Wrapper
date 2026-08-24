@@ -1007,3 +1007,13 @@ static class ClaimsPrincipalExtensions
             : throw new UnauthorizedAccessException("Missing user identifier claim.");
     }
 }
+
+/// <summary>
+/// Hace público el <c>Program</c> que el compilador genera para los top-level statements.
+///
+/// Es lo que necesita <c>WebApplicationFactory&lt;Program&gt;</c> para levantar esta misma
+/// app en memoria desde el proyecto de tests, con su pipeline real —autenticación, rate
+/// limiting, serialización— en vez de llamar a los handlers por separado. No agrega
+/// ningún miembro ni cambia nada del arranque.
+/// </summary>
+public partial class Program;
