@@ -696,11 +696,11 @@ describe('métrica heatmap-anual', () => {
     expect(card.basic?.label).toContain('mensajes en el día más activo')
   })
 
-  it.fails('la fecha del día más activo debería ser la del mensaje, no la de ayer', async () => {
-    // Bug abierto: `formatDate` recibe una clave de día ("2025-03-10"), y
-    // `new Date("2025-03-10")` se interpreta como medianoche UTC. Formateada en una
-    // zona al oeste de Greenwich —toda América, o sea el público del producto—
-    // retrocede un día. Ver "Hallazgos" en TESTING.md.
+  it('la fecha del día más activo es la del mensaje, no la de ayer', async () => {
+    // `formatDate` recibe una clave de día ("2025-03-10"), y `new Date("2025-03-10")` es
+    // medianoche UTC: formateada en una zona al oeste de Greenwich —toda América, o sea
+    // el público del producto— retrocedía un día. Los tests corren fijados a la hora de
+    // Buenos Aires justamente para que este caso sea observable (ver vitest.config.ts).
     const card = await requireFreeMetric('heatmap-anual', [
       ...burst({ at: '2025-03-10T10:00:00', from: 'Ana', count: 5 }),
       { at: '2025-03-12T10:00:00', from: 'Ana', text: 'solo uno' },
@@ -709,13 +709,15 @@ describe('métrica heatmap-anual', () => {
     expect(card.basic?.label).toBe('mensajes en el día más activo (10 de mar de 2025)')
   })
 
-  it('hoy el desplazamiento de un día es observable (documenta el bug)', async () => {
+  it('un 1 de enero no se lleva puesto también el año', async () => {
+    // El caso más caro del mismo bug: la clave "2025-01-01" se mostraba como
+    // "31 de dic de 2024", con el año equivocado además del día.
     const card = await requireFreeMetric('heatmap-anual', [
-      ...burst({ at: '2025-03-10T10:00:00', from: 'Ana', count: 5 }),
-      { at: '2025-03-12T10:00:00', from: 'Ana', text: 'solo uno' },
+      ...burst({ at: '2025-01-01T10:00:00', from: 'Ana', count: 5 }),
+      { at: '2025-01-03T10:00:00', from: 'Ana', text: 'solo uno' },
     ])
 
-    expect(card.basic?.label).toBe('mensajes en el día más activo (09 de mar de 2025)')
+    expect(card.basic?.label).toBe('mensajes en el día más activo (01 de ene de 2025)')
   })
 
   it('con menos de 60 días de span dibuja punto por día, rellenando los vacíos', async () => {
