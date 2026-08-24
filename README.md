@@ -13,7 +13,23 @@ Arquitectura inicial del proyecto basada en los documentos de `Project_Context\`
 
 - `frontend\` — app web, parser de export de WhatsApp y dashboard de métricas
 - `backend\` — API, login con Google, JWT, SQLite y guardado de análisis
+- `backend.Tests\` — pruebas de los servicios y de los 22 endpoints
 - `Project_Context\` — especificación funcional y técnica fuente
+
+## Tests
+
+Corren solos en cada pull request (ver `.github\workflows\tests.yml`). A mano:
+
+```bash
+cd frontend && npm test
+```
+
+```bash
+dotnet test Wrapper.sln
+```
+
+Cómo está armada la suite, qué umbrales de cobertura se exigen y qué desfasajes contra la
+especificación destaparon las pruebas: **[TESTING.md](TESTING.md)**.
 
 ## Configurar Google Login
 
