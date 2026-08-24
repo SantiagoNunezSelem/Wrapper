@@ -128,6 +128,24 @@ function toPercents({ lines, branches }) {
 
 const percent = ([covered, total]) => (total === 0 ? 100 : (covered / total) * 100)
 
+/**
+ * Una zona con cero líneas medidas no es cobertura perfecta: es un informe que no se
+ * pudo leer (ruta cambiada, formato distinto, artefacto que no se descargó). Sin este
+ * chequeo el portero pasaría en verde justo cuando dejó de funcionar, que es la peor
+ * forma de fallar que puede tener un control de calidad.
+ */
+function assertMeasured(zones, source) {
+  const empty = zones.filter((zone) => zone.linesLabel.endsWith('/0'))
+
+  if (empty.length > 0) {
+    console.error(
+      `El informe de ${source} no midió ninguna línea en: ${empty.map((zone) => zone.label).join(', ')}.\n` +
+        'Probablemente cambió la ruta del artefacto o el formato del informe.',
+    )
+    process.exit(1)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Informe
 // ---------------------------------------------------------------------------
@@ -177,6 +195,22 @@ const gated = (backend ?? []).map((zone, index) => ({
   linesThreshold: BACKEND_ZONES[index].lines,
   branchesThreshold: BACKEND_ZONES[index].branches,
 }))
+
+// Con el portero activo, los dos informes tienen que estar: si uno no se descargó, dejar
+// pasar el PR sería exactamente lo contrario de lo que el job existe para hacer.
+if (!REPORT_ONLY) {
+  if (!frontend) {
+    console.error('Falta el informe de cobertura del frontend (frontend/coverage/coverage-summary.json).')
+    process.exit(1)
+  }
+  if (gated.length === 0) {
+    console.error('Falta el informe de cobertura del backend (backend.Tests/TestResults/**/coverage.cobertura.xml).')
+    process.exit(1)
+  }
+
+  assertMeasured(frontend, 'frontend')
+  assertMeasured(gated, 'backend')
+}
 
 const table = render([...(frontend ?? []), ...gated])
 console.log(table)
