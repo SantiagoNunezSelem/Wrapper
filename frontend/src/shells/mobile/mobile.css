@@ -419,6 +419,16 @@
   color: var(--vz-text-faint);
 }
 
+/* La fecha es un rango ("20 nov 2025 - 24 ago 2026"), mucho más largo que un
+   número o un conteo de participantes: a ese tamaño no entra en una línea. */
+.m-summary-date strong {
+  font-size: 0.8rem;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+
 .m-chips {
   display: flex;
   gap: 6px;
@@ -563,7 +573,7 @@
 .m-row-label {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   overflow: hidden;
   font-size: 0.7rem;
   line-height: 1.4;

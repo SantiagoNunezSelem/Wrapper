@@ -493,6 +493,39 @@ app.MapPost("/api/ai/consent", [Authorize] async (
     return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
 });
 
+app.MapPost("/api/user/language", [Authorize] async (
+    UpdateLanguageRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    IOptions<GoogleAiOptions> googleAi,
+    IOptions<MercadoPagoOptions> mercadoPago,
+    CancellationToken cancellationToken) =>
+{
+    // Only "es"/"en" exist in the frontend's Language type — anything else is either a
+    // bug on the caller's side or a tampered request, and persisting it would silently
+    // break every future login for this user.
+    if (request.Language is not ("es" or "en"))
+    {
+        return Results.BadRequest(new { message = "Language must be 'es' or 'en'." });
+    }
+
+    var userId = principal.GetRequiredUserId();
+    var user = await db.Users
+        .Include(candidate => candidate.Subscriptions)
+        .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    user.PreferredLanguage = request.Language;
+    user.UpdatedAtUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
+});
+
 app.MapGet("/api/ai/metrics", [Authorize] async (
     string sourceHash,
     ClaimsPrincipal principal,
@@ -965,7 +998,8 @@ record CurrentUserResponse(
     string SubscriptionState,
     bool HasAiConsent,
     bool AiEnabled,
-    bool PaymentsEnabled)
+    bool PaymentsEnabled,
+    string PreferredLanguage)
 {
     /// <param name="aiEnabled">
     /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
@@ -988,8 +1022,11 @@ record CurrentUserResponse(
             SubscriptionAccessEvaluator.GetVisibleState(user),
             user.AiConsentAtUtc is not null,
             aiEnabled,
-            paymentsEnabled);
+            paymentsEnabled,
+            user.PreferredLanguage);
 }
+
+record UpdateLanguageRequest(string Language);
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {

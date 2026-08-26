@@ -39,6 +39,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     user,
     token,
     hasGoogleClientId,
+    activeChat,
     analysis,
     savedAnalyses,
     interleavedMetrics,
@@ -368,6 +369,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               freeUnlock={freeUnlockFor(openMetric)}
               isRevealingFreeUnlock={revealingFreeUnlockId === openMetric.id}
               overStory={isDetailOverStory}
+              messages={activeChat?.messages}
               onClose={closeDetail}
               onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {

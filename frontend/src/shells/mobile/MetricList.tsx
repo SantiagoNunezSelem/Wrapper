@@ -50,7 +50,7 @@ export function MetricList({
           <strong>{formatNumber(analysis.participantCount, language)}</strong>
           <span>{copy.participants}</span>
         </div>
-        <div>
+        <div className="m-summary-date">
           <strong>{analysis.dateRangeLabel}</strong>
           <span>{copy.generatedAt}</span>
         </div>

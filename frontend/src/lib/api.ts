@@ -3,6 +3,7 @@ import type {
   AuthResponse,
   CheckoutStart,
   FreeUnlockState,
+  Language,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
@@ -143,6 +144,14 @@ export async function getAiMetrics(token: string, sourceHash: string): Promise<A
 
 export async function grantAiConsent(token: string): Promise<UserProfile> {
   return request<UserProfile>('/api/ai/consent', { method: 'POST' }, token)
+}
+
+export async function updatePreferredLanguage(token: string, language: Language): Promise<UserProfile> {
+  return request<UserProfile>(
+    '/api/user/language',
+    { method: 'POST', body: JSON.stringify({ language }) },
+    token,
+  )
 }
 
 // ---------------------------------------------------------------------------

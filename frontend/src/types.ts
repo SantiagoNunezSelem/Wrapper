@@ -16,6 +16,9 @@ export interface UserProfile {
   /** Whether the backend has Mercado Pago credentials. Without them the upsell says so
    * instead of opening a checkout that cannot complete. */
   paymentsEnabled: boolean
+  /** The language this user last chose, persisted server-side so it survives a
+   * refresh or a login from another device instead of falling back to the browser's. */
+  preferredLanguage: Language
 }
 
 /**

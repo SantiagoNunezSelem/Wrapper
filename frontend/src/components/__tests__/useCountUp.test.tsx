@@ -69,7 +69,7 @@ describe('useCountUp', () => {
     expect(result.current).toMatch(/^1\.\d{3}$/)
   })
 
-  it.each(['Búhos', 'Lun', 'Madrugadores', ''])('deja "%s" tal cual: no tiene número', (value) => {
+  it.each(['Hora pico: Noche', 'Lun', 'Hora pico: Mañana', ''])('deja "%s" tal cual: no tiene número', (value) => {
     const { result } = renderHook(() => useCountUp(value))
 
     expect(result.current).toBe(value)
@@ -159,8 +159,8 @@ describe('useCountUpOnView', () => {
 
   it('un valor sin número se muestra tal cual', () => {
     stubIntersectionObserver()
-    render(<Stat value="Búhos" />)
+    render(<Stat value="Hora pico: Noche" />)
 
-    expect(screen.getByTestId('stat')).toHaveTextContent('Búhos')
+    expect(screen.getByTestId('stat')).toHaveTextContent('Hora pico: Noche')
   })
 })

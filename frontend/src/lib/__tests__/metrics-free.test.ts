@@ -195,23 +195,23 @@ describe('métrica monologuista', () => {
 // ---------------------------------------------------------------------------
 
 describe('métrica reloj', () => {
-  it('llama "Búhos" al chat que habla de noche', async () => {
+  it('llama "Hora pico: Noche" al chat que habla de noche', async () => {
     const card = await requireFreeMetric('reloj', [
       ...burst({ at: '2025-03-10T23:00:00', from: 'Ana', count: 5 }),
       { at: '2025-03-10T09:00:00', from: 'Beto', text: 'buen dia' },
     ])
 
-    expect(card.basic?.value).toBe('Búhos')
+    expect(card.basic?.value).toBe('Hora pico: Noche')
     expect(card.basic?.label).toBe('5 mensajes de madrugada o noche')
   })
 
-  it('llama "Madrugadores" al chat que habla de mañana', async () => {
+  it('llama "Hora pico: Mañana" al chat que habla de mañana', async () => {
     const card = await requireFreeMetric('reloj', [
       ...burst({ at: '2025-03-10T08:00:00', from: 'Ana', count: 5 }),
       { at: '2025-03-10T23:00:00', from: 'Beto', text: 'chau' },
     ])
 
-    expect(card.basic?.value).toBe('Madrugadores')
+    expect(card.basic?.value).toBe('Hora pico: Mañana')
     expect(card.basic?.label).toBe('5 mensajes matutinos')
   })
 
@@ -221,7 +221,7 @@ describe('métrica reloj', () => {
       { at: '2025-03-10T08:00:00', from: 'Beto', text: 'mañana' },
     ])
 
-    expect(card.basic?.value).toBe('Búhos')
+    expect(card.basic?.value).toBe('Hora pico: Noche')
   })
 
   it('arma 24 franjas horarias en hora local', async () => {
