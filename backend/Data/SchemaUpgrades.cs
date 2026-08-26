@@ -44,6 +44,7 @@ public static class SchemaUpgrades
             cancellationToken);
 
         await AddColumnIfMissingAsync(db, "Users", "AiConsentAtUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "PreferredLanguage", "TEXT NULL DEFAULT 'es'", cancellationToken);
 
         // ---------------------------------------------------------------------
         // Subscriptions / Mercado Pago

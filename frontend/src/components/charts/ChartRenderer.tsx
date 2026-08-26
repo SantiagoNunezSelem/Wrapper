@@ -10,7 +10,25 @@ import { Timeline } from './Timeline'
 import { WordCloud } from './WordCloud'
 import { YearHeatmap } from './YearHeatmap'
 
-export function ChartRenderer({ chart, compact = false }: { chart: ChartData; compact?: boolean }) {
+/** Only ever passed for the wordcloud metric's hero chart — every other
+ * caller renders a read-only cloud. See useEditableWordCloud. */
+export interface WordCloudEditing {
+  selectedWord: string | null
+  onWordClick: (word: string) => void
+  onDeselect: () => void
+  onRemoveWord: (word: string) => void
+  removeLabel: string
+}
+
+export function ChartRenderer({
+  chart,
+  compact = false,
+  wordCloudEditing,
+}: {
+  chart: ChartData
+  compact?: boolean
+  wordCloudEditing?: WordCloudEditing
+}) {
   switch (chart.kind) {
     case 'bar':
       return <BarRanking items={chart.items} compact={compact} />
@@ -33,7 +51,18 @@ export function ChartRenderer({ chart, compact = false }: { chart: ChartData; co
     case 'activityWave':
       return <ActivityWave points={chart.points} />
     case 'wordCloud':
-      return <WordCloud words={chart.words} unit={chart.unit} compact={compact} />
+      return (
+        <WordCloud
+          words={chart.words}
+          unit={chart.unit}
+          compact={compact}
+          selectedWord={wordCloudEditing?.selectedWord}
+          onWordClick={wordCloudEditing?.onWordClick}
+          onDeselect={wordCloudEditing?.onDeselect}
+          onRemoveWord={wordCloudEditing?.onRemoveWord}
+          removeLabel={wordCloudEditing?.removeLabel}
+        />
+      )
     default:
       return null
   }

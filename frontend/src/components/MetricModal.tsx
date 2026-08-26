@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type KeyboardEvent } from 'react'
 import { isParticipantBarChart } from '../lib/metrics'
-import type { ChartData, MetricCard as MetricCardData } from '../types'
+import type { ChartData, ChatMessage, MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
@@ -10,6 +10,7 @@ import { MessageGroupItem } from './MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a `card.basic.value` directo).
 import { useCountUp } from './useCountUp'
+import { useEditableWordCloud, type WordCloudSearchCopy } from './useEditableWordCloud'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
 
 export interface MetricModalCopy {
@@ -20,6 +21,7 @@ export interface MetricModalCopy {
   unlock: string
   searchPlaceholder: string
   freeUnlockLoading: string
+  wordCloudSearch: WordCloudSearchCopy & { removeLabel: string }
 }
 
 export function MetricModal({
@@ -28,6 +30,12 @@ export function MetricModal({
   ai,
   freeUnlock,
   isRevealingFreeUnlock = false,
+  /** The chat currently open in this tab, if any — lets the wordcloud metric's
+   * search box count a word that isn't already in its precomputed top 40.
+   * Undefined for a saved analysis replayed from history: only the computed
+   * cards are ever kept for those, never the raw chat (see the privacy note
+   * in the landing copy). */
+  messages,
   onClose,
   onUnlock,
 }: {
@@ -40,6 +48,7 @@ export function MetricModal({
   /** True for the few seconds right after this card's free unlock was confirmed —
    * see `revealingFreeUnlockId` in useVistazo. */
   isRevealingFreeUnlock?: boolean
+  messages?: ChatMessage[]
   onClose: () => void
   onUnlock: () => void
 }) {
@@ -70,6 +79,22 @@ export function MetricModal({
     [card.detail?.series, wordSearch],
   )
 
+  const wordCloudEditor = useEditableWordCloud({
+    chart: card.basic?.chart,
+    messages,
+    resetKey: card.id,
+    copy: copy.wordCloudSearch,
+  })
+
+  function handleWordSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+    if (wordCloudEditor.searchAndAdd(wordSearch)) {
+      setWordSearch('')
+    }
+  }
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="modal-card metric-modal" onClick={(event) => event.stopPropagation()}>
@@ -92,7 +117,20 @@ export function MetricModal({
             {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
             {card.basic.chart && !heroChartRepeatsBreakdown ? (
               <div className="modal-chart">
-                <ChartRenderer chart={card.basic.chart} />
+                <ChartRenderer
+                  chart={wordCloudEditor.displayChart ?? card.basic.chart}
+                  wordCloudEditing={
+                    card.basic.chart.kind === 'wordCloud'
+                      ? {
+                          selectedWord: wordCloudEditor.selectedWord,
+                          onWordClick: wordCloudEditor.onWordClick,
+                          onDeselect: wordCloudEditor.onDeselect,
+                          onRemoveWord: wordCloudEditor.onRemoveWord,
+                          removeLabel: copy.wordCloudSearch.removeLabel,
+                        }
+                      : undefined
+                  }
+                />
               </div>
             ) : null}
           </div>
@@ -118,13 +156,20 @@ export function MetricModal({
               {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
               {hasWordCloud ? (
-                <input
-                  type="search"
-                  className="word-search-input"
-                  placeholder={copy.searchPlaceholder}
-                  value={wordSearch}
-                  onChange={(event) => setWordSearch(event.target.value.toLowerCase())}
-                />
+                <>
+                  <input
+                    type="search"
+                    className="word-search-input"
+                    placeholder={copy.searchPlaceholder}
+                    value={wordSearch}
+                    onChange={(event) => {
+                      setWordSearch(event.target.value.toLowerCase())
+                      wordCloudEditor.clearSearchError()
+                    }}
+                    onKeyDown={handleWordSearchKeyDown}
+                  />
+                  {wordCloudEditor.searchError ? <p className="word-search-error">{wordCloudEditor.searchError}</p> : null}
+                </>
               ) : null}
 
               {filteredDetailChart ? (

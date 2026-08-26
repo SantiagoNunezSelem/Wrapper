@@ -83,7 +83,7 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
       accent: 'tier-orange',
       hasData: true,
       basic: {
-        value: es ? 'Búhos' : 'Night owls',
+        value: es ? 'Hora pico: Noche' : 'Peak hour: Night',
         label: es ? '134 mensajes de madrugada o noche' : '134 late-night messages',
         chart: {
           kind: 'hourHeatmap',

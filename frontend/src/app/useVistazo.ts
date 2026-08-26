@@ -22,6 +22,7 @@ import {
   spendFreeUnlock,
   syncSubscription,
   toggleDevSubscription,
+  updatePreferredLanguage,
 } from '../lib/api'
 import {
   isAiDisabled as readAiDisabled,
@@ -446,6 +447,30 @@ export function useVistazo() {
       setUser(null)
     }
   }
+
+  // The account's saved language wins over whatever was showing before login (browser
+  // default, or a choice made while browsing anonymously): this is what makes a reload
+  // or a login on another device come back with the language the user last picked.
+  useEffect(() => {
+    if (user) {
+      setLanguage(user.preferredLanguage)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.preferredLanguage])
+
+  // The mirror direction: once logged in, toggling the language persists it to the
+  // account instead of only living in this tab. Guarded by the equality check so the
+  // sync above (server -> UI) never bounces back into a network call.
+  useEffect(() => {
+    if (!token || !user || language === user.preferredLanguage) {
+      return
+    }
+
+    updatePreferredLanguage(token, language)
+      .then(setUser)
+      .catch((caught) => console.error(caught))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language])
 
   // Midnight passed with the tab still open. Re-read rather than refill locally: the day
   // key is the server's, and guessing it here is how a UI ends up offering five unlocks

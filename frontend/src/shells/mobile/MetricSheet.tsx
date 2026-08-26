@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
-import { ChartRenderer } from '../../components/charts/ChartRenderer'
+import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
 import { LockedPanel, type FreeUnlockPrompt } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
 import { useCountUp } from '../../components/useCountUp'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
 import { isParticipantBarChart } from '../../lib/metrics'
-import type { ChartData, MetricCard } from '../../types'
+import type { ChartData, ChatMessage, MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 
 /** Estas familias de gráfico son anchas por naturaleza: el heatmap anual tiene
@@ -40,6 +41,7 @@ export function MetricSheet({
   isRevealingFreeUnlock = false,
   overStory = false,
   isSharedStory = false,
+  messages,
   onClose,
   onPrev,
   onNext,
@@ -62,6 +64,11 @@ export function MetricSheet({
   overStory?: boolean
   /** True cuando se visualiza desde una historia compartida (usuario anónimo). */
   isSharedStory?: boolean
+  /** El chat activo en esta pestaña, si lo hay — ver el mismo prop en
+   * MetricModal. Ausente en una historia compartida o en un análisis
+   * guardado: esos nunca traen los mensajes crudos, sólo las tarjetas ya
+   * calculadas. */
+  messages?: ChatMessage[]
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -122,6 +129,22 @@ export function MetricSheet({
     [card.detail?.series, wordSearch],
   )
 
+  const wordCloudEditor = useEditableWordCloud({
+    chart: card.basic?.chart,
+    messages,
+    resetKey: card.id,
+    copy: copy.wordCloudSearch,
+  })
+
+  function handleWordSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+    if (wordCloudEditor.searchAndAdd(wordSearch)) {
+      setWordSearch('')
+    }
+  }
+
   const m = copy.mobile
   const heroSplit = card.basic ? splitLeadingEmoji(card.basic.value) : null
   const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
@@ -162,7 +185,22 @@ export function MetricSheet({
               </strong>
               <span>{card.basic.label}</span>
               {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
-              {card.basic.chart && !heroChartRepeatsBreakdown ? <Chart chart={card.basic.chart} /> : null}
+              {card.basic.chart && !heroChartRepeatsBreakdown ? (
+                <Chart
+                  chart={wordCloudEditor.displayChart ?? card.basic.chart}
+                  wordCloudEditing={
+                    card.basic.chart.kind === 'wordCloud'
+                      ? {
+                          selectedWord: wordCloudEditor.selectedWord,
+                          onWordClick: wordCloudEditor.onWordClick,
+                          onDeselect: wordCloudEditor.onDeselect,
+                          onRemoveWord: wordCloudEditor.onRemoveWord,
+                          removeLabel: copy.wordCloudSearch.removeLabel,
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -185,13 +223,20 @@ export function MetricSheet({
                   {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
                   {hasWordCloud ? (
-                    <input
-                      type="search"
-                      className="word-search-input"
-                      placeholder={copy.searchPlaceholder}
-                      value={wordSearch}
-                      onChange={(event) => setWordSearch(event.target.value.toLowerCase())}
-                    />
+                    <>
+                      <input
+                        type="search"
+                        className="word-search-input"
+                        placeholder={copy.searchPlaceholder}
+                        value={wordSearch}
+                        onChange={(event) => {
+                          setWordSearch(event.target.value.toLowerCase())
+                          wordCloudEditor.clearSearchError()
+                        }}
+                        onKeyDown={handleWordSearchKeyDown}
+                      />
+                      {wordCloudEditor.searchError ? <p className="word-search-error">{wordCloudEditor.searchError}</p> : null}
+                    </>
                   ) : null}
 
                   {filteredDetailChart ? <Chart chart={filteredDetailChart} /> : null}
@@ -310,12 +355,20 @@ export function MetricSheet({
 
 /** Envuelve el gráfico en un contenedor deslizable cuando su familia es más
  * ancha que la pantalla, en vez de dejar que se comprima. */
-function Chart({ chart, compact = false }: { chart: ChartData; compact?: boolean }) {
+function Chart({
+  chart,
+  compact = false,
+  wordCloudEditing,
+}: {
+  chart: ChartData
+  compact?: boolean
+  wordCloudEditing?: WordCloudEditing
+}) {
   if (WIDE_CHARTS.has(chart.kind)) {
     return (
       <div className="m-chart m-scroll-x">
         <div className="m-chart-wide">
-          <ChartRenderer chart={chart} compact={compact} />
+          <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} />
         </div>
       </div>
     )
@@ -323,7 +376,7 @@ function Chart({ chart, compact = false }: { chart: ChartData; compact?: boolean
 
   return (
     <div className="m-chart">
-      <ChartRenderer chart={chart} compact={compact} />
+      <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} />
     </div>
   )
 }

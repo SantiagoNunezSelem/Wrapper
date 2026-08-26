@@ -599,10 +599,12 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             unlock: copy.unlock,
             searchPlaceholder: copy.searchPlaceholder,
             freeUnlockLoading: copy.freeUnlock.loading,
+            wordCloudSearch: copy.wordCloudSearch,
           }}
           ai={aiPanel}
           freeUnlock={freeUnlockFor(selectedMetric)}
           isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
+          messages={activeChat?.messages}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
         />

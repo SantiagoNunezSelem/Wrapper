@@ -51,7 +51,7 @@ describe('splitLeadingEmoji', () => {
   })
 
   it('devuelve null cuando el texto no arranca con emoji', () => {
-    expect(splitLeadingEmoji('Búhos')).toEqual({ emoji: null, rest: 'Búhos' })
+    expect(splitLeadingEmoji('Hora pico: Noche')).toEqual({ emoji: null, rest: 'Hora pico: Noche' })
   })
 
   it('ignora un emoji que no está al principio', () => {

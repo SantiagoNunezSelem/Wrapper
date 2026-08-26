@@ -1054,7 +1054,7 @@ function metricReloj(ctx: MetricContext): MetricResult {
   return {
     hasData: true,
     basic: {
-      value: isOwl ? (language === 'es' ? 'Búhos' : 'Night owls') : language === 'es' ? 'Madrugadores' : 'Early birds',
+      value: isOwl ? (language === 'es' ? 'Hora pico: Noche' : 'Peak hour: Night') : language === 'es' ? 'Hora pico: Mañana' : 'Peak hour: Morning',
       label: isOwl
         ? language === 'es'
           ? `${owls} mensajes de madrugada o noche`
@@ -2995,6 +2995,39 @@ function getWordCounts(messages: ChatMessage[]): Map<string, number> {
     }
   }
   return counts
+}
+
+/** True count of a word (or short phrase) across the whole chat, with none of
+ * `getWordCounts`'s filtering — the word cloud only surfaces content tokens
+ * (length >= 3, not a stopword) among its top 40, so a manual search has to
+ * fall back to scanning the raw messages for anything that isn't already
+ * there. Matches contiguous tokens the same way `getPhraseCounts` does, so a
+ * multi-word search ("buenos dias") only counts occurrences where those words
+ * actually appear back to back. */
+export function countWordOccurrences(messages: ChatMessage[], rawQuery: string): number {
+  const queryTokens = tokenize(rawQuery)
+  if (queryTokens.length === 0) {
+    return 0
+  }
+
+  let total = 0
+  for (const message of messages) {
+    const textWithoutUrls = message.contentText.replace(urlPattern, ' ')
+    const tokens = tokenize(textWithoutUrls)
+    for (let start = 0; start + queryTokens.length <= tokens.length; start += 1) {
+      let matches = true
+      for (let offset = 0; offset < queryTokens.length; offset += 1) {
+        if (tokens[start + offset] !== queryTokens[offset]) {
+          matches = false
+          break
+        }
+      }
+      if (matches) {
+        total += 1
+      }
+    }
+  }
+  return total
 }
 
 /** Counts `n`-word phrases as they actually appear back to back in the text (not

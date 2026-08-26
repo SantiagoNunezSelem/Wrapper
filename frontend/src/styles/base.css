@@ -817,6 +817,12 @@ h3 {
   max-width: 320px;
 }
 
+.word-search-error {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--vz-danger-text);
+}
+
 .modal-columns {
   grid-template-columns: 1fr 1fr;
 }
@@ -1301,8 +1307,51 @@ h3 {
 }
 
 .chart-word-cloud-item {
+  position: relative;
   font-weight: 700;
   line-height: 1;
+}
+
+.chart-word-cloud-item[role='button'] {
+  cursor: pointer;
+}
+
+.chart-word-cloud-item.is-selected {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.chart-word-cloud-remove {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  animation: wordCloudPopIn 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes wordCloudPopIn {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-word-cloud-remove {
+    animation: none;
+  }
 }
 
 .chart-month-heatmap {

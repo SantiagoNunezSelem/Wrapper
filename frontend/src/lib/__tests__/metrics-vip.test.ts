@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { burst, chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
 import type { BarDatum, Language, MetricCard } from '../../types'
-import { computeAnalysisCore } from '../metrics'
+import { computeAnalysisCore, countWordOccurrences } from '../metrics'
 
 beforeEach(resetMessageIds)
 
@@ -283,6 +283,49 @@ describe('métrica wordcloud', () => {
     ])
 
     expect(card.detail?.series?.map((entry) => entry.name)).toEqual(['Ana'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Búsqueda manual en la nube: cuenta cualquier palabra del chat, no sólo las
+// que ya están entre las 40 que muestra la nube (ver countWordOccurrences).
+// ---------------------------------------------------------------------------
+
+describe('countWordOccurrences', () => {
+  it('cuenta una palabra corta o gramatical que la nube descartaría', () => {
+    const messages = chat(
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'ok ok dale' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'ok, va' },
+    )
+
+    expect(countWordOccurrences(messages, 'ok')).toBe(3)
+  })
+
+  it('no distingue mayúsculas ni el signo de puntuación pegado', () => {
+    const messages = chat({ at: '2025-03-10T10:00:00', from: 'Ana', text: 'Pizza! pizza? PIZZA.' })
+
+    expect(countWordOccurrences(messages, 'pizza')).toBe(3)
+  })
+
+  it('cuenta una frase sólo donde las palabras aparecen seguidas', () => {
+    const messages = chat(
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'buenos dias a todos' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'dias buenos, raro orden' },
+    )
+
+    expect(countWordOccurrences(messages, 'buenos dias')).toBe(1)
+  })
+
+  it('una palabra que nunca se dijo da cero', () => {
+    const messages = chat({ at: '2025-03-10T10:00:00', from: 'Ana', text: 'asado asado' })
+
+    expect(countWordOccurrences(messages, 'inexistente')).toBe(0)
+  })
+
+  it('una búsqueda vacía da cero sin recorrer nada', () => {
+    const messages = chat({ at: '2025-03-10T10:00:00', from: 'Ana', text: 'asado asado' })
+
+    expect(countWordOccurrences(messages, '   ')).toBe(0)
   })
 })
 
