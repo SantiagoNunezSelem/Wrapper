@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
@@ -136,7 +136,7 @@ export function MetricSheet({
     copy: copy.wordCloudSearch,
   })
 
-  function handleWordSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleWordSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') {
       return
     }
