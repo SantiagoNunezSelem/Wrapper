@@ -2552,3 +2552,23 @@ button.chat-bubble-divider.is-expandable:active {
     transform: none;
   }
 }
+
+
+/* La acción destructiva de un ConfirmDialog. Mantiene la forma del botón
+   primario —es la acción principal del diálogo— pero cambia el degradado de
+   marca por el rojo de estado: confirmar un borrado no debería verse igual que
+   confirmar una compra. */
+.primary-button.is-danger {
+  background: var(--vz-danger-bg);
+  border: 1px solid var(--vz-danger-border);
+  color: var(--vz-danger-text);
+  box-shadow: none;
+}
+
+.primary-button.is-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.26);
+}
+
+.confirm-modal {
+  max-width: 460px;
+}

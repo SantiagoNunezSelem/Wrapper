@@ -1567,3 +1567,61 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ---------------------------------------------------------------------- */
+/* Historial: la fila envuelve el botón que abre y el que borra.           */
+/* La papelera no puede ir adentro del primero (un botón dentro de otro no */
+/* es HTML válido), así que son hermanos y la fila los posiciona.          */
+/* ---------------------------------------------------------------------- */
+
+.history-row {
+  position: relative;
+  display: flex;
+}
+
+.history-row .history-item {
+  flex: 1;
+  min-width: 0;
+  /* Espacio a la derecha para que el nombre del chat no pase por debajo de la
+     papelera cuando ésta aparece. */
+  padding-right: 44px;
+}
+
+.history-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--vz-radius-xs);
+  background: transparent;
+  color: var(--vz-text-dim);
+  cursor: pointer;
+  /* Escondida hasta que la fila esté en hover o algo adentro tenga el foco:
+     borrar es la acción rara de esta lista, abrir es la común. `:focus-within`
+     es lo que la deja alcanzable con teclado, donde no hay hover. */
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.history-row:hover .history-delete,
+.history-row:focus-within .history-delete {
+  opacity: 1;
+}
+
+.history-delete:hover {
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}
+
+/* Sin hover (táctil) nunca habría forma de llegar al botón, así que ahí queda
+   siempre visible. */
+@media (hover: none) {
+  .history-delete {
+    opacity: 1;
+  }
+}

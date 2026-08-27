@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
@@ -18,9 +18,12 @@ import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipBadge } from '../../components/VipBadge'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
-import { landingMockupStats } from '../../copy/shellCopy'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { landingMockupStats, type ShellCopy } from '../../copy/shellCopy'
 import { formatNumber } from '../../lib/metrics'
 import { useInView } from '../../lib/useInView'
+import { usePwaInstall } from '../../lib/usePwaInstall'
+import type { Language, SavedAnalysis } from '../../types'
 import './desktop.css'
 
 /**
@@ -99,6 +102,11 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
     backToLanding,
   } = vistazo
 
@@ -127,6 +135,19 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
 
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+
+  /* Instalar la app sólo se ofrecía desde un paso del tutorial de exportación, que
+     quien ya sabe exportar nunca abre. Acá está donde vive el resto de lo que es
+     "de la cuenta", y sólo cuando el navegador tiene el prompt listo. */
+  const { canInstall: canInstallApp, install: installApp } = usePwaInstall()
+
+  /* Baja a las 25 tarjetas memoizadas: escrito inline sería un handler nuevo en
+     cada render y el memo no serviría de nada. setSelectedMetricId es un setter
+     de estado, así que su identidad ya es estable. */
+  const openMetricDetail = useCallback(
+    (selected: { id: string }) => setSelectedMetricId(selected.id),
+    [setSelectedMetricId],
+  )
 
   // El dropdown de cuenta no tiene backdrop propio (a diferencia de los
   // modales) — se cierra con cualquier click afuera de la píldora, escuchado
@@ -243,6 +264,18 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                   <button type="button" className="account-menu-action" onClick={goToSubscriptionPage}>
                     {copy.manageSubscription}
                   </button>
+
+                  {canInstallApp ? (
+                    <button
+                      type="button"
+                      className="account-menu-action"
+                      onClick={() => {
+                        void installApp()
+                      }}
+                    >
+                      {copy.installApp}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -307,18 +340,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               <section className="panel history-panel">
                 <h2>{copy.savedTitle}</h2>
                 {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
-                <div className="history-list">
-                  {savedAnalyses.map((item) => (
-                    <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
-                      <strong>{item.chatName}</strong>
-                      <span>{item.dateRangeLabel}</span>
-                      <span>
-                        {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
-                      </span>
-                      <em>{copy.openSaved}</em>
-                    </button>
-                  ))}
-                </div>
+                <HistoryList
+                  items={savedAnalyses}
+                  language={language}
+                  copy={copy}
+                  onOpen={openSavedAnalysis}
+                  onDelete={requestDeleteAnalysis}
+                />
               </section>
             </aside>
           </div>
@@ -339,7 +367,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                         seeMoreLabel={copy.seeMore}
                         unlockLabel={copy.unlock}
                         ai={aiPanel}
-                        onOpen={(selected) => setSelectedMetricId(selected.id)}
+                        onOpen={openMetricDetail}
                         onUnlock={requestUnlock}
                       />
                     </div>
@@ -388,18 +416,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             {savedAnalyses.length === 0 ? (
               <p>{copy.noSaved}</p>
             ) : (
-              <div className="history-list">
-                {savedAnalyses.map((item) => (
-                  <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
-                    <strong>{item.chatName}</strong>
-                    <span>{item.dateRangeLabel}</span>
-                    <span>
-                      {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
-                    </span>
-                    <em>{copy.openSaved}</em>
-                  </button>
-                ))}
-              </div>
+              <HistoryList
+                items={savedAnalyses}
+                language={language}
+                copy={copy}
+                onOpen={openSavedAnalysis}
+                onDelete={requestDeleteAnalysis}
+              />
             )}
           </section>
         </main>
@@ -640,6 +663,24 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         />
       ) : null}
 
+      {pendingDeleteAnalysis ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.deleteSavedTitle,
+            body: copy.deleteSavedConfirm.replace('{chat}', pendingDeleteAnalysis.chatName),
+            confirm: copy.deleteSavedCta,
+            cancel: copy.deleteSavedCancel,
+            busy: copy.deleting,
+            close: copy.close,
+          }}
+          isBusy={isDeletingAnalysis}
+          onConfirm={() => {
+            void confirmDeleteAnalysis()
+          }}
+          onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
       {isConsentModalOpen ? (
         <AiConsentModal
           copy={{ ...copy.consent, close: copy.close }}
@@ -665,6 +706,63 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       {busyMessage ? (
         <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
       ) : null}
+    </div>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
+  )
+}
+
+/** El historial guardado. Vivía escrito dos veces —una en la barra lateral del
+ * análisis y otra en la pantalla de "todavía no subiste nada"— con el mismo JSX
+ * copiado; ahora es uno solo, que es lo que permitió agregarle el borrado en los
+ * dos lugares a la vez. */
+function HistoryList({
+  items,
+  language,
+  copy,
+  onOpen,
+  onDelete,
+}: {
+  items: SavedAnalysis[]
+  language: Language
+  copy: ShellCopy
+  onOpen: (item: SavedAnalysis) => void
+  onDelete: (item: SavedAnalysis) => void
+}) {
+  return (
+    <div className="history-list">
+      {items.map((item) => (
+        <div key={item.id} className="history-row">
+          <button type="button" className="history-item" onClick={() => onOpen(item)}>
+            <strong>{item.chatName}</strong>
+            <span>{item.dateRangeLabel}</span>
+            {/* Antes decía "1.234 · 4", sin aclarar de qué eran esos números. */}
+            <span>
+              {formatNumber(item.messageCount, language)} {copy.messages.toLowerCase()} ·{' '}
+              {formatNumber(item.participantCount, language)} {copy.participants.toLowerCase()}
+            </span>
+            <em>{copy.openSaved}</em>
+          </button>
+
+          {/* El nombre del chat va en la etiqueta: con diez filas iguales, diez
+              botones que digan sólo "Borrar" no le sirven a nadie que navegue
+              por lector de pantalla. */}
+          <button
+            type="button"
+            className="history-delete"
+            onClick={() => onDelete(item)}
+            aria-label={`${copy.deleteSaved}: ${item.chatName}`}
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

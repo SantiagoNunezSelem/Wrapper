@@ -18,7 +18,7 @@ namespace backend.Tests.Infrastructure;
 
 /// <summary>
 /// Levanta la API entera en memoria — con su pipeline real: autenticación JWT, CORS,
-/// rate limiting, serialización y los 22 endpoints — contra una SQLite en memoria.
+/// rate limiting, serialización y los 23 endpoints — contra una SQLite en memoria.
 ///
 /// <para>Es deliberadamente la app de verdad y no una copia: un test que llamara a los
 /// handlers a mano se saltearía justo las partes que más se rompen (el <c>[Authorize]</c>,

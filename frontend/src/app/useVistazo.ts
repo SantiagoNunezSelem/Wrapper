@@ -1,5 +1,5 @@
 import { type CredentialResponse } from '@react-oauth/google'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { AiPanelProps } from '../components/AiStatePanel'
 import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import { shellCopy } from '../copy/shellCopy'
@@ -10,6 +10,7 @@ import {
   ApiError,
   cancelSubscription,
   createShare,
+  deleteAnalysis,
   getCurrentUser,
   getFreeUnlocks,
   getSubscription,
@@ -83,6 +84,11 @@ export function useVistazo() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [token, setToken] = useState<string | null>(localStorage.getItem(authTokenKey))
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
+  // El análisis para el que hay una confirmación de borrado abierta. Se guarda el id
+  // y la fila se busca por él, así una lista que se refresca no deja el diálogo
+  // hablando de algo que ya no está.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [isDeletingAnalysis, setIsDeletingAnalysis] = useState(false)
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
   // Two sources for what's on screen: a live upload (kept as an ungated core so VIP
   // and AI state can be re-applied for free) and a bundle replayed from history.
@@ -528,15 +534,24 @@ export function useVistazo() {
   }
 
   /** "Desbloquear VIP" on a locked card: a quick popover, not a page — see
-   * VipUnlockPopover. Loads the plan/eligibility data it needs if signed in. */
-  function openVipPopover() {
-    setSubscriptionError('')
-    setIsVipPopoverOpen(true)
+   * VipUnlockPopover. Loads the plan/eligibility data it needs if signed in.
+   *
+   * Envuelto en useCallback porque baja como prop a las 25 tarjetas: si cambiara
+   * de identidad en cada render, el memo de MetricCard/MetricRow no serviría de
+   * nada y cualquier cambio de estado del shell volvería a dibujar los 25
+   * gráficos. */
+  const openVipPopover = useCallback(
+    () => {
+      setSubscriptionError('')
+      setIsVipPopoverOpen(true)
 
-    if (token) {
-      void loadSubscription(token)
-    }
-  }
+      if (token) {
+        void loadSubscription(token)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token],
+  )
 
   // Keeps the account screen's data fresh whenever it becomes the active route — a click
   // from inside the app (goToSubscriptionPage above never fetches itself), a page load
@@ -748,10 +763,11 @@ export function useVistazo() {
     }
   }
 
-  /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover. */
-  function requestUnlock() {
+  /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover.
+   * Estable por la misma razón que openVipPopover. */
+  const requestUnlock = useCallback(() => {
     openVipPopover()
-  }
+  }, [openVipPopover])
 
   /**
    * What a locked panel should offer for one card, or `undefined` for the plain VIP
@@ -1083,6 +1099,47 @@ export function useVistazo() {
     }
   }
 
+  function requestDeleteAnalysis(item: SavedAnalysis) {
+    setPendingDeleteId(item.id)
+  }
+
+  function cancelDeleteAnalysis() {
+    setPendingDeleteId(null)
+  }
+
+  /**
+   * Borra un análisis del historial.
+   *
+   * Si el que se borra es justo el que está en pantalla (un replay desde el
+   * historial), se vuelve al inicio: seguir mostrando un análisis que la cuenta ya
+   * no tiene es prometer un "Ver más" que la próxima recarga no va a cumplir.
+   */
+  async function confirmDeleteAnalysis() {
+    const id = pendingDeleteId
+
+    if (!token || !id) {
+      return
+    }
+
+    const target = savedAnalyses.find((item) => item.id === id) ?? null
+    setIsDeletingAnalysis(true)
+
+    try {
+      await deleteAnalysis(token, id)
+      setSavedAnalyses((current) => current.filter((item) => item.id !== id))
+
+      if (isReplay && target && replayedAnalysis?.sourceHash === target.sourceHash) {
+        backToLanding()
+      }
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.deleteSavedError)
+    } finally {
+      setIsDeletingAnalysis(false)
+      setPendingDeleteId(null)
+    }
+  }
+
   function openSavedAnalysis(item: SavedAnalysis) {
     setActiveChat(null)
     setCore(null)
@@ -1105,15 +1162,26 @@ export function useVistazo() {
 
   // Only Pro viewers get the AI panel; for everyone else an AI metric is just a locked
   // VIP card and the upsell is the right message.
-  const aiPanel: AiPanelProps | undefined = hasVipAccess
-    ? {
-        copy: copy.ai,
-        canRetry: Boolean(activeChat && core),
-        isBusy: isAiBusy,
-        onRetry: handleAiRetry,
-        onConsent: () => setIsConsentModalOpen(true),
-      }
-    : undefined
+  /* Memoizado por lo mismo que requestUnlock: es un objeto nuevo en cada render
+     y baja como prop a las 25 tarjetas, así que su identidad decide si el memo
+     de MetricCard/MetricRow sirve o no. */
+  const canRetryAi = Boolean(activeChat && core)
+  const aiPanel: AiPanelProps | undefined = useMemo(
+    () =>
+      hasVipAccess
+        ? {
+            copy: copy.ai,
+            canRetry: canRetryAi,
+            isBusy: isAiBusy,
+            onRetry: handleAiRetry,
+            onConsent: () => setIsConsentModalOpen(true),
+          }
+        : undefined,
+    // handleAiRetry se redeclara en cada render, pero lee todo de refs y de estado
+    // que ya están en esta lista; incluirlo anularía el memo sin agregar frescura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasVipAccess, copy.ai, canRetryAi, isAiBusy],
+  )
 
   const generatedAt = useMemo(() => {
     if (!analysis) {
@@ -1148,6 +1216,13 @@ export function useVistazo() {
   const pendingFreeUnlockMetric = useMemo(
     () => interleavedMetrics.find((card) => card.id === pendingFreeUnlockId) ?? null,
     [interleavedMetrics, pendingFreeUnlockId],
+  )
+
+  /** Igual que arriba: buscado, no guardado, así el diálogo nunca nombra un análisis
+   * que ya salió de la lista. */
+  const pendingDeleteAnalysis = useMemo(
+    () => savedAnalyses.find((item) => item.id === pendingDeleteId) ?? null,
+    [savedAnalyses, pendingDeleteId],
   )
 
   /**
@@ -1193,6 +1268,8 @@ export function useVistazo() {
     activeChat,
     analysis,
     savedAnalyses,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
     interleavedMetrics,
     landingPreviewCards,
     selectedMetric,
@@ -1268,6 +1345,9 @@ export function useVistazo() {
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
     backToLanding,
   }
 }

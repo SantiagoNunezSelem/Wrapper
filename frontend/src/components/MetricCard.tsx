@@ -7,7 +7,7 @@ import { ChartRenderer } from './charts/ChartRenderer'
 import { LockedPanel } from './LockedPanel'
 
 */
-import { useRef, type MouseEvent } from 'react'
+import { memo, useRef, type MouseEvent } from 'react'
 import { prefersReducedMotion } from '../lib/prefersReducedMotion'
 import type { MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
@@ -28,7 +28,15 @@ function CrownIcon() {
   )
 }
 
-export function MetricCard({
+/**
+ * NUEVO: memoizada. La grilla monta 25 de éstas, cada una con su gráfico (el
+ * heatmap anual son 365 celdas SVG), y sin esto cualquier cambio de estado del
+ * shell —abrir el menú de cuenta, abrir el modal de una métrica— las volvía a
+ * dibujar todas. Depende de que `ai` y `onUnlock` lleguen con identidad estable
+ * desde `useVistazo`; si alguna vuelve a construirse en cada render, esto deja
+ * de servir en silencio.
+ */
+export const MetricCard = memo(function MetricCard({
   card,
   seeMoreLabel,
   unlockLabel,
@@ -126,4 +134,4 @@ export function MetricCard({
       </button>
     </article>
   )
-}
+})

@@ -232,6 +232,89 @@ public sealed class AnalysesEndpointTests(ApiFactory factory) : IClassFixture<Ap
         Assert.Equal("Nuevo", body[0].GetProperty("chatName").GetString());
     }
 
+    // -----------------------------------------------------------------------
+    // Borrado
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Borrar_sin_sesion_es_401()
+    {
+        var response = await factory.CreateClient().DeleteAsync($"/api/analyses/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Borra_un_analisis_propio_y_devuelve_204()
+    {
+        var (client, user) = factory.CreateAuthenticatedClient();
+        var created = await ReadJson(await client.PostAsJsonAsync("/api/analyses", Payload()));
+        var id = created.GetProperty("id").GetGuid();
+
+        var response = await client.DeleteAsync($"/api/analyses/{id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        using var db = factory.NewDbContext();
+        Assert.Equal(0, await db.Analyses.CountAsync(item => item.UserId == user.Id));
+    }
+
+    [Fact]
+    public async Task Despues_de_borrar_el_analisis_ya_no_aparece_en_el_listado()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient();
+        await client.PostAsJsonAsync("/api/analyses", Payload(chatName: "Queda", sourceHash: new string('a', 64)));
+        var doomed = await ReadJson(
+            await client.PostAsJsonAsync("/api/analyses", Payload(chatName: "Se va", sourceHash: new string('b', 64))));
+
+        await client.DeleteAsync($"/api/analyses/{doomed.GetProperty("id").GetGuid()}");
+
+        var body = await ReadJson(await client.GetAsync("/api/analyses"));
+        Assert.Equal(1, body.GetArrayLength());
+        Assert.Equal("Queda", body[0].GetProperty("chatName").GetString());
+    }
+
+    [Fact]
+    public async Task Una_cuenta_NUNCA_puede_borrar_el_analisis_de_otra()
+    {
+        var (mine, _) = factory.CreateAuthenticatedClient();
+        var (theirs, other) = factory.CreateAuthenticatedClient();
+        var created = await ReadJson(await theirs.PostAsJsonAsync("/api/analyses", Payload()));
+
+        var response = await mine.DeleteAsync($"/api/analyses/{created.GetProperty("id").GetGuid()}");
+
+        // 404 y no 403: confirmar que ese id existe ya sería contar algo de la otra cuenta.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        using var db = factory.NewDbContext();
+        Assert.Equal(1, await db.Analyses.CountAsync(item => item.UserId == other.Id));
+    }
+
+    [Fact]
+    public async Task Borrar_algo_que_no_existe_es_404_con_codigo()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient();
+
+        var response = await client.DeleteAsync($"/api/analyses/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("analysis_not_found", (await ReadJson(response)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Borrar_hace_lugar_cuando_la_cuenta_llego_al_tope()
+    {
+        // El tope existe para que una cuenta no llene el volumen; sin borrado, llegar a él
+        // dejaba al usuario sin ninguna salida.
+        var (client, user) = factory.CreateAuthenticatedClient();
+        var created = await ReadJson(await client.PostAsJsonAsync("/api/analyses", Payload()));
+
+        await client.DeleteAsync($"/api/analyses/{created.GetProperty("id").GetGuid()}");
+        var again = await client.PostAsJsonAsync("/api/analyses", Payload());
+
+        Assert.Equal(HttpStatusCode.Created, again.StatusCode);
+        using var db = factory.NewDbContext();
+        Assert.Equal(1, await db.Analyses.CountAsync(item => item.UserId == user.Id));
+    }
+
     [Fact]
     public async Task El_listado_devuelve_todos_los_campos_que_el_cliente_usa()
     {

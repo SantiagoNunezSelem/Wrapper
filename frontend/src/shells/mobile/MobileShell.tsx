@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AiConsentModal } from '../../components/AiConsentModal'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DevToolbar } from '../../components/DevToolbar'
 import { ErrorBanner } from '../../components/ErrorBanner'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
@@ -97,6 +98,11 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleCancelSubscription,
     handleRefreshSubscription,
     openSavedAnalysis,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
   } = vistazo
 
   const [view, setView] = useState<MobileView>('home')
@@ -124,6 +130,12 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       setView('home')
     }
   }, [analysis, view])
+
+  /* Baja a las 25 filas memoizadas — ver el memo de MetricRow. */
+  const openMetricFromList = useCallback((card: MetricCard) => {
+    setOpenMetricId(card.id)
+    setIsDetailOverStory(false)
+  }, [])
 
   const openMetricIndex = useMemo(
     () => (openMetricId === null ? -1 : interleavedMetrics.findIndex((card) => card.id === openMetricId)),
@@ -250,6 +262,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 busyMessage={busyMessage}
                 onUpload={requestUpload}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
                 onSeeAll={() => goTo('history')}
               />
             ) : null}
@@ -264,10 +277,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                   generatedAt={generatedAt}
                   showReprocessHint={showReprocessHint}
                   ai={aiPanel}
-                  onOpenMetric={(card: MetricCard) => {
-                    setOpenMetricId(card.id)
-                    setIsDetailOverStory(false)
-                  }}
+                  onOpenMetric={openMetricFromList}
                   onStartStory={() => setIsStoryOpen(true)}
                 />
               ) : (
@@ -291,6 +301,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 language={language}
                 user={user}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onUpload={requestUpload}
               />
@@ -448,6 +459,24 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             void confirmFreeUnlock()
           }}
           onCancel={cancelFreeUnlock}
+        />
+      ) : null}
+
+      {pendingDeleteAnalysis ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.deleteSavedTitle,
+            body: copy.deleteSavedConfirm.replace('{chat}', pendingDeleteAnalysis.chatName),
+            confirm: copy.deleteSavedCta,
+            cancel: copy.deleteSavedCancel,
+            busy: copy.deleting,
+            close: copy.close,
+          }}
+          isBusy={isDeletingAnalysis}
+          onConfirm={() => {
+            void confirmDeleteAnalysis()
+          }}
+          onCancel={cancelDeleteAnalysis}
         />
       ) : null}
 

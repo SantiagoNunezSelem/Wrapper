@@ -1,7 +1,8 @@
 import { useModalDismiss } from '../../components/useModalDismiss'
 import type { ShellCopy } from '../../copy/shellCopy'
+import { usePwaInstall } from '../../lib/usePwaInstall'
 import type { Language, UserProfile } from '../../types'
-import { ChartIcon, CrownIcon, FolderIcon, GlobeIcon, HomeIcon, ShieldIcon, SignOutIcon } from './icons'
+import { ChartIcon, CrownIcon, FolderIcon, GlobeIcon, HomeIcon, InstallIcon, ShieldIcon, SignOutIcon } from './icons'
 import type { MobileTab } from './MobileTabBar'
 
 /**
@@ -98,6 +99,12 @@ function DrawerPanel({
      diálogos, en vez de reimplementado acá. */
   const panelRef = useModalDismiss<HTMLDivElement>(onClose)
 
+  /* Instalar la app estaba escondido en un paso del tutorial de exportación: quien
+     ya sabe exportar nunca lo veía. Y sin instalar no existe el "compartir a
+     Vistazo" desde WhatsApp, que es para lo que está toda la plomería del
+     share_target. Sólo aparece cuando el navegador tiene el prompt listo. */
+  const { canInstall, install } = usePwaInstall()
+
   const m = copy.mobile
 
   return (
@@ -156,6 +163,15 @@ function DrawerPanel({
             value={language === 'es' ? 'ES' : 'EN'}
             onClick={onToggleLanguage}
           />
+          {canInstall ? (
+            <DrawerItem
+              icon={<InstallIcon size={17} />}
+              label={copy.installApp}
+              onClick={() => {
+                void install()
+              }}
+            />
+          ) : null}
         </nav>
 
         <hr className="m-drawer-rule" />
