@@ -12,6 +12,13 @@ namespace backend.Endpoints;
 
 public static class SubscriptionEndpoints
 {
+    /// <summary>
+    /// How long one webhook may take before it is abandoned. Comfortably under Mercado
+    /// Pago's own 22-second cutoff, so we choose the outcome rather than having them time
+    /// us out.
+    /// </summary>
+    private static readonly TimeSpan WebhookBudget = TimeSpan.FromSeconds(18);
+
     public static void MapSubscriptionEndpoints(this WebApplication app)
     {
         // Public: the landing page needs a price to advertise before anyone signs in.
@@ -228,6 +235,17 @@ public static class SubscriptionEndpoints
                 return Results.Unauthorized();
             }
 
+            // Mercado Pago gives a webhook 22 seconds to answer and treats anything slower
+            // as a failure. Handling one notification can chain two calls back to them
+            // (read the payment, then re-read the preapproval), each with its own timeout,
+            // which together can outlast that window — and a webhook that "fails" often
+            // enough stops being delivered at all, which is precisely how a paid
+            // subscription ends up stranded. So the work gets a budget that fits inside
+            // their limit, and blowing it becomes a deliberate 500: a redelivery we can
+            // still act on, instead of a silent timeout on their side.
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(WebhookBudget);
+
             try
             {
                 await subscriptions.HandleNotificationAsync(
@@ -235,7 +253,17 @@ public static class SubscriptionEndpoints
                     notification.Action,
                     notification.DataId,
                     rawBody,
-                    cancellationToken);
+                    budget.Token);
+            }
+            catch (OperationCanceledException) when (budget.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    "Gave up on Mercado Pago notification {Topic}/{DataId} after {Seconds}s to answer inside their window; it will be redelivered, and the reconciler covers it either way.",
+                    notification.Topic,
+                    notification.DataId,
+                    WebhookBudget.TotalSeconds);
+
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
             catch (Exception exception)
             {

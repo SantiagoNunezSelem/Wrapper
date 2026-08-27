@@ -2117,12 +2117,6 @@ button.chat-bubble-divider.is-expandable:active {
   color: var(--vz-text-dim);
 }
 
-.subpage-hint {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--vz-text-dim);
-}
-
 .subpage-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

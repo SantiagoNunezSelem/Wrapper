@@ -133,7 +133,15 @@ public sealed class MercadoPagoClient(
             ["auto_recurring"] = autoRecurring,
         };
 
-        return await SendAsync<Preapproval>(HttpMethod.Post, "/preapproval", body, cancellationToken)
+        // Keyed by our own subscription id: if this call times out after Mercado Pago has
+        // already accepted it, retrying the same checkout collapses onto the same
+        // preapproval instead of leaving the payer with a second one to authorise.
+        return await SendAsync<Preapproval>(
+                HttpMethod.Post,
+                "/preapproval",
+                body,
+                cancellationToken,
+                idempotencyKey: $"preapproval:{externalReference}")
             ?? throw new MercadoPagoException("Mercado Pago returned an empty subscription.");
     }
 
@@ -226,7 +234,8 @@ public sealed class MercadoPagoClient(
         HttpMethod method,
         string path,
         Dictionary<string, object?>? body,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? idempotencyKey = null)
     {
         if (!_options.IsConfigured)
         {
@@ -240,10 +249,14 @@ public sealed class MercadoPagoClient(
         {
             request.Content = JsonContent.Create(body, options: JsonOptions);
 
-            // Mercado Pago deduplicates retried writes by this key. Without it a timeout
-            // that actually succeeded server-side would leave the customer with two
-            // subscriptions — and two monthly charges.
-            request.Headers.TryAddWithoutValidation("X-Idempotency-Key", Guid.NewGuid().ToString());
+            // Mercado Pago deduplicates retried writes by this key, so it is only worth
+            // anything when it is *stable* across the retries it is meant to collapse — a
+            // fresh Guid per call (what this used to send) dedupes nothing at all. Callers
+            // that can name the operation pass their own; the rest fall back to a random
+            // one, which at least keeps the header present and well-formed.
+            request.Headers.TryAddWithoutValidation(
+                "X-Idempotency-Key",
+                idempotencyKey ?? Guid.NewGuid().ToString());
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

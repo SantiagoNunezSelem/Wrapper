@@ -107,6 +107,55 @@ public sealed class TrialEligibilityService(
 
         logger.LogInformation("Free trial claimed by user {UserId} on subscription {SubscriptionId}.", user.Id, subscription.Id);
     }
+
+    /// <summary>
+    /// Hands the free week back, for a checkout that Mercado Pago never authorised and the
+    /// customer has explicitly abandoned.
+    /// </summary>
+    /// <remarks>
+    /// This does not re-open the hole <see cref="Claim"/> exists to close. That one is
+    /// about someone collecting <em>several</em> free weeks; this is about not charging
+    /// anyone for one they never received. The release is deliberately narrow — see the
+    /// caller in <see cref="SubscriptionService.CancelAsync"/>: no provider subscription,
+    /// no payment, and the customer asking us to forget the attempt. Whoever cancels and
+    /// starts over still ends up with exactly one free week when they do subscribe, which
+    /// is the rule the ledger is there to enforce.
+    ///
+    /// Only this subscription's claims go; any older one stays, so an account that really
+    /// did use its week keeps <see cref="User.HasUsedTrial"/> set.
+    /// </remarks>
+    public async Task ReleaseAsync(User user, Subscription subscription, CancellationToken cancellationToken)
+    {
+        if (!subscription.TrialWasApplied)
+        {
+            return;
+        }
+
+        var claims = await db.TrialClaims
+            .Where(claim => claim.SubscriptionId == subscription.Id)
+            .ToListAsync(cancellationToken);
+
+        if (claims.Count > 0)
+        {
+            db.TrialClaims.RemoveRange(claims);
+        }
+
+        var otherClaims = await db.TrialClaims
+            .AnyAsync(claim => claim.UserId == user.Id && claim.SubscriptionId != subscription.Id, cancellationToken);
+
+        if (!otherClaims)
+        {
+            user.HasUsedTrial = false;
+            user.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        subscription.TrialWasApplied = false;
+
+        logger.LogInformation(
+            "Free trial returned to user {UserId}: subscription {SubscriptionId} was abandoned before Mercado Pago authorised it.",
+            user.Id,
+            subscription.Id);
+    }
 }
 
 /// <param name="Reason">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { formatMoney } from '../lib/format'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
@@ -551,10 +551,32 @@ function ConfirmDialog({
   onConfirm: () => void
   onDismiss: () => void
 }) {
+  const titleId = useId()
+
+  // Escape backs out. Worth wiring on this dialog in particular: both of the things it
+  // guards — cancelling and pausing — are ones people open to read and then decide against,
+  // and a confirm you can only escape by finding the right button reads as a trap.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onDismiss()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onDismiss])
+
   return (
     <div className="modal-backdrop nested-backdrop" role="presentation" onClick={onDismiss}>
-      <section className="modal-card confirm-card" onClick={(event) => event.stopPropagation()}>
-        <h3>{title}</h3>
+      <section
+        className="modal-card confirm-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id={titleId}>{title}</h3>
         <p className="panel-copy">{body}</p>
         <div className="consent-actions">
           <button

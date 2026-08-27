@@ -209,6 +209,18 @@ describe('SubscriptionPage', () => {
       expect(handlers.onCancel).toHaveBeenCalledTimes(1)
     })
 
+    it('se puede salir con Escape sin cancelar nada', async () => {
+      const handlers = renderPage(overview(record(), { canCancel: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.cancelCta }))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      await userEvent.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(handlers.onCancel).not.toHaveBeenCalled()
+    })
+
     it('el aviso de qué pasó se muestra con lo que respondió el servidor', () => {
       const data = overview(record({ status: 'cancelada', autoRenewEnabled: false }))
       data.cancellation = { nothingWillBeCharged: true, alreadyCancelled: false, accessUntilUtc: null }

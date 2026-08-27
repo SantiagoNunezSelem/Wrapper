@@ -289,6 +289,14 @@ public sealed class SubscriptionService(
             // and the only thing that can be done.
             if (subscription.Status == "pendiente")
             {
+                // The free week is handed back. It was burned when the checkout opened —
+                // the conservative default — but this customer never got a single day of
+                // it, and "Cancelar" is the only way out of a checkout they changed their
+                // mind about. Charging them their one free week for closing a tab would be
+                // indefensible, and it costs nothing: they still get exactly one when they
+                // do subscribe.
+                await trialEligibility.ReleaseAsync(user, subscription, cancellationToken);
+
                 subscription.Status = "cancelada";
                 subscription.CancelledAtUtc = DateTime.UtcNow;
                 subscription.CheckoutUrl = null;
@@ -738,6 +746,13 @@ public sealed class SubscriptionService(
             subscription.PaymentMethodLabel = label;
         }
 
+        // The charge belongs in the billing history whichever topic announced it. Without
+        // this, a first payment that only ever arrives as `payment` — which is the common
+        // case — would flip the account to "activa" while "Historial de pagos" stayed
+        // empty, and the one screen someone opens to check they were charged correctly
+        // would be missing the charge.
+        await UpsertInvoiceFromPaymentAsync(subscription, payment, cancellationToken);
+
         if (payment.Status is "approved")
         {
             subscription.LastPaymentAtUtc = payment.DateApproved ?? payment.DateLastUpdated ?? DateTime.UtcNow;
@@ -1020,9 +1035,27 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken)
     {
         var externalId = payment.Id?.ToString(CultureInfo.InvariantCulture) ?? Guid.NewGuid().ToString();
+        var transactionId = payment.Payment?.Id?.ToString(CultureInfo.InvariantCulture);
 
         var invoice = await db.SubscriptionInvoices
             .FirstOrDefaultAsync(item => item.ExternalPaymentId == externalId, cancellationToken);
+
+        // The same charge can reach us twice under two different ids: the `payment` topic
+        // knows only the payment, the `subscription_authorized_payment` topic knows the
+        // scheduled debit that wraps it. Whichever arrived first already made a row, and
+        // the underlying payment id is what proves they are the same money — so that row
+        // is adopted and re-keyed rather than duplicated into a second line on someone's
+        // billing history.
+        if (invoice is null && transactionId is not null)
+        {
+            invoice = await db.SubscriptionInvoices
+                .FirstOrDefaultAsync(item => item.ExternalTransactionId == transactionId, cancellationToken);
+
+            if (invoice is not null)
+            {
+                invoice.ExternalPaymentId = externalId;
+            }
+        }
 
         if (invoice is null)
         {
@@ -1057,6 +1090,67 @@ public sealed class SubscriptionService(
 
         return invoice;
     }
+
+    /// <summary>
+    /// Records a charge announced by the plain <c>payment</c> topic. Deliberately keyed on
+    /// the payment id under <see cref="SubscriptionInvoice.ExternalTransactionId"/> as well
+    /// as <c>ExternalPaymentId</c>, so that when the matching
+    /// <c>subscription_authorized_payment</c> shows up later — with its own, different id —
+    /// <see cref="UpsertInvoiceAsync"/> recognises this row as the same money and re-keys
+    /// it instead of adding a second line.
+    /// </summary>
+    private async Task<SubscriptionInvoice> UpsertInvoiceFromPaymentAsync(
+        Subscription subscription,
+        MercadoPagoPayment payment,
+        CancellationToken cancellationToken)
+    {
+        var paymentId = payment.Id?.ToString(CultureInfo.InvariantCulture) ?? Guid.NewGuid().ToString();
+
+        var invoice =
+            await db.SubscriptionInvoices.FirstOrDefaultAsync(
+                item => item.ExternalTransactionId == paymentId, cancellationToken) ??
+            await db.SubscriptionInvoices.FirstOrDefaultAsync(
+                item => item.ExternalPaymentId == paymentId, cancellationToken);
+
+        if (invoice is null)
+        {
+            invoice = new SubscriptionInvoice
+            {
+                SubscriptionId = subscription.Id,
+                UserId = subscription.UserId,
+                ExternalPaymentId = paymentId,
+            };
+
+            db.SubscriptionInvoices.Add(invoice);
+        }
+
+        invoice.ExternalTransactionId = paymentId;
+        invoice.Amount = payment.TransactionAmount ?? subscription.Amount;
+        invoice.CurrencyId = payment.CurrencyId ?? subscription.CurrencyId;
+        invoice.RawStatus = payment.Status;
+        invoice.Status = MapPaymentStatus(payment.Status);
+        invoice.StatusDetail = payment.StatusDetail ?? invoice.StatusDetail;
+        invoice.PaidAtUtc = invoice.Status == "aprobado" ? payment.DateApproved ?? payment.DateLastUpdated : null;
+        invoice.PaymentMethodLabel =
+            BuildPaymentMethodLabel(payment.PaymentMethodId, payment.Card?.LastFourDigits) ?? invoice.PaymentMethodLabel;
+        invoice.UpdatedAtUtc = DateTime.UtcNow;
+
+        return invoice;
+    }
+
+    /// <summary>
+    /// Maps a payment's own status. <c>in_process</c> and <c>authorized</c> are pending,
+    /// not failures: the first is Mercado Pago still deciding (the state behind
+    /// <c>pending_contingency</c>), the second is money held but not yet captured.
+    /// </summary>
+    private static string MapPaymentStatus(string? status) =>
+        status?.ToLowerInvariant() switch
+        {
+            "approved" => "aprobado",
+            "rejected" or "cancelled" or "canceled" => "rechazado",
+            "refunded" or "charged_back" => "devuelto",
+            _ => "pendiente",
+        };
 
     private static string MapInvoiceStatus(AuthorizedPayment payment) =>
         (payment.Payment?.Status ?? payment.Status)?.ToLowerInvariant() switch

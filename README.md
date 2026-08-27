@@ -310,6 +310,14 @@ La semana gratis se otorga una sola vez, y se controla por tres vías a la vez (
 Las IPs y los ids de dispositivo se guardan **hasheados con sal**: la tabla solo necesita
 responder "¿ya lo vi?", nunca "¿quién era?".
 
+**Cuándo se quema y cuándo se devuelve.** La semana se marca como usada al **abrir** el
+checkout, no al convertir — así abandonar el pago a mitad de camino no deja la oferta
+disponible para siempre. La excepción es cancelar un checkout que Mercado Pago **nunca
+llegó a autorizar**: ahí se devuelve, porque esa persona no usó ni un día y "Cancelar" es
+su única salida de un pago del que se arrepintió. No abre un agujero: sigue habiendo
+exactamente una semana gratis por cuenta cuando finalmente se suscriba, y el registro de
+la semana que sí se usó nunca se toca.
+
 > `TrustProxyHeaders` viene en `false`. Prendelo **solo** cuando la app esté detrás de un
 > proxy/CDN que reescriba `X-Forwarded-For`: si no, cualquiera manda ese header y se
 > regala un trial nuevo.
