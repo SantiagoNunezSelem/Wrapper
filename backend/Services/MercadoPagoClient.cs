@@ -77,6 +77,66 @@ public sealed class MercadoPagoClient(
     public Task<PreapprovalPlan?> GetPlanAsync(string planId, CancellationToken cancellationToken) =>
         SendAsync<PreapprovalPlan>(HttpMethod.Get, $"/preapproval_plan/{planId}", null, cancellationToken);
 
+    /// <summary>
+    /// Opens one subscription for one payer and hands back both its id and the checkout
+    /// URL to send them to — the "suscripción sin plan asociado, con pago pendiente"
+    /// flow: <c>POST /preapproval</c> with <c>status: "pending"</c> and <b>no</b>
+    /// <c>card_token_id</c>. Mercado Pago answers with a <c>pending</c> preapproval and an
+    /// <c>init_point</c>; the payer authorises it on their hosted page and it flips to
+    /// <c>authorized</c>.
+    ///
+    /// Why not the plan's shared <c>init_point</c>: that link is anonymous. Mercado Pago
+    /// creates the preapproval on their side with an id we never learn and no
+    /// <c>external_reference</c>, leaving the payer's Mercado Pago account email as the
+    /// only way back to the local row — and that is routinely a different address from
+    /// the one they signed in with. Here <c>external_reference</c> carries our own
+    /// subscription id, so every later webhook matches by id and nothing gets stranded.
+    ///
+    /// A card token is deliberately absent: adding one is the *authorized* flow, which is
+    /// what returns "Card token service not found" when the token was minted elsewhere.
+    /// The trade-off is that the plan-associated variant is off the table — Mercado Pago
+    /// requires <c>card_token_id</c> + <c>status: "authorized"</c> for that one — so the
+    /// free trial is declared per subscription here instead of per plan.
+    /// </summary>
+    public async Task<Preapproval> CreateSubscriptionAsync(
+        string payerEmail,
+        string externalReference,
+        bool includeFreeTrial,
+        CancellationToken cancellationToken)
+    {
+        var autoRecurring = new Dictionary<string, object?>
+        {
+            ["frequency"] = _options.Frequency,
+            ["frequency_type"] = _options.FrequencyType,
+            ["transaction_amount"] = _options.TransactionAmount,
+            ["currency_id"] = _options.CurrencyId,
+        };
+
+        // Same rule as CreatePlanAsync: added only when it applies, never as a null —
+        // JsonOptions' DefaultIgnoreCondition does not reach dictionary values.
+        if (includeFreeTrial)
+        {
+            autoRecurring["free_trial"] = new Dictionary<string, object?>
+            {
+                ["frequency"] = _options.TrialFrequency,
+                ["frequency_type"] = _options.TrialFrequencyType,
+            };
+        }
+
+        var body = new Dictionary<string, object?>
+        {
+            ["reason"] = _options.Reason,
+            ["external_reference"] = externalReference,
+            ["payer_email"] = payerEmail,
+            ["back_url"] = _options.CheckoutReturnUrl,
+            ["status"] = "pending",
+            ["auto_recurring"] = autoRecurring,
+        };
+
+        return await SendAsync<Preapproval>(HttpMethod.Post, "/preapproval", body, cancellationToken)
+            ?? throw new MercadoPagoException("Mercado Pago returned an empty subscription.");
+    }
+
     public Task<Preapproval?> GetSubscriptionAsync(string preapprovalId, CancellationToken cancellationToken) =>
         SendAsync<Preapproval>(HttpMethod.Get, $"/preapproval/{preapprovalId}", null, cancellationToken);
 
@@ -150,6 +210,17 @@ public sealed class MercadoPagoClient(
 
         return result?.Results ?? [];
     }
+
+    /// <summary>
+    /// One payment, straight from the payments API. Needed because the <c>payment</c>
+    /// topic — which Mercado Pago's own docs tell you to enable alongside the two
+    /// subscription topics — notifies a payment id, not an authorized_payment id, and it
+    /// is frequently the *only* notification that arrives for a first charge. It is also
+    /// the only place <c>status_detail</c> lives, which is the difference between telling
+    /// someone "pendiente" and telling them "tu banco tiene que confirmarlo".
+    /// </summary>
+    public Task<MercadoPagoPayment?> GetPaymentAsync(string paymentId, CancellationToken cancellationToken) =>
+        SendAsync<MercadoPagoPayment>(HttpMethod.Get, $"/v1/payments/{paymentId}", null, cancellationToken);
 
     private async Task<T?> SendAsync<T>(
         HttpMethod method,
@@ -339,6 +410,68 @@ public sealed record AuthorizedPaymentDetail(
 
 public sealed record AuthorizedPaymentSearch(
     [property: JsonPropertyName("results")] List<AuthorizedPayment>? Results);
+
+/// <summary>
+/// A payment from <c>/v1/payments/{id}</c>. Distinct from <see cref="AuthorizedPayment"/>:
+/// that one is the subscription's own scheduled charge, this is the money movement behind
+/// it, and only this one carries <c>status_detail</c>.
+/// </summary>
+public sealed record MercadoPagoPayment(
+    [property: JsonPropertyName("id")] long? Id,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("status_detail")] string? StatusDetail,
+    [property: JsonPropertyName("external_reference")] string? ExternalReference,
+    [property: JsonPropertyName("operation_type")] string? OperationType,
+    [property: JsonPropertyName("transaction_amount")] decimal? TransactionAmount,
+    [property: JsonPropertyName("currency_id")] string? CurrencyId,
+    [property: JsonPropertyName("date_created")] DateTime? DateCreated,
+    [property: JsonPropertyName("date_approved")] DateTime? DateApproved,
+    [property: JsonPropertyName("date_last_updated")] DateTime? DateLastUpdated,
+    [property: JsonPropertyName("payment_method_id")] string? PaymentMethodId,
+    [property: JsonPropertyName("payment_type_id")] string? PaymentTypeId,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("card")] PaymentCard? Card,
+    [property: JsonPropertyName("payer")] PaymentPayer? Payer,
+    // Untyped on purpose: Mercado Pago puts the owning preapproval in metadata under a
+    // key whose casing has changed between integrations (preapproval_id / preapprovalId).
+    [property: JsonPropertyName("metadata")] Dictionary<string, JsonElement>? Metadata)
+{
+    /// <summary>The subscription this charge belongs to, if Mercado Pago said so.</summary>
+    public string? PreapprovalId
+    {
+        get
+        {
+            if (Metadata is null)
+            {
+                return null;
+            }
+
+            foreach (var (key, value) in Metadata)
+            {
+                if (!key.Replace("_", string.Empty).Equals("preapprovalid", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return value.ValueKind switch
+                {
+                    JsonValueKind.String => value.GetString(),
+                    JsonValueKind.Number => value.ToString(),
+                    _ => null,
+                };
+            }
+
+            return null;
+        }
+    }
+}
+
+public sealed record PaymentCard(
+    [property: JsonPropertyName("last_four_digits")] string? LastFourDigits);
+
+public sealed record PaymentPayer(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("email")] string? Email);
 
 public sealed record PreapprovalSearch(
     [property: JsonPropertyName("results")] List<Preapproval>? Results);

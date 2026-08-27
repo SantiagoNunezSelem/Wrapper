@@ -1954,6 +1954,126 @@ button.chat-bubble-divider.is-expandable:active {
   font-size: 0.85rem;
 }
 
+.subpage-note-success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+/* ---- Status banner: the "what is happening with my money" block.
+   Louder than a plain section because in the states that matter — a payment stuck on
+   pending, a declined card — it is the only thing on the page anyone is reading, and
+   the button that resolves it sits right underneath. ---- */
+
+.subpage-banner {
+  border-radius: 16px;
+  padding: 20px 24px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--vz-hairline);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.subpage-banner.is-attention {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.07);
+}
+
+.subpage-banner.banner-pago_fallido {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.subpage-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.subpage-banner-countdown {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--vz-text-dim);
+}
+
+.subpage-banner-body {
+  margin: 0;
+  color: var(--vz-text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.subpage-banner-next {
+  margin: 0;
+  color: var(--vz-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.subpage-banner-reason {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--vz-radius-xs);
+  background: rgba(15, 23, 42, 0.35);
+  color: var(--vz-text-soft);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.subpage-banner-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* The checkout link is an <a>, not a <button>, so it has to be told to look like one. */
+.subpage-banner-actions a.primary-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.subpage-banner-fineprint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--vz-text-dim);
+  line-height: 1.45;
+}
+
+.subpage-manage {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.subpage-manage a.ghost-button {
+  text-decoration: none;
+}
+
+.subpage-manage p {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+/* Status pills, tinted by what the state actually means for the customer. */
+.subpage-status.status-activa,
+.subpage-status.status-trial {
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+}
+
+.subpage-status.status-pendiente {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+.subpage-status.status-pago_fallido {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
 .subpage-current {
   display: grid;
   gap: 10px;

@@ -181,7 +181,7 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
  * is sent back (see `syncSubscription`) or the webhook lands.
  */
 export async function startCheckout(token: string): Promise<CheckoutStart> {
-  const response = await request<{ initPoint: string; subscriptionId: string }>(
+  return request<CheckoutStart>(
     '/api/subscription/checkout',
     {
       method: 'POST',
@@ -189,13 +189,25 @@ export async function startCheckout(token: string): Promise<CheckoutStart> {
     },
     token,
   )
-
-  return { initPoint: response.initPoint, subscriptionId: response.subscriptionId }
 }
 
-/** Stops automatic renewal. Access continues until the end of the paid period. */
+/**
+ * Stops automatic renewal. Access continues until the end of the paid period, and the
+ * reply's `cancellation` says whether any money is going to move at all — cancelling
+ * inside the free week means the first debit is never attempted.
+ */
 export async function cancelSubscription(token: string): Promise<SubscriptionOverview> {
   return request<SubscriptionOverview>('/api/subscription/cancel', { method: 'POST' }, token)
+}
+
+/** Suspends debits without giving up the subscription: same card, same price, resumable. */
+export async function pauseSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/pause', { method: 'POST' }, token)
+}
+
+/** Puts a paused subscription back on its schedule. */
+export async function resumeSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/resume', { method: 'POST' }, token)
 }
 
 /** Re-reads the subscription from Mercado Pago. Used on return from checkout, where the

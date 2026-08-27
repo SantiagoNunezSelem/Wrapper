@@ -81,19 +81,28 @@ public class SubscriptionServiceTests : IDisposable
     private void RouteMercadoPago(
         string? plan = null,
         string? preapproval = null,
+        string? createdPreapproval = null,
         string? preapprovalSearch = null,
         string? paymentsSearch = null,
+        string? payment = null,
         string? authorizedPayment = null)
     {
         _http.Route(request =>
         {
             var path = request.RequestUri!.AbsolutePath;
+
+            // POST /preapproval (abrir una suscripcion) y GET /preapproval/{id} (leerla)
+            // comparten prefijo pero son cosas distintas, asi que el metodo tambien decide.
+            var isCreate = path.TrimEnd('/').EndsWith("/preapproval") && request.Method == HttpMethod.Post;
+
             var body = path switch
             {
                 var p when p.Contains("preapproval_plan") => plan ?? """{"id":"plan-1","init_point":"https://mp.test/checkout"}""",
                 var p when p.Contains("/preapproval/search") => preapprovalSearch ?? """{"results":[]}""",
+                _ when isCreate => createdPreapproval ?? """{"id":"pre-1","status":"pending","init_point":"https://mp.test/subscribe/pre-1"}""",
                 var p when p.Contains("/preapproval") => preapproval ?? """{"id":"pre-1","status":"pending"}""",
                 var p when p.Contains("/authorized_payments/search") => paymentsSearch ?? """{"results":[]}""",
+                var p when p.Contains("/v1/payments/") => payment ?? """{"id":1,"status":"approved","status_detail":"accredited"}""",
                 _ => authorizedPayment ?? "{}",
             };
 
@@ -102,6 +111,18 @@ public class SubscriptionServiceTests : IDisposable
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
         });
+    }
+
+    /// <summary>
+    /// El camino viejo: mandar a todos al init_point compartido del plan en vez de crear
+    /// un preapproval por pagador. Sigue existiendo como fallback (hay cuentas donde
+    /// <c>POST /preapproval</c> es rechazado), asi que se prueba explicitamente.
+    /// </summary>
+    private static MercadoPagoOptions PlanCheckout(Action<MercadoPagoOptions>? configure = null)
+    {
+        var options = new MercadoPagoOptions { AccessToken = "TEST-1", UseDirectPreapproval = false };
+        configure?.Invoke(options);
+        return options;
     }
 
     // =======================================================================
@@ -156,15 +177,16 @@ public class SubscriptionServiceTests : IDisposable
         var result = await Service().StartCheckoutAsync(user, Context(), "device-abc", default);
 
         Assert.Equal("pendiente", result.Status);
-        Assert.Equal("https://mp.test/checkout", result.RedirectUrl);
+        Assert.Equal("https://mp.test/subscribe/pre-1", result.RedirectUrl);
         Assert.True(result.TrialApplied);
 
         var stored = await _db.NewContext().Subscriptions.SingleAsync();
         Assert.Equal("pendiente", stored.Status);
         Assert.Equal("mercadopago", stored.PaymentProvider);
-        // Todavía NO hay id externo: Mercado Pago lo crea de su lado cuando el pagador
-        // termina en su página.
-        Assert.Null(stored.ExternalSubscriptionId);
+        // El id externo YA está, antes de mandar a nadie a pagar: es lo que hace que la
+        // notificación posterior encuentre esta fila en vez de quedar huérfana.
+        Assert.Equal("pre-1", stored.ExternalSubscriptionId);
+        Assert.Equal("https://mp.test/subscribe/pre-1", stored.CheckoutUrl);
     }
 
     [Fact]
@@ -273,7 +295,7 @@ public class SubscriptionServiceTests : IDisposable
         var user = CreateUser();
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service().StartCheckoutAsync(user, Context(), null, default));
+            Service(PlanCheckout()).StartCheckoutAsync(user, Context(), null, default));
     }
 
     // =======================================================================
@@ -284,7 +306,7 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Usa_el_plan_configurado_sin_crear_ninguno()
     {
         RouteMercadoPago();
-        var options = new MercadoPagoOptions { AccessToken = "TEST-1", PreapprovalPlanId = "plan-configurado" };
+        var options = PlanCheckout(item => item.PreapprovalPlanId = "plan-configurado");
 
         await Service(options).StartCheckoutAsync(CreateUser(), Context(), null, default);
 
@@ -296,12 +318,11 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Una_cuenta_sin_trial_usa_el_plan_sin_prueba_gratis()
     {
         RouteMercadoPago();
-        var options = new MercadoPagoOptions
+        var options = PlanCheckout(item =>
         {
-            AccessToken = "TEST-1",
-            PreapprovalPlanId = "plan-con-trial",
-            PreapprovalPlanIdNoTrial = "plan-sin-trial",
-        };
+            item.PreapprovalPlanId = "plan-con-trial";
+            item.PreapprovalPlanIdNoTrial = "plan-sin-trial";
+        });
 
         await Service(options).StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
 
@@ -313,7 +334,7 @@ public class SubscriptionServiceTests : IDisposable
     {
         RouteMercadoPago();
 
-        await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
+        await Service(PlanCheckout()).StartCheckoutAsync(CreateUser(), Context(), null, default);
 
         var setting = await _db.NewContext().AppSettings.SingleAsync();
         Assert.StartsWith("mercadopago.plan.trial.", setting.Key);
@@ -324,7 +345,7 @@ public class SubscriptionServiceTests : IDisposable
     public async Task El_plan_creado_se_reusa_en_el_siguiente_checkout()
     {
         RouteMercadoPago();
-        var service = Service();
+        var service = Service(PlanCheckout());
         // Las dos cuentas ya usaron su trial, así que ambas resuelven el MISMO plan (el
         // que no tiene prueba gratis). Con una elegible y otra no, cada una resolvería un
         // plan distinto y el test no probaría nada sobre la caché.
@@ -341,10 +362,10 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Cambiar_el_precio_produce_un_plan_nuevo_en_vez_de_cobrar_el_viejo()
     {
         RouteMercadoPago();
-        await Service(new MercadoPagoOptions { AccessToken = "TEST-1", TransactionAmount = 7900m })
+        await Service(PlanCheckout(item => item.TransactionAmount = 7900m))
             .StartCheckoutAsync(CreateUser(), Context(), null, default);
 
-        await Service(new MercadoPagoOptions { AccessToken = "TEST-1", TransactionAmount = 9900m })
+        await Service(PlanCheckout(item => item.TransactionAmount = 9900m))
             .StartCheckoutAsync(CreateUser(), Context(), null, default);
 
         Assert.Equal(2, await _db.NewContext().AppSettings.CountAsync());
@@ -354,7 +375,7 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Con_la_creacion_automatica_apagada_y_sin_plan_falla()
     {
         RouteMercadoPago();
-        var options = new MercadoPagoOptions { AccessToken = "TEST-1", AutoCreatePlan = false };
+        var options = PlanCheckout(item => item.AutoCreatePlan = false);
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
             Service(options).StartCheckoutAsync(CreateUser(), Context(), null, default));
@@ -381,6 +402,7 @@ public class SubscriptionServiceTests : IDisposable
         var result = await Service().CancelAsync(user, default);
 
         Assert.Equal("cancelada", result.Status);
+        Assert.True(result.AlreadyCancelled);
         Assert.Empty(_http.Requests);
     }
 
@@ -394,13 +416,14 @@ public class SubscriptionServiceTests : IDisposable
             IsDevSimulated = true,
         });
 
-        var result = await Service().CancelAsync(user, default);
+        await Service().CancelAsync(user, default);
 
-        Assert.Equal("cancelada", result.Status);
-        Assert.NotNull(result.CancelledAtUtc);
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("cancelada", stored.Status);
+        Assert.NotNull(stored.CancelledAtUtc);
         // Y a diferencia de una cancelación real, corta el acceso de una: es un
         // interruptor de prueba, no una política de facturación.
-        Assert.Null(result.NextBillingAtUtc);
+        Assert.Null(stored.NextBillingAtUtc);
         Assert.Empty(_http.Requests);
     }
 
@@ -435,9 +458,11 @@ public class SubscriptionServiceTests : IDisposable
         var result = await Service().CancelAsync(user, default);
 
         Assert.Equal("cancelada", result.Status);
-        Assert.NotNull(result.CancelledAtUtc);
         // Lo que ya pagó no se achica por apagar la renovación.
-        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(result));
+        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(user.Subscriptions.Single()));
+        Assert.NotNull(result.AccessUntilUtc);
+        // Cancelar en medio de un mes pago SÍ implica que ya se cobró algo.
+        Assert.False(result.NothingWillBeCharged);
         Assert.Contains(_http.Requests, request => request.Method == HttpMethod.Put);
     }
 
@@ -632,7 +657,7 @@ public class SubscriptionServiceTests : IDisposable
     [Fact]
     public async Task Un_topico_desconocido_se_ignora_sin_romper()
     {
-        await Service().HandleNotificationAsync("payment", "payment.updated", "123", "{}", default);
+        await Service().HandleNotificationAsync("point_integration_wh", "state_FINISHED", "123", "{}", default);
 
         Assert.Empty(_http.Requests);
         Assert.Equal(0, await _db.NewContext().SubscriptionEvents.CountAsync());
@@ -881,6 +906,419 @@ public class SubscriptionServiceTests : IDisposable
         await service.HandleNotificationAsync("authorized_payment", "updated", "555", "{}", default);
 
         Assert.Equal(1, await _db.NewContext().SubscriptionInvoices.CountAsync());
+    }
+
+
+    // =======================================================================
+    // Checkout directo (POST /preapproval) — el arreglo del "pago pendiente"
+    // =======================================================================
+
+    [Fact]
+    public async Task El_checkout_crea_el_preapproval_con_nuestra_referencia_y_el_mail_del_pagador()
+    {
+        RouteMercadoPago();
+        var user = CreateUser();
+
+        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+        // external_reference es LO que hace que la notificación posterior encuentre esta
+        // fila. Sin él, el único vínculo es el mail de la cuenta de Mercado Pago del
+        // pagador, que muy seguido no es con el que se logueó acá — y ahí es donde una
+        // suscripción realmente pagada se queda para siempre en "pendiente".
+        Assert.Contains(result.SubscriptionId.ToString(), create.Body);
+        Assert.Contains(user.Email, create.Body);
+        Assert.Contains("\"status\":\"pending\"", create.Body);
+        // Sin card_token_id: ese es el flujo "authorized", el que devuelve
+        // "Card token service not found" cuando el token se generó en otro lado.
+        Assert.DoesNotContain("card_token_id", create.Body);
+    }
+
+    [Fact]
+    public async Task El_trial_viaja_en_el_preapproval_de_cada_pagador()
+    {
+        RouteMercadoPago();
+
+        await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+        Assert.Contains("free_trial", create.Body);
+    }
+
+    [Fact]
+    public async Task Sin_trial_disponible_el_preapproval_no_lleva_free_trial()
+    {
+        RouteMercadoPago();
+
+        await Service().StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+        // Nunca en null: un "free_trial": null se serializaría igual y Mercado Pago lo
+        // rechaza. La clave directamente no está.
+        Assert.DoesNotContain("free_trial", create.Body);
+    }
+
+    [Fact]
+    public async Task Si_Mercado_Pago_rechaza_el_preapproval_el_checkout_cae_al_plan()
+    {
+        // Hay cuentas donde POST /preapproval no está habilitado. Perder el id de arranque
+        // es malo; perder el checkout entero es peor.
+        _http.Route(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+
+            if (path.TrimEnd('/').EndsWith("/preapproval") && request.Method == HttpMethod.Post)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound)
+                {
+                    Content = new StringContent("""{"message":"not found"}""", Encoding.UTF8, "application/json"),
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"id":"plan-1","init_point":"https://mp.test/checkout"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+
+        var result = await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
+
+        Assert.Equal("https://mp.test/checkout", result.RedirectUrl);
+        Assert.Null((await _db.NewContext().Subscriptions.SingleAsync()).ExternalSubscriptionId);
+    }
+
+    [Fact]
+    public async Task Un_checkout_a_medias_se_retoma_en_vez_de_duplicarse()
+    {
+        // Dos checkouts abiertos a la vez son dos suscripciones autorizables — o sea, el
+        // riesgo de dos cobros mensuales por la misma cuenta.
+        RouteMercadoPago();
+        var service = Service();
+        var user = CreateUser();
+
+        var first = await service.StartCheckoutAsync(user, Context(), null, default);
+        var second = await service.StartCheckoutAsync(user, Context(), null, default);
+
+        Assert.True(second.Resumed);
+        Assert.Equal(first.SubscriptionId, second.SubscriptionId);
+        Assert.Equal(first.RedirectUrl, second.RedirectUrl);
+        Assert.Equal(1, await _db.NewContext().Subscriptions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Un_checkout_viejo_no_se_retoma()
+    {
+        RouteMercadoPago();
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            CheckoutUrl = "https://mp.test/viejo",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-30),
+        });
+
+        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+
+        Assert.False(result.Resumed);
+        Assert.Equal("https://mp.test/subscribe/pre-1", result.RedirectUrl);
+    }
+
+    // =======================================================================
+    // Notificaciones de pago (topic `payment`)
+    // =======================================================================
+
+    [Fact]
+    public async Task Un_pago_aprobado_activa_una_suscripcion_pendiente()
+    {
+        // Este es el agujero que dejaba todo en "pendiente": el topic `payment` —el que la
+        // documentación de Mercado Pago pide habilitar junto a los dos de suscripción— se
+        // descartaba, y para un primer cobro suele ser la ÚNICA notificación que llega.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: """
+            {"id":9001,"status":"approved","status_detail":"accredited","operation_type":"recurring_payment",
+             "date_approved":"2025-03-10T10:00:00Z","date_last_updated":"2025-03-10T10:00:00Z",
+             "payment_method_id":"visa","card":{"last_four_digits":"6411"},
+             "metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9001", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("activa", stored.Status);
+        Assert.Equal("visa ···· 6411", stored.PaymentMethodLabel);
+        Assert.Null(stored.LastPaymentStatusDetail);
+        Assert.NotNull(stored.LastPaymentAtUtc);
+    }
+
+    [Fact]
+    public async Task Un_pago_en_proceso_guarda_el_motivo_para_poder_explicarlo()
+    {
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: """
+            {"id":9002,"status":"in_process","status_detail":"pending_contingency",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"pending","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9002", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        // "Pendiente" a secas no le sirve a nadie; "lo está procesando Mercado Pago, hasta
+        // 2 días hábiles" sí.
+        Assert.Equal("pending_contingency", stored.LastPaymentStatusDetail);
+    }
+
+    [Fact]
+    public async Task Un_pago_rechazado_abre_la_ventana_de_gracia()
+    {
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(-1),
+        });
+        RouteMercadoPago(
+            payment: """
+            {"id":9003,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9003", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("cc_rejected_insufficient_amount", stored.LastPaymentStatusDetail);
+        Assert.NotNull(stored.GraceEndsAtUtc);
+    }
+
+    [Fact]
+    public async Task Un_pago_se_vincula_por_external_reference_cuando_no_hay_metadata()
+    {
+        var subscription = new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" };
+        CreateUser(subscriptions: subscription);
+        RouteMercadoPago(
+            payment: Json(
+                """
+                {"id":9004,"status":"approved","status_detail":"accredited","external_reference":"@ref@",
+                 "date_approved":"2025-03-10T10:00:00Z","date_last_updated":"2025-03-10T10:00:00Z"}
+                """,
+                ("ref", subscription.Id)),
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9004", "{}", default);
+
+        Assert.Equal("activa", (await _db.NewContext().Subscriptions.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Un_pago_ajeno_a_toda_suscripcion_se_ignora_sin_romper()
+    {
+        CreateUser();
+        RouteMercadoPago(payment: """{"id":9005,"status":"approved","status_detail":"accredited"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9005", "{}", default);
+
+        Assert.Equal(0, await _db.NewContext().SubscriptionEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Una_notificacion_de_pago_repetida_se_aplica_una_sola_vez()
+    {
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: """
+            {"id":9006,"status":"approved","status_detail":"accredited",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+        var service = Service();
+
+        await service.HandleNotificationAsync("payment", "payment.updated", "9006", "{}", default);
+        await service.HandleNotificationAsync("payment", "payment.updated", "9006", "{}", default);
+
+        Assert.Equal(1, await _db.NewContext().SubscriptionEvents.CountAsync(item => item.Topic == "payment"));
+    }
+
+    // =======================================================================
+    // Cancelar, pausar, reanudar
+    // =======================================================================
+
+    [Fact]
+    public async Task Cancelar_durante_la_prueba_promete_que_NO_se_cobra_nada()
+    {
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"cancelled"}""");
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "trial",
+            ExternalSubscriptionId = "pre-1",
+            TrialEndsAtUtc = DateTime.UtcNow.AddDays(4),
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(4),
+        });
+
+        var result = await Service().CancelAsync(user, default);
+
+        // El motor de Mercado Pago es el que agenda el primer débito: si el preapproval ya
+        // no está cuando llega la fecha, el cobro no se intenta. Eso es más fuerte que
+        // "te lo devolvemos", y por eso la pantalla puede decirlo.
+        Assert.True(result.NothingWillBeCharged);
+        Assert.NotNull(result.AccessUntilUtc);
+    }
+
+    [Fact]
+    public async Task Cancelar_un_checkout_abandonado_lo_cierra_sin_llamar_a_Mercado_Pago()
+    {
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+        });
+
+        var result = await Service().CancelAsync(user, default);
+
+        Assert.Equal("cancelada", result.Status);
+        Assert.Empty(_http.Requests);
+        // El link deja de ofrecerse: si no, la pantalla seguiría invitando a terminar un
+        // pago que el usuario acaba de descartar.
+        Assert.Null((await _db.NewContext().Subscriptions.SingleAsync()).CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task Pausar_suspende_los_cobros_y_conserva_el_acceso()
+    {
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"paused"}""");
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(12),
+        });
+
+        var result = await Service().PauseAsync(user, default);
+
+        Assert.Equal("pausada", result.Status);
+        Assert.NotNull(result.PausedAtUtc);
+        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(result));
+        Assert.Contains(_http.Requests, request => request.Method == HttpMethod.Put && request.Body!.Contains("paused"));
+    }
+
+    [Fact]
+    public async Task No_se_puede_pausar_algo_que_ya_esta_cancelado()
+    {
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(5),
+        });
+
+        var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() => Service().PauseAsync(user, default));
+
+        Assert.Equal("not_pausable", error.Code);
+    }
+
+    [Fact]
+    public async Task Reanudar_vuelve_a_poner_la_suscripcion_en_marcha()
+    {
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pausada",
+            ExternalSubscriptionId = "pre-1",
+            PausedAtUtc = DateTime.UtcNow.AddDays(-3),
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(10),
+        });
+
+        var result = await Service().ResumeAsync(user, default);
+
+        Assert.Equal("activa", result.Status);
+        Assert.Null(result.PausedAtUtc);
+        Assert.Contains(_http.Requests, request => request.Method == HttpMethod.Put && request.Body!.Contains("authorized"));
+    }
+
+    [Fact]
+    public async Task Solo_se_reanuda_lo_que_estaba_pausado()
+    {
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(10),
+        });
+
+        var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() => Service().ResumeAsync(user, default));
+
+        Assert.Equal("not_paused", error.Code);
+    }
+
+    // =======================================================================
+    // Reconciliación en segundo plano
+    // =======================================================================
+
+    [Fact]
+    public async Task El_reconciliador_levanta_una_suscripcion_que_quedo_colgada()
+    {
+        // El webhook se pierde de maneras que no dejan rastro de este lado: el topic nunca
+        // se habilitó en el panel, el secreto rotó, un deploy se comió la entrega. Todas
+        // terminan igual: cobrada la tarjeta y la app diciendo "pendiente".
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        var changed = await Service().ReconcileAsync(10, default);
+
+        Assert.Equal(1, changed);
+        Assert.Equal("activa", (await _db.NewContext().Subscriptions.SingleAsync()).Status);
+        Assert.Contains(await _db.NewContext().SubscriptionEvents.ToListAsync(), item => item.Topic == "reconcile");
+    }
+
+    [Fact]
+    public async Task El_reconciliador_no_toca_lo_que_esta_tranquilo()
+    {
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(20),
+        });
+        RouteMercadoPago();
+
+        Assert.Equal(0, await Service().ReconcileAsync(10, default));
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task El_reconciliador_abandona_un_checkout_lo_bastante_viejo()
+    {
+        // Alguien que cerró la pestaña hace una semana no es un pago en curso.
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-7),
+        });
+        RouteMercadoPago();
+
+        Assert.Equal(0, await Service().ReconcileAsync(10, default));
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Sin_credenciales_el_reconciliador_no_hace_nada()
+    {
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+
+        Assert.Equal(0, await Service(new MercadoPagoOptions { AccessToken = "" }).ReconcileAsync(10, default));
     }
 
     // =======================================================================

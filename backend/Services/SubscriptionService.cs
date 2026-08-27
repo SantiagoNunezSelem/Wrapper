@@ -43,6 +43,15 @@ public sealed class SubscriptionService(
             _options.Reason,
             client.IsConfigured);
 
+    /// <summary>
+    /// Mercado Pago's own subscription page, where the payer replaces the card behind a
+    /// running subscription. There is no API for that — no endpoint accepts a new card
+    /// token for an existing preapproval — so the honest move is to send them where it
+    /// actually works instead of building a form that cannot save.
+    /// </summary>
+    public string? GetManageUrl() =>
+        string.IsNullOrWhiteSpace(_options.ManageUrl) ? null : _options.ManageUrl;
+
     public async Task<IReadOnlyList<SubscriptionInvoice>> GetInvoicesAsync(Guid userId, CancellationToken cancellationToken) =>
         await db.SubscriptionInvoices
             .Where(invoice => invoice.UserId == userId)
@@ -62,15 +71,17 @@ public sealed class SubscriptionService(
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Opens a checkout: a local "pendiente" row, and the plan's own <c>init_point</c> to
-    /// send the payer's browser to. There is no per-user "create a pending preapproval"
-    /// call here — Mercado Pago's redirect checkout for subscriptions doesn't offer one
-    /// (their <c>/preapproval</c> endpoint requires a tokenized card, which is exactly the
-    /// embedded flow this replaces); the payer logs into their own Mercado Pago account on
-    /// the plan's hosted page and Mercado Pago creates the actual preapproval on their
-    /// side. That means this local row has no <see cref="Subscription.ExternalSubscriptionId"/>
-    /// yet when this method returns — linking it happens by matching payer email, either
-    /// when the webhook notifies us or when <see cref="SyncAsync"/> searches for it.
+    /// Opens a checkout: a local "pendiente" row and the URL to send the payer's browser
+    /// to.
+    ///
+    /// The preapproval is created here, per payer, with <c>status: "pending"</c> and no
+    /// card token (see <see cref="MercadoPagoClient.CreateSubscriptionAsync"/>), so this
+    /// method already knows its id and has stamped <c>external_reference</c> with the
+    /// local row's — which is what stops a completed payment from being stranded on
+    /// "pendiente". The older route, redirecting to the shared plan's <c>init_point</c>,
+    /// is kept as a fallback for accounts where <c>POST /preapproval</c> is refused; it
+    /// works, but nothing links back to the local row except the payer's Mercado Pago
+    /// account email, which is often not the address they signed in with.
     /// </summary>
     public async Task<CheckoutResult> StartCheckoutAsync(
         User user,
@@ -90,26 +101,41 @@ public sealed class SubscriptionService(
             throw new SubscriptionConflictException("already_active", "This account already has an active subscription.");
         }
 
-        var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
-        var planId = await ResolvePlanIdAsync(eligibility.IsEligible, cancellationToken);
-
-        var plan = await client.GetPlanAsync(planId, cancellationToken);
-        if (string.IsNullOrWhiteSpace(plan?.InitPoint))
+        // A checkout left half-finished is resumed, never duplicated. Mercado Pago keeps a
+        // pending preapproval's init_point valid until it is authorised, so opening a
+        // second one would leave the payer with two authorisable subscriptions — and the
+        // very real chance of two monthly charges.
+        if (FindResumableCheckout(user) is { CheckoutUrl: { Length: > 0 } resumeUrl } resumable)
         {
-            throw new MercadoPagoException("Mercado Pago did not return a checkout URL for this plan.");
+            return new CheckoutResult(
+                resumable.Status,
+                resumable.Id,
+                resumable.TrialWasApplied,
+                null,
+                resumeUrl,
+                Resumed: true);
         }
 
+        var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
+
+        // Built but not tracked yet: ResolvePlanIdAsync saves the context on the fallback
+        // path, and a half-built row must not be written before Mercado Pago has accepted
+        // anything. Its Id exists from construction, which is what external_reference
+        // carries.
         var subscription = new Subscription
         {
             UserId = user.Id,
             Status = "pendiente",
             PlanType = "mensual",
             PaymentProvider = "mercadopago",
-            ExternalPlanId = planId,
             Amount = _options.TransactionAmount,
             CurrencyId = _options.CurrencyId,
             TrialWasApplied = eligibility.IsEligible,
         };
+
+        var redirectUrl = await OpenProviderCheckoutAsync(user, subscription, eligibility.IsEligible, cancellationToken);
+
+        subscription.CheckoutUrl = redirectUrl;
 
         db.Subscriptions.Add(subscription);
         user.Subscriptions.Add(subscription);
@@ -130,7 +156,84 @@ public sealed class SubscriptionService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new CheckoutResult(subscription.Status, subscription.Id, eligibility.IsEligible, eligibility.Reason, plan.InitPoint);
+        return new CheckoutResult(subscription.Status, subscription.Id, eligibility.IsEligible, eligibility.Reason, redirectUrl);
+    }
+
+    /// <summary>
+    /// The still-usable checkout on this account, if there is one. Only a row that
+    /// Mercado Pago has not authorised counts, and only while the link is young enough to
+    /// still be the same offer — a month-old "pendiente" is an abandoned attempt, not a
+    /// payment in progress, and its price may not even be current any more.
+    /// </summary>
+    private Subscription? FindResumableCheckout(User user) =>
+        user.Subscriptions
+            .Where(item =>
+                item.Status == "pendiente" &&
+                !item.IsDevSimulated &&
+                !string.IsNullOrWhiteSpace(item.CheckoutUrl) &&
+                item.CreatedAtUtc >= DateTime.UtcNow.AddHours(-_options.PendingCheckoutHours))
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Asks Mercado Pago for a checkout URL, preferring the per-payer preapproval and
+    /// falling back to the shared plan link. The fallback exists because
+    /// <c>POST /preapproval</c> is not available on every account or country, and losing
+    /// checkout entirely would be a far worse failure than losing the id up front.
+    /// </summary>
+    private async Task<string> OpenProviderCheckoutAsync(
+        User user,
+        Subscription subscription,
+        bool withTrial,
+        CancellationToken cancellationToken)
+    {
+        if (_options.UseDirectPreapproval)
+        {
+            try
+            {
+                var preapproval = await client.CreateSubscriptionAsync(
+                    user.Email,
+                    subscription.Id.ToString(),
+                    withTrial,
+                    cancellationToken);
+
+                var initPoint = preapproval.InitPoint ?? preapproval.SandboxInitPoint;
+                if (!string.IsNullOrWhiteSpace(preapproval.Id) && !string.IsNullOrWhiteSpace(initPoint))
+                {
+                    // Stored before the redirect — the whole point of this path.
+                    subscription.ExternalSubscriptionId = preapproval.Id;
+                    subscription.ExternalPlanId = preapproval.PreapprovalPlanId;
+
+                    if (withTrial)
+                    {
+                        subscription.TrialStartsAtUtc = DateTime.UtcNow;
+                    }
+
+                    return initPoint;
+                }
+
+                logger.LogWarning(
+                    "Mercado Pago accepted the preapproval but returned no usable init_point (id {Id}); falling back to the plan link.",
+                    preapproval.Id);
+            }
+            catch (MercadoPagoException exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "POST /preapproval was refused; falling back to the shared plan checkout. The subscription will have to be linked by payer email.");
+            }
+        }
+
+        var planId = await ResolvePlanIdAsync(withTrial, cancellationToken);
+        var plan = await client.GetPlanAsync(planId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(plan?.InitPoint))
+        {
+            throw new MercadoPagoException("Mercado Pago did not return a checkout URL for this plan.");
+        }
+
+        subscription.ExternalPlanId = planId;
+        return plan.InitPoint;
     }
 
     // ---------------------------------------------------------------------------
@@ -141,15 +244,27 @@ public sealed class SubscriptionService(
     /// Turns off automatic renewal. Access is intentionally *not* revoked: the customer
     /// keeps what their last charge already bought, which is both the stated policy and
     /// the thing that keeps cancellations from turning into refund requests.
+    ///
+    /// Cancelling inside the free week is the case worth being precise about — Mercado
+    /// Pago's own engine is what schedules the first debit, so removing the preapproval
+    /// before that date means the charge is never attempted at all. That is a stronger
+    /// promise than "we will refund you", and the screen is allowed to say it because
+    /// <see cref="CancellationOutcome.NothingWillBeCharged"/> is decided from the state
+    /// Mercado Pago just confirmed, not from what the customer clicked.
     /// </summary>
-    public async Task<Subscription> CancelAsync(User user, CancellationToken cancellationToken)
+    public async Task<CancellationOutcome> CancelAsync(User user, CancellationToken cancellationToken)
     {
         var subscription = SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user)
             ?? throw new SubscriptionConflictException("no_subscription", "There is no subscription to cancel.");
 
+        // Read before the status is overwritten: afterwards there is no way to tell a
+        // cancellation during the free week from one after a paid month.
+        var wasInTrial = subscription.Status == "trial" ||
+                         (subscription.TrialEndsAtUtc is { } trialEnd && trialEnd > DateTime.UtcNow && subscription.LastPaymentAtUtc is null);
+
         if (subscription.Status is "cancelada")
         {
-            return subscription;
+            return CancellationOutcome.From(subscription, wasInTrial, alreadyCancelled: true);
         }
 
         if (subscription.IsDevSimulated)
@@ -162,33 +277,133 @@ public sealed class SubscriptionService(
             subscription.UpdatedAtUtc = DateTime.UtcNow;
             RecordEvent(subscription, "dev", "cancel", null, "Simulated subscription cancelled locally.");
             await db.SaveChangesAsync(cancellationToken);
-            return subscription;
+            return CancellationOutcome.From(subscription, wasInTrial, alreadyCancelled: false);
         }
 
         if (string.IsNullOrWhiteSpace(subscription.ExternalSubscriptionId))
         {
+            // An unlinked row that is still "pendiente" is an abandoned checkout: nothing
+            // was ever authorised on Mercado Pago's side, so there is nothing to cancel
+            // there — but leaving it standing keeps offering to resume a payment the
+            // customer has just said they do not want. Closing it locally is both honest
+            // and the only thing that can be done.
+            if (subscription.Status == "pendiente")
+            {
+                subscription.Status = "cancelada";
+                subscription.CancelledAtUtc = DateTime.UtcNow;
+                subscription.CheckoutUrl = null;
+                subscription.UpdatedAtUtc = DateTime.UtcNow;
+                RecordEvent(subscription, "cancel", "abandoned_checkout", null, "Checkout closed before Mercado Pago authorised it.");
+                await db.SaveChangesAsync(cancellationToken);
+                return CancellationOutcome.From(subscription, wasInTrial, alreadyCancelled: false);
+            }
+
+            // Anything else unlinked is a row we cannot reason about — an active
+            // subscription with no provider id should not exist — and quietly marking it
+            // cancelled would tell the customer their billing stopped without stopping
+            // anything.
             throw new SubscriptionConflictException("not_linked", "This subscription is not linked to Mercado Pago.");
         }
 
         var updated = await client.CancelSubscriptionAsync(subscription.ExternalSubscriptionId, cancellationToken);
 
+        if (updated is not null)
+        {
+            ApplyPreapproval(subscription, updated);
+        }
+
+        // Applied after the mapping, not before: ApplyPreapproval trusts the provider's
+        // status, and a just-cancelled preapproval sometimes still reads as authorized for
+        // a moment.
         subscription.Status = "cancelada";
-        subscription.CancelledAtUtc = DateTime.UtcNow;
+        subscription.CancelledAtUtc ??= DateTime.UtcNow;
+        subscription.CheckoutUrl = null;
         subscription.UpdatedAtUtc = DateTime.UtcNow;
+
+        RecordEvent(subscription, "cancel", "user_requested", null, wasInTrial ? "Cancelled during the free trial." : null);
+        await db.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("User {UserId} cancelled subscription {SubscriptionId}.", user.Id, subscription.Id);
+        return CancellationOutcome.From(subscription, wasInTrial, alreadyCancelled: false);
+    }
+
+    /// <summary>
+    /// Suspends debits without giving up the subscription: the card stays on file and
+    /// <see cref="ResumeAsync"/> puts it back. Offered because the alternative most people
+    /// reach for — cancelling because this month is tight — costs them their price and
+    /// their history, and costs us the customer.
+    /// </summary>
+    public async Task<Subscription> PauseAsync(User user, CancellationToken cancellationToken)
+    {
+        var subscription = RequireLinkedSubscription(user, "pause");
+
+        if (subscription.Status is "pausada")
+        {
+            return subscription;
+        }
+
+        if (subscription.Status is not ("activa" or "trial" or "pago_fallido"))
+        {
+            throw new SubscriptionConflictException("not_pausable", "Only a running subscription can be paused.");
+        }
+
+        var updated = await client.PauseSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
 
         if (updated is not null)
         {
             ApplyPreapproval(subscription, updated);
-            // ApplyPreapproval trusts the provider's status, and a just-cancelled
-            // preapproval sometimes still reads as authorized for a moment.
-            subscription.Status = "cancelada";
-            subscription.CancelledAtUtc ??= DateTime.UtcNow;
         }
 
-        RecordEvent(subscription, "cancel", "user_requested", null, null);
+        subscription.Status = "pausada";
+        subscription.PausedAtUtc ??= DateTime.UtcNow;
+        subscription.UpdatedAtUtc = DateTime.UtcNow;
+
+        RecordEvent(subscription, "pause", "user_requested", null, null);
         await db.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("User {UserId} cancelled subscription {SubscriptionId}.", user.Id, subscription.Id);
+        return subscription;
+    }
+
+    /// <summary>Puts a paused subscription back on its schedule.</summary>
+    public async Task<Subscription> ResumeAsync(User user, CancellationToken cancellationToken)
+    {
+        var subscription = RequireLinkedSubscription(user, "resume");
+
+        if (subscription.Status is not "pausada")
+        {
+            throw new SubscriptionConflictException("not_paused", "Only a paused subscription can be resumed.");
+        }
+
+        var updated = await client.ResumeSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
+
+        if (updated is not null)
+        {
+            ApplyPreapproval(subscription, updated);
+        }
+        else
+        {
+            subscription.Status = "activa";
+        }
+
+        subscription.PausedAtUtc = null;
+        subscription.UpdatedAtUtc = DateTime.UtcNow;
+
+        RecordEvent(subscription, "resume", "user_requested", null, null);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return subscription;
+    }
+
+    private static Subscription RequireLinkedSubscription(User user, string action)
+    {
+        var subscription = SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user)
+            ?? throw new SubscriptionConflictException("no_subscription", $"There is no subscription to {action}.");
+
+        if (subscription.IsDevSimulated || string.IsNullOrWhiteSpace(subscription.ExternalSubscriptionId))
+        {
+            throw new SubscriptionConflictException("not_linked", "This subscription is not linked to Mercado Pago.");
+        }
+
         return subscription;
     }
 
@@ -210,16 +425,20 @@ public sealed class SubscriptionService(
             return SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
         }
 
+        // Newest attempt first, by when it was opened rather than when it was last
+        // touched: a resubscription supersedes whatever came before it, and ordering by
+        // UpdatedAtUtc would let a cancelled row that a webhook happened to touch
+        // afterwards win over the subscription the customer is actually holding.
         var subscription = user.Subscriptions
-            .Where(item => !string.IsNullOrWhiteSpace(item.ExternalSubscriptionId))
-            .OrderByDescending(item => item.UpdatedAtUtc)
+            .Where(item => !string.IsNullOrWhiteSpace(item.ExternalSubscriptionId) && !item.IsDevSimulated)
+            .OrderByDescending(item => item.CreatedAtUtc)
             .FirstOrDefault();
 
-        // A redirect checkout's local row starts with no id — Mercado Pago only hands one
-        // out once the payer finishes on their own hosted page (see StartCheckoutAsync).
-        // Look it up by payer email, the same signal the webhook handler falls back to in
-        // FindSubscriptionAsync, so the very first landing back on /suscripcion has a
-        // chance to link it even if the webhook is slow, unreachable, or not set up yet.
+        // A row opened through the shared plan link starts with no id — Mercado Pago only
+        // hands one out once the payer finishes on their own hosted page, and the link
+        // carries nothing that points back here. Look it up by payer email, the same
+        // signal the webhook handler falls back to in FindSubscriptionAsync. Checkouts
+        // opened the normal way never reach this: they already have their id.
         if (subscription is null)
         {
             var pending = user.Subscriptions
@@ -262,6 +481,12 @@ public sealed class SubscriptionService(
             await UpsertInvoiceAsync(subscription, payment, cancellationToken);
         }
 
+        // The authorized_payments list carries the subscription's own scheduled charges,
+        // but only /v1/payments knows *why* one is unsettled. Reading it for the newest
+        // unsettled charge is what turns a bare "pendiente" into "tu banco tiene que
+        // confirmar el pago" — one extra call, and only when something is actually stuck.
+        await RefreshPendingReasonAsync(subscription, cancellationToken);
+
         subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
         if (previousStatus != subscription.Status)
@@ -271,6 +496,132 @@ public sealed class SubscriptionService(
 
         await db.SaveChangesAsync(cancellationToken);
         return subscription;
+    }
+
+    /// <summary>
+    /// Reads <c>status_detail</c> off the newest charge that has not settled, so the
+    /// account screen can explain the delay instead of restating it. Failures here are
+    /// swallowed: an explanation is a nicety, and losing it must never cost the caller the
+    /// status update it came for.
+    /// </summary>
+    private async Task RefreshPendingReasonAsync(Subscription subscription, CancellationToken cancellationToken)
+    {
+        var unsettled = await db.SubscriptionInvoices
+            .Where(invoice =>
+                invoice.SubscriptionId == subscription.Id &&
+                (invoice.Status == "pendiente" || invoice.Status == "rechazado" || invoice.Status == "reintentando") &&
+                invoice.ExternalTransactionId != null)
+            .OrderByDescending(invoice => invoice.UpdatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (unsettled is null)
+        {
+            subscription.LastPaymentStatusDetail = null;
+            return;
+        }
+
+        try
+        {
+            var payment = await client.GetPaymentAsync(unsettled.ExternalTransactionId!, cancellationToken);
+            if (payment?.StatusDetail is { Length: > 0 } detail)
+            {
+                unsettled.StatusDetail = detail;
+                unsettled.UpdatedAtUtc = DateTime.UtcNow;
+                subscription.LastPaymentStatusDetail = detail;
+            }
+        }
+        catch (MercadoPagoException exception)
+        {
+            logger.LogDebug(exception, "Could not read the payment behind invoice {InvoiceId}.", unsettled.Id);
+        }
+    }
+
+    /// <summary>
+    /// Re-reads every subscription Mercado Pago may have moved without us hearing about
+    /// it, and hands back how many actually changed.
+    ///
+    /// This is the safety net under the webhook, not a substitute for it. A notification
+    /// can be lost for reasons that leave no trace on our side — the topic was never
+    /// enabled in the panel, the secret was rotated, a deploy ate the delivery, the retry
+    /// budget ran out while the host was down — and every one of those ends with a paying
+    /// customer locked out of what they bought. Polling a handful of rows on a timer is a
+    /// cheap price for that never being a support ticket.
+    /// </summary>
+    public async Task<int> ReconcileAsync(int batchSize, CancellationToken cancellationToken)
+    {
+        if (!client.IsConfigured)
+        {
+            return 0;
+        }
+
+        var now = DateTime.UtcNow;
+        var checkoutFloor = now.AddHours(-_options.PendingCheckoutHours);
+
+        var candidates = await db.Subscriptions
+            .Where(item =>
+                !item.IsDevSimulated &&
+                item.ExternalSubscriptionId != null &&
+                (
+                    // Waiting on the payer, or on Mercado Pago's own processing.
+                    (item.Status == "pendiente" && item.CreatedAtUtc >= checkoutFloor) ||
+                    // A retry may have gone through since the rejection.
+                    item.Status == "pago_fallido" ||
+                    // The renewal was due and we were never told how it went.
+                    ((item.Status == "activa" || item.Status == "trial") &&
+                     item.NextBillingAtUtc != null &&
+                     item.NextBillingAtUtc < now)
+                ))
+            .OrderBy(item => item.LastSyncedAtUtc ?? item.CreatedAtUtc)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+
+        var changed = 0;
+
+        foreach (var subscription in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var preapproval = await client.GetSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
+                if (preapproval is null)
+                {
+                    subscription.LastSyncedAtUtc = now;
+                    continue;
+                }
+
+                var previousStatus = subscription.Status;
+                ApplyPreapproval(subscription, preapproval);
+
+                foreach (var payment in await client.SearchAuthorizedPaymentsAsync(subscription.ExternalSubscriptionId!, cancellationToken))
+                {
+                    await UpsertInvoiceAsync(subscription, payment, cancellationToken);
+                }
+
+                await RefreshPendingReasonAsync(subscription, cancellationToken);
+                subscription.LastSyncedAtUtc = DateTime.UtcNow;
+
+                if (previousStatus != subscription.Status)
+                {
+                    RecordEvent(subscription, "reconcile", previousStatus, null, $"{previousStatus} → {subscription.Status}");
+                    changed++;
+
+                    logger.LogInformation(
+                        "Reconciler moved subscription {SubscriptionId} {Previous} → {Current}; the notification for it never arrived.",
+                        subscription.Id,
+                        previousStatus,
+                        subscription.Status);
+                }
+            }
+            catch (MercadoPagoException exception)
+            {
+                // One unreachable subscription must not stop the rest of the batch.
+                logger.LogWarning(exception, "Could not reconcile subscription {SubscriptionId}.", subscription.Id);
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return changed;
     }
 
     // ---------------------------------------------------------------------------
@@ -302,13 +653,168 @@ public sealed class SubscriptionService(
                 await HandleAuthorizedPaymentNotificationAsync(topic, action, dataId, rawBody, cancellationToken);
                 break;
 
+            case "payment":
+                await HandlePaymentNotificationAsync(topic, action, dataId, rawBody, cancellationToken);
+                break;
+
             default:
-                // payment / plan / point_integration_wh and anything Mercado Pago adds
-                // later. Logged and acknowledged: a 2xx stops the retry storm for events
-                // this product has no use for.
+                // subscription_preapproval_plan / point_integration_wh and anything
+                // Mercado Pago adds later. Logged and acknowledged: a 2xx stops the retry
+                // storm for events this product has no use for.
                 logger.LogInformation("Ignoring Mercado Pago notification of topic {Topic}.", topic);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Applies a plain <c>payment</c> notification.
+    ///
+    /// Mercado Pago's own documentation tells you to enable this topic alongside the two
+    /// subscription ones, and it earns its place: for a first charge it is regularly the
+    /// only notification that arrives, and it is the sole carrier of <c>status_detail</c>.
+    /// Dropping it — which is what happened before — is how an account that has genuinely
+    /// paid keeps reading "pendiente".
+    ///
+    /// Payments that belong to no subscription of ours (a one-off collected by the same
+    /// account) are acknowledged and ignored rather than treated as an error.
+    /// </summary>
+    private async Task HandlePaymentNotificationAsync(
+        string topic,
+        string? action,
+        string dataId,
+        string rawBody,
+        CancellationToken cancellationToken)
+    {
+        var payment = await client.GetPaymentAsync(dataId, cancellationToken);
+        if (payment is null)
+        {
+            logger.LogWarning("Mercado Pago notified payment {Id} but it could not be read back.", dataId);
+            return;
+        }
+
+        var subscription = await FindSubscriptionForPaymentAsync(payment, cancellationToken);
+        if (subscription is null)
+        {
+            logger.LogInformation("Payment {Id} does not belong to any subscription; ignoring.", dataId);
+            return;
+        }
+
+        var eventId = BuildEventId(topic, dataId, payment.DateLastUpdated);
+        if (await IsAlreadyProcessedAsync(eventId, cancellationToken))
+        {
+            return;
+        }
+
+        var previousStatus = subscription.Status;
+
+        // Order matters, and it is the same order the authorized_payment handler uses: the
+        // preapproval first, because it is the authority on trial-vs-active and on when
+        // the next debit lands — then the payment on top, because a charge is the
+        // strongest available signal about the subscription's health and it arrives before
+        // the preapproval's own status catches up. Reversed, a rejection would be wiped by
+        // a preapproval that still reads "authorized" (which it does, for days, while
+        // Mercado Pago retries) and the grace window would never start.
+        if (!string.IsNullOrWhiteSpace(subscription.ExternalSubscriptionId))
+        {
+            try
+            {
+                if (await client.GetSubscriptionAsync(subscription.ExternalSubscriptionId, cancellationToken) is { } preapproval)
+                {
+                    ApplyPreapproval(subscription, preapproval);
+                }
+            }
+            catch (MercadoPagoException exception)
+            {
+                logger.LogWarning(exception, "Could not re-read preapproval {Id} after payment {PaymentId}.", subscription.ExternalSubscriptionId, dataId);
+            }
+        }
+
+        subscription.LastPaymentStatusDetail = payment.Status is "approved"
+            ? null
+            : payment.StatusDetail;
+
+        if (BuildPaymentMethodLabel(payment.PaymentMethodId, payment.Card?.LastFourDigits) is { } label)
+        {
+            subscription.PaymentMethodLabel = label;
+        }
+
+        if (payment.Status is "approved")
+        {
+            subscription.LastPaymentAtUtc = payment.DateApproved ?? payment.DateLastUpdated ?? DateTime.UtcNow;
+            subscription.GraceEndsAtUtc = null;
+            subscription.CheckoutUrl = null;
+
+            // Only forward, and only out of the states this payment actually disproves.
+            // A subscription the preapproval says is still in its free week stays there —
+            // the trial's own $0 invoice is an approved payment too.
+            if (subscription.Status is "pendiente" or "pago_fallido")
+            {
+                subscription.Status = "activa";
+                subscription.SubscriptionStartsAtUtc ??= subscription.LastPaymentAtUtc;
+            }
+        }
+        else if (payment.Status is "rejected" && subscription.Status is "activa" or "trial")
+        {
+            subscription.Status = "pago_fallido";
+            // Started on the first failure only, so Mercado Pago's own retries cannot keep
+            // extending the window indefinitely.
+            subscription.GraceEndsAtUtc ??= DateTime.UtcNow.AddDays(_options.FailedPaymentGraceDays);
+        }
+
+        subscription.UpdatedAtUtc = DateTime.UtcNow;
+
+        RecordEvent(
+            subscription,
+            topic,
+            action,
+            eventId,
+            $"{payment.Status}/{payment.StatusDetail} · {previousStatus} → {subscription.Status}",
+            rawBody);
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Which subscription a bare payment belongs to. Three signals, strongest first:
+    /// the preapproval id Mercado Pago attaches in metadata, our own
+    /// <c>external_reference</c> (present on everything the direct-preapproval checkout
+    /// creates), and finally the payer's email.
+    /// </summary>
+    private async Task<Subscription?> FindSubscriptionForPaymentAsync(
+        MercadoPagoPayment payment,
+        CancellationToken cancellationToken)
+    {
+        if (payment.PreapprovalId is { Length: > 0 } preapprovalId)
+        {
+            var byPreapproval = await db.Subscriptions
+                .FirstOrDefaultAsync(item => item.ExternalSubscriptionId == preapprovalId, cancellationToken);
+
+            if (byPreapproval is not null)
+            {
+                return byPreapproval;
+            }
+        }
+
+        if (Guid.TryParse(payment.ExternalReference, out var localId))
+        {
+            var byReference = await db.Subscriptions.FirstOrDefaultAsync(item => item.Id == localId, cancellationToken);
+            if (byReference is not null)
+            {
+                return byReference;
+            }
+        }
+
+        if (payment.Payer?.Email is not { Length: > 0 } email)
+        {
+            return null;
+        }
+
+        var normalized = email.Trim().ToLowerInvariant();
+
+        return await db.Subscriptions
+            .Where(item => item.User!.Email == normalized && item.PaymentProvider == "mercadopago")
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task HandlePreapprovalNotificationAsync(
@@ -459,6 +965,23 @@ public sealed class SubscriptionService(
             subscription.CancelledAtUtc ??= DateTime.UtcNow;
         }
 
+        if (subscription.Status == "pausada")
+        {
+            subscription.PausedAtUtc ??= DateTime.UtcNow;
+        }
+        else
+        {
+            subscription.PausedAtUtc = null;
+        }
+
+        // The checkout link only has a job while the payer still has to use it. Clearing
+        // it is what makes "Terminá el pago" disappear the moment there is nothing left to
+        // finish, instead of inviting someone to authorise a second subscription.
+        if (subscription.Status != "pendiente")
+        {
+            subscription.CheckoutUrl = null;
+        }
+
         if (preapproval.NextPaymentDate is { } next)
         {
             subscription.NextBillingAtUtc = next;
@@ -517,6 +1040,7 @@ public sealed class SubscriptionService(
         invoice.CurrencyId = payment.CurrencyId ?? subscription.CurrencyId;
         invoice.RawStatus = payment.Payment?.Status ?? payment.Status;
         invoice.Status = MapInvoiceStatus(payment);
+        invoice.StatusDetail = payment.Payment?.StatusDetail ?? invoice.StatusDetail;
         invoice.ExternalTransactionId = payment.Payment?.Id?.ToString(CultureInfo.InvariantCulture);
         invoice.PeriodStartUtc = payment.Period?.StartDate;
         invoice.PeriodEndUtc = payment.Period?.EndDate;
@@ -541,14 +1065,17 @@ public sealed class SubscriptionService(
             "rejected" or "cancelled" or "canceled" => "rechazado",
             "refunded" or "charged_back" => "devuelto",
             "recycling" or "retrying" => "reintentando",
+            // `in_process` is Mercado Pago's "we are still deciding" — the state behind
+            // pending_contingency and pending_review_manual, and the one most likely to be
+            // what a customer is staring at. It is pending, not a failure.
             _ => "pendiente",
         };
 
-    private static string? BuildPaymentMethodLabel(AuthorizedPayment payment)
-    {
-        var method = payment.Payment?.PaymentMethodId;
-        var lastFour = payment.Payment?.LastFourDigits;
+    private static string? BuildPaymentMethodLabel(AuthorizedPayment payment) =>
+        BuildPaymentMethodLabel(payment.Payment?.PaymentMethodId, payment.Payment?.LastFourDigits);
 
+    private static string? BuildPaymentMethodLabel(string? method, string? lastFour)
+    {
         if (string.IsNullOrWhiteSpace(method))
         {
             return null;
@@ -737,7 +1264,49 @@ public sealed record PlanInfo(
 /// <see cref="SubscriptionService.SyncAsync"/> is what eventually moves it to
 /// <c>trial</c>/<c>activa</c> (or leaves it <c>pendiente</c>, if the payer never finishes).</param>
 /// <param name="RedirectUrl">Mercado Pago's hosted checkout page — send the browser here.</param>
-public sealed record CheckoutResult(string Status, Guid SubscriptionId, bool TrialApplied, string? TrialDeniedReason, string RedirectUrl);
+/// <param name="Resumed">Whether this handed back an earlier unfinished checkout rather
+/// than opening a new one. The screen says so, because "te llevamos de nuevo al pago que
+/// dejaste a medias" and "abrimos un pago nuevo" are not the same promise.</param>
+public sealed record CheckoutResult(
+    string Status,
+    Guid SubscriptionId,
+    bool TrialApplied,
+    string? TrialDeniedReason,
+    string RedirectUrl,
+    bool Resumed = false);
+
+/// <summary>
+/// What a cancellation actually did, in the terms the customer cares about: will they be
+/// charged again, and until when do they keep Pro. Derived server-side rather than left to
+/// the screen, because the answer depends on Mercado Pago's confirmed state and getting it
+/// wrong in either direction is a support ticket — or a chargeback.
+/// </summary>
+/// <param name="NothingWillBeCharged">True when the subscription was cancelled before its
+/// first real debit, so no money ever moves.</param>
+/// <param name="AccessUntilUtc">The moment Pro ends. Null when access ended immediately —
+/// an abandoned checkout that never bought anything.</param>
+public sealed record CancellationOutcome(
+    Guid SubscriptionId,
+    string Status,
+    bool NothingWillBeCharged,
+    bool AlreadyCancelled,
+    DateTime? AccessUntilUtc)
+{
+    public static CancellationOutcome From(Subscription subscription, bool wasInTrial, bool alreadyCancelled)
+    {
+        var accessUntil = SubscriptionAccessEvaluator.HasVipAccess(subscription)
+            ? subscription.NextBillingAtUtc ?? subscription.TrialEndsAtUtc
+            : null;
+
+        return new CancellationOutcome(
+            subscription.Id,
+            subscription.Status,
+            // "Nada se te va a cobrar" is only safe to say when no charge ever landed.
+            wasInTrial && subscription.LastPaymentAtUtc is null,
+            alreadyCancelled,
+            accessUntil);
+    }
+}
 
 public sealed class SubscriptionConflictException(string code, string message) : Exception(message)
 {

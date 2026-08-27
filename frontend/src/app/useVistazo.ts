@@ -2,6 +2,7 @@ import { type CredentialResponse } from '@react-oauth/google'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { AiPanelProps } from '../components/AiStatePanel'
 import type { FreeUnlockPrompt } from '../components/LockedPanel'
+import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
 import { toAcceptedMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
@@ -16,7 +17,9 @@ import {
   grantAiConsent,
   listAnalyses,
   loginWithGoogle,
+  pauseSubscription,
   resetDevFreeUnlocks,
+  resumeSubscription,
   retryAiMetrics,
   saveAnalysis,
   spendFreeUnlock,
@@ -58,6 +61,10 @@ import type {
 } from '../types'
 
 const authTokenKey = 'wrapper-crm-auth-token'
+
+/** How many times the account screen re-checks a just-returned checkout before handing
+ * the job to the server-side reconciler. Five attempts spans about 90 seconds. */
+const checkoutPollAttempts = 5
 
 export interface ActiveChat {
   chatName: string
@@ -123,8 +130,13 @@ export function useVistazo() {
   const [revealingFreeUnlockId, setRevealingFreeUnlockId] = useState<string | null>(null)
 
   const [subscription, setSubscription] = useState<SubscriptionOverview | null>(null)
-  const [subscriptionAction, setSubscriptionAction] = useState<'cancel' | 'refresh' | null>(null)
+  const [subscriptionAction, setSubscriptionAction] = useState<SubscriptionBusyAction | null>(null)
   const [subscriptionError, setSubscriptionError] = useState('')
+  // Re-checks left after landing back from Mercado Pago. Counted down rather than run on
+  // an interval so the polling is bounded: a payment that has not settled in a minute is
+  // not going to settle while someone stares at it, and the background reconciler owns it
+  // from there.
+  const [checkoutPollsLeft, setCheckoutPollsLeft] = useState(0)
   // The "Desbloquear VIP" popover — plan info and the Card Payment Brick, inline, no
   // navigation. Separate from `route`, which only ever points at the full account page.
   const [isVipPopoverOpen, setIsVipPopoverOpen] = useState(false)
@@ -541,6 +553,9 @@ export function useVistazo() {
       params.delete('checkout')
       const query = params.toString()
       window.history.replaceState({}, '', `/suscripcion${query ? `?${query}` : ''}`)
+      // Arms the bounded re-check below, for the common case where Mercado Pago has not
+      // finished processing by the time the browser is back.
+      setCheckoutPollsLeft(checkoutPollAttempts)
       void handleRefreshSubscription()
     } else {
       void loadSubscription(token)
@@ -548,16 +563,26 @@ export function useVistazo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, route])
 
-  async function handleCancelSubscription() {
+  /**
+   * Cancel, pause, resume and refresh differ only in which call they make: each one
+   * answers with the whole refreshed overview, and each one can change whether this
+   * account still has Pro, so the user profile is re-read afterwards too. Written once so
+   * a new action cannot forget the profile refresh and leave the rest of the app showing
+   * VIP cards the server no longer unlocks.
+   */
+  async function runSubscriptionAction(
+    action: SubscriptionBusyAction,
+    call: (authToken: string) => Promise<SubscriptionOverview>,
+  ) {
     if (!token) {
       return
     }
 
     setSubscriptionError('')
-    setSubscriptionAction('cancel')
+    setSubscriptionAction(action)
 
     try {
-      setSubscription(await cancelSubscription(token))
+      setSubscription(await call(token))
       setUser(await getCurrentUser(token))
     } catch (caught) {
       console.error(caught)
@@ -567,24 +592,53 @@ export function useVistazo() {
     }
   }
 
-  async function handleRefreshSubscription() {
-    if (!token) {
+  function handleCancelSubscription() {
+    return runSubscriptionAction('cancel', cancelSubscription)
+  }
+
+  function handlePauseSubscription() {
+    return runSubscriptionAction('pause', pauseSubscription)
+  }
+
+  function handleResumeSubscription() {
+    return runSubscriptionAction('resume', resumeSubscription)
+  }
+
+  function handleRefreshSubscription() {
+    return runSubscriptionAction('refresh', syncSubscription)
+  }
+
+  // Coming back from Mercado Pago, the payment is often not settled yet: the browser
+  // beats the webhook, and their own processing can take another few seconds. Without
+  // this the customer lands on "pendiente" right after paying, which reads as "it did not
+  // work" — so the screen keeps asking, a few times, with growing gaps, and stops as soon
+  // as the answer changes. The background reconciler covers everything slower than this;
+  // this is only about the first minute, when someone is still watching.
+  useEffect(() => {
+    if (route !== 'subscription' || !token || checkoutPollsLeft <= 0) {
       return
     }
 
-    setSubscriptionError('')
-    setSubscriptionAction('refresh')
-
-    try {
-      setSubscription(await syncSubscription(token))
-      setUser(await getCurrentUser(token))
-    } catch (caught) {
-      console.error(caught)
-      setSubscriptionError(caught instanceof Error ? caught.message : copy.loadError)
-    } finally {
-      setSubscriptionAction(null)
+    if (subscription?.current?.status !== 'pendiente') {
+      // Settled (or there is nothing to settle) — stop asking.
+      setCheckoutPollsLeft(0)
+      return
     }
-  }
+
+    const attempt = checkoutPollAttempts - checkoutPollsLeft
+    const timer = window.setTimeout(
+      () => {
+        setCheckoutPollsLeft((left) => left - 1)
+        void handleRefreshSubscription()
+      },
+      // 3s, 6s, 12s, 24s, 48s: long enough to be worth a round trip, short enough that
+      // nobody watching decides it is broken.
+      3000 * 2 ** attempt,
+    )
+
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, token, checkoutPollsLeft, subscription?.current?.status])
 
   function handleToggleDevAi() {
     setDevAiDisabled((current) => {
@@ -1235,6 +1289,8 @@ export function useVistazo() {
     handleRecaptchaChallengeSuccess,
     handleLogout,
     handleCancelSubscription,
+    handlePauseSubscription,
+    handleResumeSubscription,
     handleRefreshSubscription,
     handleAiRetry,
     handleConsentAccept,

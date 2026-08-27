@@ -62,6 +62,9 @@ public static class SchemaUpgrades
                      ("TrialWasApplied", "INTEGER NOT NULL DEFAULT 0"),
                      ("LastSyncedAtUtc", "TEXT NULL"),
                      ("IsDevSimulated", "INTEGER NOT NULL DEFAULT 0"),
+                     ("CheckoutUrl", "TEXT NULL"),
+                     ("LastPaymentStatusDetail", "TEXT NULL"),
+                     ("PausedAtUtc", "TEXT NULL"),
                  })
         {
             await AddColumnIfMissingAsync(db, "Subscriptions", column, definition, cancellationToken);
@@ -86,6 +89,7 @@ public static class SchemaUpgrades
                 "CurrencyId" TEXT NULL,
                 "Status" TEXT NULL,
                 "RawStatus" TEXT NULL,
+                "StatusDetail" TEXT NULL,
                 "PaymentMethodLabel" TEXT NULL,
                 "PeriodStartUtc" TEXT NULL,
                 "PeriodEndUtc" TEXT NULL,
@@ -99,6 +103,10 @@ public static class SchemaUpgrades
             );
             """,
             cancellationToken);
+
+        // Only reached by databases created before StatusDetail existed; the CREATE TABLE
+        // above already carries it for new ones.
+        await AddColumnIfMissingAsync(db, "SubscriptionInvoices", "StatusDetail", "TEXT NULL", cancellationToken);
 
         await db.Database.ExecuteSqlRawAsync(
             """
