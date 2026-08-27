@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
+import { ErrorBanner } from '../../components/ErrorBanner'
 import { ExportTutorialModal } from '../../components/ExportTutorialModal'
 import { FileUploadZone } from '../../components/FileUploadZone'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
@@ -10,6 +11,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricModal } from '../../components/MetricModal'
+import { ModalShell } from '../../components/ModalShell'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
@@ -254,7 +256,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       </header>
 
       {!hasGoogleClientId ? <p className="warning-banner">{copy.setupWarning}</p> : null}
-      {error ? <p className="error-banner">{error}</p> : null}
+      {error ? <ErrorBanner message={error} dismissLabel={copy.dismissError} onDismiss={() => setError('')} /> : null}
 
       {analysis && user ? (
         <main className="analytics-layout">
@@ -542,9 +544,12 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       )}
 
       {isAuthModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsAuthModalOpen(false)}>
-          <section className="modal-card auth-modal" onClick={(event) => event.stopPropagation()}>
-            <CrossButton label={copy.close} onClick={() => setIsAuthModalOpen(false)} className="close-button" />
+        <ModalShell
+          onDismiss={() => setIsAuthModalOpen(false)}
+          label={needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}
+          className="auth-modal"
+          closeLabel={copy.close}
+        >
             {needsRecaptchaChallenge ? (
               <RecaptchaChallenge
                 siteKey={recaptchaSiteKeyV2}
@@ -571,13 +576,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               </>
             )}
             {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
-          </section>
-        </div>
+        </ModalShell>
       ) : null}
 
       {isVipPopoverOpen ? (
         <VipUnlockPopover
           copy={{ ...copy.subscriptionPage, ...copy.vipPopover }}
+          language={language}
           user={user}
           token={token}
           plan={subscription?.plan ?? null}

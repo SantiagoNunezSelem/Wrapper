@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import type { ShellCopy } from '../../copy/shellCopy'
 import type { Language, UserProfile } from '../../types'
 import { ChartIcon, CrownIcon, FolderIcon, GlobeIcon, HomeIcon, ShieldIcon, SignOutIcon } from './icons'
@@ -41,34 +41,62 @@ export function MobileDrawer({
   onSignIn: () => void
   onSignOut: () => void
 }) {
-  const panelRef = useRef<HTMLDivElement | null>(null)
-
-  /* Escape cierra, y mientras está abierto el fondo no scrollea: si no, el dedo
-   * arrastra la página de atrás en vez del menú. */
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleKey)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [open, onClose])
-
   if (!open) {
     return null
   }
+
+  return (
+    <DrawerPanel
+      copy={copy}
+      language={language}
+      user={user}
+      activeTab={activeTab}
+      hasAnalysis={hasAnalysis}
+      subscriptionLabel={subscriptionLabel}
+      onClose={onClose}
+      onNavigate={onNavigate}
+      onToggleLanguage={onToggleLanguage}
+      onManageSubscription={onManageSubscription}
+      onSignIn={onSignIn}
+      onSignOut={onSignOut}
+    />
+  )
+}
+
+/* El panel se separó del componente de arriba para que `useModalDismiss` se monte
+   y se desmonte con el menú: un hook no puede correr detrás de un `if (!open)`, y
+   es justo el momento de abrir el que tiene que mover el foco adentro. */
+function DrawerPanel({
+  copy,
+  language,
+  user,
+  activeTab,
+  hasAnalysis,
+  subscriptionLabel,
+  onClose,
+  onNavigate,
+  onToggleLanguage,
+  onManageSubscription,
+  onSignIn,
+  onSignOut,
+}: {
+  copy: ShellCopy
+  language: Language
+  user: UserProfile | null
+  activeTab: MobileTab
+  hasAnalysis: boolean
+  subscriptionLabel: string
+  onClose: () => void
+  onNavigate: (tab: MobileTab) => void
+  onToggleLanguage: () => void
+  onManageSubscription: () => void
+  onSignIn: () => void
+  onSignOut: () => void
+}) {
+  /* Escape cierra, el fondo no scrollea (si no, el dedo arrastra la página de atrás
+     en vez del menú) y el foco queda adentro — todo compartido con el resto de los
+     diálogos, en vez de reimplementado acá. */
+  const panelRef = useModalDismiss<HTMLDivElement>(onClose)
 
   const m = copy.mobile
 
