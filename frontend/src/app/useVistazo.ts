@@ -225,6 +225,13 @@ export function useVistazo() {
     void hydrateSession(token)
   }, [token])
 
+  // El idioma del documento tiene que seguir al de la interfaz: con `lang="en"` fijo,
+  // un lector de pantalla leía todo el español con voz inglesa y el navegador ofrecía
+  // traducir una página que ya estaba en el idioma del usuario.
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
+
   // Keeps `route` in sync with the back/forward buttons — pushState alone only updates
   // the address bar, not this state.
   useEffect(() => {
@@ -442,9 +449,16 @@ export function useVistazo() {
       setSavedAnalyses(analyses)
     } catch (caught) {
       console.error(caught)
-      localStorage.removeItem(authTokenKey)
-      setToken(null)
-      setUser(null)
+
+      // Sólo un rechazo de identidad invalida la sesión. Un backend caído, un wifi que
+      // se cortó o un CORS mal configurado son transitorios: borrar el token ahí
+      // deslogueaba al usuario y le vaciaba el historial por un parpadeo de red, y al
+      // volver la conexión ya no había forma de recuperarlo sin volver a entrar.
+      if (caught instanceof ApiError && (caught.status === 401 || caught.status === 403)) {
+        localStorage.removeItem(authTokenKey)
+        setToken(null)
+        setUser(null)
+      }
     }
   }
 
@@ -1053,6 +1067,17 @@ export function useVistazo() {
       })
 
       setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+    } catch (caught) {
+      // Sin este catch el rechazo quedaba sin manejar: el análisis seguía en pantalla,
+      // el historial no se actualizaba y nadie se enteraba de que el guardado falló.
+      // El caso más probable es el tope de análisis por cuenta, que tiene copy propio
+      // porque la salida es concreta (borrar uno del historial), no "probá de nuevo".
+      console.error(caught)
+      setError(
+        caught instanceof ApiError && caught.code === 'analysis_limit_reached'
+          ? copy.saveLimitError
+          : copy.saveError,
+      )
     } finally {
       setBusyMessage('')
     }

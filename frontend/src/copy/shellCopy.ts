@@ -67,6 +67,21 @@ export const shellCopy = {
     savedTitle: 'Historial guardado',
     noSaved: 'Todavía no hay análisis guardados para este usuario.',
     openSaved: 'Abrir',
+    deleteSaved: 'Borrar del historial',
+    deleteSavedConfirm: '¿Borrar «{chat}» del historial? No se puede deshacer.',
+    deleteSavedError: 'No pudimos borrar este análisis. Probá de nuevo.',
+    installApp: 'Instalar app',
+    uploadZone: {
+      idle: 'Arrastrá acá el archivo de tu chat',
+      hint: 'o usá el botón de abajo',
+      browse: 'Buscar archivo',
+      formats: 'Formatos aceptados: export de WhatsApp .txt o .zip',
+      rejected: 'No pudimos leer lo que soltaste. Soltá un solo archivo exportado de WhatsApp (.txt o .zip).',
+    },
+    sharedPrivacy: {
+      body: 'No se pueden visualizar los chats debido a políticas de privacidad. Únicamente el autor que generó el chat puede acceder a esta funcionalidad.',
+      dismiss: 'Entendido',
+    },
     chatSummaryTitle: 'Resumen del chat',
     logout: 'Cerrar sesión',
     processing: 'Procesando archivo...',
@@ -296,6 +311,9 @@ export const shellCopy = {
     messages: 'Mensajes',
     generatedAt: 'Generado',
     loadError: 'No pude completar la acción.',
+    dismissError: 'Descartar el aviso',
+    saveError: 'No pudimos guardar este análisis. Lo seguís viendo en pantalla — probá de nuevo o volvé a subir el chat.',
+    saveLimitError: 'Llegaste al máximo de análisis guardados. Borrá alguno del historial para poder guardar este.',
     shareTargetError:
       'No pudimos recibir el archivo compartido desde WhatsApp. Guardalo en el celular y subilo manualmente desde acá.',
     emptyChatError:
@@ -444,6 +462,21 @@ export const shellCopy = {
     savedTitle: 'Saved history',
     noSaved: 'There are no saved analyses for this user yet.',
     openSaved: 'Open',
+    deleteSaved: 'Delete from history',
+    deleteSavedConfirm: 'Delete "{chat}" from your history? This cannot be undone.',
+    deleteSavedError: "We couldn't delete this analysis. Please try again.",
+    installApp: 'Install app',
+    uploadZone: {
+      idle: 'Drag your chat file here',
+      hint: 'or use the button below',
+      browse: 'Browse files',
+      formats: 'Supported formats: WhatsApp .txt or .zip export',
+      rejected: "We couldn't read what you dropped. Drop a single WhatsApp export file (.txt or .zip).",
+    },
+    sharedPrivacy: {
+      body: 'Chats cannot be displayed due to privacy policies. Only the person who created this Wrapped can open them.',
+      dismiss: 'Got it',
+    },
     chatSummaryTitle: 'Chat summary',
     logout: 'Sign out',
     processing: 'Processing file...',
@@ -673,6 +706,9 @@ export const shellCopy = {
     messages: 'Messages',
     generatedAt: 'Generated',
     loadError: 'I could not complete the action.',
+    dismissError: 'Dismiss this notice',
+    saveError: "We couldn't save this analysis. It is still on screen — try again or re-upload the chat.",
+    saveLimitError: 'You reached the maximum number of saved analyses. Delete one from your history to save this one.',
     shareTargetError:
       "We couldn't receive the file shared from WhatsApp. Save it on your phone and upload it manually from here.",
     emptyChatError:

@@ -21,8 +21,8 @@ export function MobileTabBar({
   active: MobileTab
   copy: ShellCopy['mobile']
   /** Sin un chat cargado la pestaña de métricas no lleva a ningún lado, así que
-   * se atenúa en vez de desaparecer: que el destino exista es parte de entender
-   * la app, aunque hoy esté vacío. */
+   * se atenúa —y se deshabilita— en vez de desaparecer: que el destino exista es
+   * parte de entender la app, aunque hoy esté vacío. */
   hasAnalysis: boolean
   onSelect: (tab: MobileTab) => void
   onUpload: () => void
@@ -67,6 +67,12 @@ function TabButton({
       type="button"
       className={`m-tab ${isActive ? 'is-active' : ''} ${tab.enabled ? '' : 'is-empty'}`}
       onClick={() => onSelect(tab.id)}
+      // Antes el botón se pintaba atenuado pero seguía disparando `onSelect`, y el
+      // efecto de MobileShell rebotaba la vista a "home" en el mismo tick: el toque
+      // no hacía nada y tampoco explicaba por qué. Deshabilitado se lee como lo que
+      // es —un destino que todavía no tiene contenido— y el "+" de al lado sigue
+      // siendo el camino para llenarlo.
+      disabled={!tab.enabled}
       aria-current={isActive ? 'page' : undefined}
     >
       <span className="m-tab-icon">

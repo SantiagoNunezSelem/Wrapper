@@ -22,7 +22,12 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  event.respondWith(fetch(event.request))
+  // Todo lo demás se deja pasar sin tocar. Antes esto hacía
+  // `event.respondWith(fetch(event.request))`, que no cachea nada: sólo agregaba un
+  // salto por el service worker en cada asset, rompía las peticiones por rango
+  // (audio/video, y el propio streaming del navegador) y convertía cualquier error
+  // del worker en un fallo de carga de la página. Sin respondWith, el navegador
+  // resuelve la petición por su cuenta, que es exactamente lo que hacía falta.
 })
 
 async function handleShareTarget(request) {

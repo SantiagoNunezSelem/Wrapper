@@ -375,6 +375,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           </section>
 
           <FileUploadZone
+            copy={copy.uploadZone}
             onFileSelect={processFile}
             isLoading={Boolean(busyMessage)}
             loadingMessage={busyMessage}
@@ -518,6 +519,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             </div>
 
             <FileUploadZone
+              copy={copy.uploadZone}
               onFileSelect={processFile}
               isLoading={Boolean(busyMessage)}
               loadingMessage={busyMessage}

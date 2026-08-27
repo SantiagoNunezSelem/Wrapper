@@ -280,6 +280,7 @@ export function MetricSheet({
                             group={group}
                             isNew={groups.revealedFrom !== null && position >= groups.revealedFrom}
                             isSharedStory={isSharedStory}
+                            privacyCopy={copy.sharedPrivacy}
                           />
                         ))}
                       </div>
