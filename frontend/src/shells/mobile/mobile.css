@@ -1914,8 +1914,8 @@
   padding: 0;
 }
 
-.m-sheet .word-search-input {
-  width: 100%;
+.m-sheet .word-search-row {
+  max-width: none;
 }
 
 .m-sheet .message-group-list {

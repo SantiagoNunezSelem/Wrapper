@@ -316,6 +316,15 @@ describe('countWordOccurrences', () => {
     expect(countWordOccurrences(messages, 'buenos dias')).toBe(1)
   })
 
+  it('cuenta también las palabras que la contienen, igual que el filtro de la nube', () => {
+    const messages = chat(
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'te tengo mucho amor, amor' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'que persona tan amorosa, estoy enamorado' },
+    )
+
+    expect(countWordOccurrences(messages, 'amor')).toBe(4)
+  })
+
   it('una palabra que nunca se dijo da cero', () => {
     const messages = chat({ at: '2025-03-10T10:00:00', from: 'Ana', text: 'asado asado' })
 

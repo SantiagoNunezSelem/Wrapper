@@ -3001,9 +3001,12 @@ function getWordCounts(messages: ChatMessage[]): Map<string, number> {
  * `getWordCounts`'s filtering — the word cloud only surfaces content tokens
  * (length >= 3, not a stopword) among its top 40, so a manual search has to
  * fall back to scanning the raw messages for anything that isn't already
- * there. Matches contiguous tokens the same way `getPhraseCounts` does, so a
- * multi-word search ("buenos dias") only counts occurrences where those words
- * actually appear back to back. */
+ * there. Each query token only has to be a substring of the chat token at
+ * that position — same "contains" semantics as the cloud's own live filter
+ * (see `filterWordCloud`) — so searching "amor" also counts "amoroso" and
+ * "enamorado", not just the bare word. Matches contiguous tokens the same way
+ * `getPhraseCounts` does, so a multi-word search ("buenos dias") only counts
+ * occurrences where those words actually appear back to back. */
 export function countWordOccurrences(messages: ChatMessage[], rawQuery: string): number {
   const queryTokens = tokenize(rawQuery)
   if (queryTokens.length === 0) {
@@ -3017,7 +3020,7 @@ export function countWordOccurrences(messages: ChatMessage[], rawQuery: string):
     for (let start = 0; start + queryTokens.length <= tokens.length; start += 1) {
       let matches = true
       for (let offset = 0; offset < queryTokens.length; offset += 1) {
-        if (tokens[start + offset] !== queryTokens[offset]) {
+        if (!tokens[start + offset].includes(queryTokens[offset])) {
           matches = false
           break
         }

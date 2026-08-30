@@ -138,6 +138,16 @@ describe('analysisWorker', () => {
     expect(reply.type).toBe('cacheMiss')
   })
 
+  it('cuenta una palabra buscada en todo el chat y por cada participante', async () => {
+    const { send } = await bootWorker()
+
+    const [reply] = await send({ requestId: 1, type: 'wordSearch', messages, query: 'jaja', participants: ['Ana', 'Beto'] })
+
+    expect(reply.type).toBe('wordSearch')
+    expect(reply.type === 'wordSearch' && reply.count).toBe(1)
+    expect(reply.type === 'wordSearch' && reply.countsByParticipant).toEqual({ Ana: 1, Beto: 0 })
+  })
+
   it('convierte una excepción en un mensaje de error, no en un worker muerto', async () => {
     const { send } = await bootWorker()
 

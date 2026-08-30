@@ -9,10 +9,6 @@ const words = [
   { word: 'laburo', count: 7 },
 ]
 
-// `WordCloud` is fully controlled — it never tracks its own selection, the
-// selected word is a prop coming from useEditableWordCloud. Tests that need
-// "click a word, see its cross appear" wire that prop up here the same way
-// the real hook would, instead of asserting on state the component doesn't own.
 function renderCloud(extra: Partial<Parameters<typeof WordCloud>[0]> = {}) {
   return render(
     <TooltipProvider>
@@ -22,53 +18,35 @@ function renderCloud(extra: Partial<Parameters<typeof WordCloud>[0]> = {}) {
 }
 
 describe('WordCloud — modo lectura', () => {
-  it('sin manejadores de click, las palabras no son botones', () => {
+  it('sin onRemoveWord, las palabras no muestran la cruz de borrar', () => {
     renderCloud()
 
-    expect(screen.queryByRole('button', { name: 'pizza' })).not.toBeInTheDocument()
     expect(screen.getByText('pizza')).toBeInTheDocument()
-  })
-
-  it('nunca muestra la cruz de borrar', () => {
-    renderCloud({ selectedWord: 'pizza' })
-
     expect(document.querySelector('.chart-word-cloud-remove')).toBeNull()
   })
 })
 
 describe('WordCloud — modo editable', () => {
-  it('clickear una palabra llama a onWordClick con esa palabra', async () => {
-    const onWordClick = vi.fn()
-    renderCloud({ onWordClick, onDeselect: vi.fn(), onRemoveWord: vi.fn() })
+  it('con onRemoveWord, cada palabra lleva su cruz de borrar (revelada por hover en CSS)', () => {
+    renderCloud({ onRemoveWord: vi.fn() })
 
-    await userEvent.click(screen.getByText('pizza'))
-
-    expect(onWordClick).toHaveBeenCalledWith('pizza')
+    expect(document.querySelectorAll('.chart-word-cloud-remove')).toHaveLength(words.length)
   })
 
-  it('la palabra seleccionada muestra su cruz de borrar; las demás no', () => {
-    renderCloud({ selectedWord: 'pizza', onWordClick: vi.fn(), onDeselect: vi.fn(), onRemoveWord: vi.fn() })
-
-    expect(document.querySelectorAll('.chart-word-cloud-remove')).toHaveLength(1)
-  })
-
-  it('clickear la cruz llama a onRemoveWord con esa palabra, no a onWordClick de nuevo', async () => {
-    const onWordClick = vi.fn()
+  it('clickear la cruz de una palabra llama a onRemoveWord con esa palabra', async () => {
     const onRemoveWord = vi.fn()
-    renderCloud({ selectedWord: 'pizza', onWordClick, onDeselect: vi.fn(), onRemoveWord, removeLabel: 'Quitar "{word}"' })
+    renderCloud({ onRemoveWord, removeLabel: 'Quitar "{word}"' })
 
     await userEvent.click(screen.getByRole('button', { name: 'Quitar "pizza"' }))
 
     expect(onRemoveWord).toHaveBeenCalledWith('pizza')
-    expect(onWordClick).not.toHaveBeenCalled()
+    expect(onRemoveWord).toHaveBeenCalledTimes(1)
   })
 
-  it('clickear el fondo de la nube deselecciona en vez de removerse a sí misma', async () => {
-    const onDeselect = vi.fn()
-    renderCloud({ selectedWord: 'pizza', onWordClick: vi.fn(), onDeselect, onRemoveWord: vi.fn() })
+  it('sólo la palabra recién agregada por la búsqueda entra con la animación', () => {
+    renderCloud({ onRemoveWord: vi.fn(), justAddedWord: 'laburo' })
 
-    await userEvent.click(document.querySelector('.chart-word-cloud')!)
-
-    expect(onDeselect).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('pizza').closest('.chart-word-cloud-item')).not.toHaveClass('is-new')
+    expect(screen.getByText('laburo').closest('.chart-word-cloud-item')).toHaveClass('is-new')
   })
 })

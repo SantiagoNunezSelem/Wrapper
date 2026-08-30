@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
@@ -13,7 +13,7 @@ import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
 import { isParticipantBarChart } from '../../lib/metrics'
 import type { ChartData, ChatMessage, MetricCard } from '../../types'
-import { ChevronIcon } from './icons'
+import { ChevronIcon, SearchIcon } from './icons'
 
 /** Estas familias de gráfico son anchas por naturaleza: el heatmap anual tiene
  * 53 columnas y pueden ser más según el rango del chat. En 320px encogerlos los
@@ -119,30 +119,25 @@ export function MetricSheet({
   const heroChartRepeatsBreakdown =
     isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
 
-  const filteredDetailChart = useMemo(
-    () => (card.detail?.chart ? filterWordCloud(card.detail.chart, wordSearch) : undefined),
-    [card.detail?.chart, wordSearch],
-  )
-
-  const filteredSeries = useMemo(
-    () => card.detail?.series?.map((entry) => ({ name: entry.name, chart: filterWordCloud(entry.chart, wordSearch) })) ?? [],
-    [card.detail?.series, wordSearch],
-  )
-
   const wordCloudEditor = useEditableWordCloud({
     chart: card.basic?.chart,
+    series: card.detail?.series,
     messages,
     resetKey: card.id,
     copy: copy.wordCloudSearch,
   })
 
+  async function submitWordSearch() {
+    if (await wordCloudEditor.searchAndAdd(wordSearch)) {
+      setWordSearch('')
+    }
+  }
+
   function handleWordSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') {
       return
     }
-    if (wordCloudEditor.searchAndAdd(wordSearch)) {
-      setWordSearch('')
-    }
+    void submitWordSearch()
   }
 
   const m = copy.mobile
@@ -188,14 +183,13 @@ export function MetricSheet({
               {card.basic.chart && !heroChartRepeatsBreakdown ? (
                 <Chart
                   chart={wordCloudEditor.displayChart ?? card.basic.chart}
+                  justAddedWord={wordCloudEditor.justAddedWord}
                   wordCloudEditing={
                     card.basic.chart.kind === 'wordCloud'
                       ? {
-                          selectedWord: wordCloudEditor.selectedWord,
-                          onWordClick: wordCloudEditor.onWordClick,
-                          onDeselect: wordCloudEditor.onDeselect,
                           onRemoveWord: wordCloudEditor.onRemoveWord,
                           removeLabel: copy.wordCloudSearch.removeLabel,
+                          removingWord: wordCloudEditor.removingWord,
                         }
                       : undefined
                   }
@@ -224,29 +218,41 @@ export function MetricSheet({
 
                   {hasWordCloud ? (
                     <>
-                      <input
-                        type="search"
-                        className="word-search-input"
-                        placeholder={copy.searchPlaceholder}
-                        value={wordSearch}
-                        onChange={(event) => {
-                          setWordSearch(event.target.value.toLowerCase())
-                          wordCloudEditor.clearSearchError()
-                        }}
-                        onKeyDown={handleWordSearchKeyDown}
-                      />
+                      <div className="word-search-row">
+                        <input
+                          type="search"
+                          className="word-search-input"
+                          placeholder={copy.searchPlaceholder}
+                          value={wordSearch}
+                          disabled={wordCloudEditor.isSearching}
+                          onChange={(event) => {
+                            setWordSearch(event.target.value.toLowerCase())
+                            wordCloudEditor.clearSearchError()
+                          }}
+                          onKeyDown={handleWordSearchKeyDown}
+                        />
+                        <button
+                          type="button"
+                          className="word-search-button"
+                          onClick={() => void submitWordSearch()}
+                          disabled={wordCloudEditor.isSearching}
+                          aria-label={copy.searchPlaceholder}
+                        >
+                          {wordCloudEditor.isSearching ? <span className="word-search-spinner" aria-hidden="true" /> : <SearchIcon />}
+                        </button>
+                      </div>
                       {wordCloudEditor.searchError ? <p className="word-search-error">{wordCloudEditor.searchError}</p> : null}
                     </>
                   ) : null}
 
-                  {filteredDetailChart ? <Chart chart={filteredDetailChart} /> : null}
+                  {card.detail.chart ? <Chart chart={card.detail.chart} /> : null}
 
-                  {filteredSeries.length > 0 ? (
+                  {wordCloudEditor.displaySeries && wordCloudEditor.displaySeries.length > 0 ? (
                     <div className="m-series">
-                      {filteredSeries.map((entry) => (
+                      {wordCloudEditor.displaySeries.map((entry) => (
                         <div className="m-series-item" key={entry.name}>
                           <h4>{entry.name}</h4>
-                          <Chart chart={entry.chart} compact />
+                          <Chart chart={entry.chart} compact justAddedWord={wordCloudEditor.justAddedWord} />
                         </div>
                       ))}
                     </div>
@@ -359,16 +365,18 @@ function Chart({
   chart,
   compact = false,
   wordCloudEditing,
+  justAddedWord,
 }: {
   chart: ChartData
   compact?: boolean
   wordCloudEditing?: WordCloudEditing
+  justAddedWord?: string | null
 }) {
   if (WIDE_CHARTS.has(chart.kind)) {
     return (
       <div className="m-chart m-scroll-x">
         <div className="m-chart-wide">
-          <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} />
+          <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} justAddedWord={justAddedWord} />
         </div>
       </div>
     )
@@ -376,14 +384,7 @@ function Chart({
 
   return (
     <div className="m-chart">
-      <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} />
+      <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} justAddedWord={justAddedWord} />
     </div>
   )
-}
-
-function filterWordCloud(chart: ChartData, search: string): ChartData {
-  if (chart.kind !== 'wordCloud' || !search) {
-    return chart
-  }
-  return { kind: 'wordCloud', words: chart.words.filter((word) => word.word.includes(search)) }
 }
