@@ -17,7 +17,7 @@ import { ChevronIcon, CrownIcon, LockIcon, SparkIcon } from './icons'
  * columna de ancho fijo tendría que reservar lugar para el peor caso y se lo
  * quitaría al título en las otras veinticuatro.
  *
- * NUEVO: memoizada, por lo mismo que `MetricCard` en desktop — la lista monta 25
+ * Memoizada, por lo mismo que `MetricCard` en desktop — la lista monta 25
  * y cualquier cambio de estado del shell las redibujaba todas.
  */
 export const MetricRow = memo(function MetricRow({
@@ -32,8 +32,7 @@ export const MetricRow = memo(function MetricRow({
   /** Sólo llega para quien tiene Pro; para el resto es indefinido. */
   ai?: AiPanelProps
   onOpen: (card: MetricCard) => void
-  /** NUEVO — escalona la entrada de la fila al montar la lista (ver MetricList).
-   * Para revertir: borrar este prop y el `style` que lo usa más abajo. */
+  /** Escalona la entrada de la fila al montar la lista (ver MetricList). */
   revealDelayMs?: number
 }) {
   /* "Pro pero la IA todavía no dio veredicto" no es lo mismo que "no es Pro":
@@ -47,7 +46,6 @@ export const MetricRow = memo(function MetricRow({
     <button
       type="button"
       className={`m-row ${card.accent} ${locked ? 'is-locked' : ''} ${aiBlocked ? 'is-ai' : ''}`}
-      // ANTES: no había prop style acá
       style={revealDelayMs ? { animationDelay: `${revealDelayMs}ms` } : undefined}
       onClick={() => onOpen(card)}
     >

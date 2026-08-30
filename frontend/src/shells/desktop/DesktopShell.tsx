@@ -30,7 +30,7 @@ import './desktop.css'
  * El Vistazo de siempre, para monitor. El JSX es exactamente el que vivía en
  * App.tsx: este archivo no rediseñó nada, sólo se lo llevó de lugar.
  *
- * Todo lo que se ve acá sale de , así que desktop y mobile
+ * Todo lo que se ve acá sale de `useVistazo()`, así que desktop y mobile
  * muestran la misma información calculada por el mismo código. Lo único
  * propio de este shell es el estado de presentación de abajo — animaciones y
  * un dropdown que en un teléfono no existen.
@@ -359,7 +359,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                     <div
                       key={card.id}
                       className="metric-list-item"
-                      // ANTES: style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
                       style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 65}ms` }}
                     >
                       <MetricCard

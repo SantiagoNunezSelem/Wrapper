@@ -4,8 +4,6 @@ import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
 import { LockedPanel, type FreeUnlockPrompt } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
-// NUEVO: números que laten — para revertir, borrar este import y el uso de
-// useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
 import { useCountUp } from '../../components/useCountUp'
 import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { useModalDismiss } from '../../components/useModalDismiss'
@@ -143,7 +141,7 @@ export function MetricSheet({
 
   const m = copy.mobile
   const heroSplit = card.basic ? splitLeadingEmoji(card.basic.value) : null
-  const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
+  const statValue = useCountUp(heroSplit?.rest ?? '')
 
   return (
     <div
@@ -176,7 +174,6 @@ export function MetricSheet({
             <div className="m-sheet-hero">
               <strong>
                 {heroSplit?.emoji ? <span className="stat-emoji">{heroSplit.emoji} </span> : null}
-                {/* ANTES: <span className="gradient-text">{heroSplit?.rest}</span> */}
                 <span className="gradient-text">{statValue}</span>
               </strong>
               <span>{card.basic.label}</span>
