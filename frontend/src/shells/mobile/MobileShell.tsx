@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DevToolbar } from '../../components/DevToolbar'
@@ -8,9 +8,11 @@ import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
+import { RenameDialog } from '../../components/RenameDialog'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import type { Vistazo } from '../../app/useVistazo'
 import type { MetricCard } from '../../types'
@@ -98,11 +100,17 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleCancelSubscription,
     handleRefreshSubscription,
     openSavedAnalysis,
+    persistWordCloudEdit,
     pendingDeleteAnalysis,
     isDeletingAnalysis,
     requestDeleteAnalysis,
     cancelDeleteAnalysis,
     confirmDeleteAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
   } = vistazo
 
   const [view, setView] = useState<MobileView>('home')
@@ -142,6 +150,29 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     [openMetricId, interleavedMetrics],
   )
   const openMetric = openMetricIndex >= 0 ? interleavedMetrics[openMetricIndex] : null
+
+  // Called here rather than inside MetricSheet so its state survives the sheet
+  // closing and reopening — this shell stays mounted for the whole session, the
+  // sheet doesn't. `resetKey` sticks to the last opened card's id instead of
+  // following `openMetric` straight through `null` while the sheet is closed, so
+  // it only actually clears the editor when the *next* card opened is a different
+  // one, or `sourceHash` changes (a new upload replacing the chat).
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (openMetric) {
+    wordCloudCardIdRef.current = openMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: openMetric?.basic?.chart,
+    series: openMetric?.detail?.series,
+    messages: activeChat?.messages,
+    resetKey: `${analysis?.sourceHash ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+    onEdit: (chart, series) => {
+      if (wordCloudCardIdRef.current) {
+        void persistWordCloudEdit(wordCloudCardIdRef.current, chart, series)
+      }
+    },
+  })
 
   function goTo(next: MobileView) {
     setIsDrawerOpen(false)
@@ -263,6 +294,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 onUpload={requestUpload}
                 onOpenSaved={openSavedAnalysis}
                 onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSeeAll={() => goTo('history')}
               />
             ) : null}
@@ -302,6 +334,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 user={user}
                 onOpenSaved={openSavedAnalysis}
                 onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onUpload={requestUpload}
               />
@@ -385,6 +418,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               isRevealingFreeUnlock={revealingFreeUnlockId === openMetric.id}
               overStory={isDetailOverStory}
               messages={activeChat?.messages}
+              wordCloudEditor={wordCloudEditor}
               onClose={closeDetail}
               onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {
@@ -477,6 +511,26 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             void confirmDeleteAnalysis()
           }}
           onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
+      {pendingRenameAnalysis ? (
+        <RenameDialog
+          copy={{
+            title: copy.renameSavedTitle,
+            label: copy.renameSavedLabel,
+            placeholder: copy.renameSavedPlaceholder,
+            save: copy.renameSavedCta,
+            cancel: copy.renameSavedCancel,
+            busy: copy.renaming,
+            close: copy.close,
+          }}
+          initialValue={pendingRenameAnalysis.chatName}
+          isBusy={isRenamingAnalysis}
+          onSave={(chatName) => {
+            void confirmRenameAnalysis(chatName)
+          }}
+          onCancel={cancelRenameAnalysis}
         />
       ) : null}
 

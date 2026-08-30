@@ -10,24 +10,40 @@ import { Timeline } from './Timeline'
 import { WordCloud } from './WordCloud'
 import { YearHeatmap } from './YearHeatmap'
 
-/** Only ever passed for the wordcloud metric's hero chart — every other
- * caller renders a read-only cloud. See useEditableWordCloud. */
+/** Only ever passed for the wordcloud metric's hero chart, the one cloud a
+ * search can remove a word from — every other caller renders a read-only
+ * cloud. See useEditableWordCloud. */
 export interface WordCloudEditing {
-  selectedWord: string | null
-  onWordClick: (word: string) => void
-  onDeselect: () => void
   onRemoveWord: (word: string) => void
   removeLabel: string
+  /** The word whose "×" was just clicked — shows a spinner in its place until
+   * the removal commits. Only ever meaningful alongside `onRemoveWord`, so it
+   * lives here rather than as its own top-level prop like `justAddedWord`. */
+  removingWord: string | null
+  /** The word currently selected for removal (toggle on click) */
+  selectedWordForRemoval: string | null
+  /** Called when a word is clicked to toggle its selection */
+  onToggleSelection: (word: string) => void
 }
 
 export function ChartRenderer({
   chart,
   compact = false,
   wordCloudEditing,
+  justAddedWord,
+  protectedWords,
 }: {
   chart: ChartData
   compact?: boolean
   wordCloudEditing?: WordCloudEditing
+  /** The word from the most recent successful search — plays an entrance
+   * animation on just that bubble, in the hero cloud and in whichever
+   * participant clouds it also landed in. Independent of `wordCloudEditing`
+   * since a participant cloud gets this without becoming removable. */
+  justAddedWord?: string | null
+  /** Passed straight through to WordCloud — see its own doc. Matters only when
+   * `compact` is also set, since that's the only case anything gets truncated. */
+  protectedWords?: string[]
 }) {
   switch (chart.kind) {
     case 'bar':
@@ -56,11 +72,13 @@ export function ChartRenderer({
           words={chart.words}
           unit={chart.unit}
           compact={compact}
-          selectedWord={wordCloudEditing?.selectedWord}
-          onWordClick={wordCloudEditing?.onWordClick}
-          onDeselect={wordCloudEditing?.onDeselect}
           onRemoveWord={wordCloudEditing?.onRemoveWord}
           removeLabel={wordCloudEditing?.removeLabel}
+          removingWord={wordCloudEditing?.removingWord}
+          selectedWordForRemoval={wordCloudEditing?.selectedWordForRemoval}
+          onToggleSelection={wordCloudEditing?.onToggleSelection}
+          justAddedWord={justAddedWord}
+          protectedWords={protectedWords}
         />
       )
     default:

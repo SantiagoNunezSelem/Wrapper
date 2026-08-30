@@ -12,6 +12,7 @@ import { LockedPanel } from '../../components/LockedPanel'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricModal } from '../../components/MetricModal'
 import { ModalShell } from '../../components/ModalShell'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
@@ -19,6 +20,7 @@ import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipBadge } from '../../components/VipBadge'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { RenameDialog } from '../../components/RenameDialog'
 import { landingMockupStats, type ShellCopy } from '../../copy/shellCopy'
 import { formatNumber } from '../../lib/metrics'
 import { useInView } from '../../lib/useInView'
@@ -50,6 +52,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     landingPreviewCards,
     selectedMetric,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -107,8 +110,36 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     requestDeleteAnalysis,
     cancelDeleteAnalysis,
     confirmDeleteAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
     backToLanding,
   } = vistazo
+
+  // Called here rather than inside MetricModal so its state survives the modal
+  // closing and reopening — this shell stays mounted for the whole session, the
+  // modal doesn't. `resetKey` sticks to the last selected card's id instead of
+  // following `selectedMetric` straight through `null` while the modal is closed,
+  // so it only actually clears the editor when the *next* card opened is a
+  // different one, or `sourceHash` changes (a new upload replacing the chat).
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (selectedMetric) {
+    wordCloudCardIdRef.current = selectedMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: selectedMetric?.basic?.chart,
+    series: selectedMetric?.detail?.series,
+    messages: activeChat?.messages,
+    resetKey: `${analysis?.sourceHash ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+    onEdit: (chart, series) => {
+      if (wordCloudCardIdRef.current) {
+        void persistWordCloudEdit(wordCloudCardIdRef.current, chart, series)
+      }
+    },
+  })
 
   // Las secciones de la landing aparecen al entrar en viewport, cada una por
   // su cuenta para que la página se arme por etapas y no toda de golpe.
@@ -346,6 +377,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                   copy={copy}
                   onOpen={openSavedAnalysis}
                   onDelete={requestDeleteAnalysis}
+                  onRename={requestRenameAnalysis}
                 />
               </section>
             </aside>
@@ -421,6 +453,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                 copy={copy}
                 onOpen={openSavedAnalysis}
                 onDelete={requestDeleteAnalysis}
+                onRename={requestRenameAnalysis}
               />
             )}
           </section>
@@ -634,6 +667,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           freeUnlock={freeUnlockFor(selectedMetric)}
           isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
           messages={activeChat?.messages}
+          wordCloudEditor={wordCloudEditor}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
         />
@@ -680,6 +714,26 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         />
       ) : null}
 
+      {pendingRenameAnalysis ? (
+        <RenameDialog
+          copy={{
+            title: copy.renameSavedTitle,
+            label: copy.renameSavedLabel,
+            placeholder: copy.renameSavedPlaceholder,
+            save: copy.renameSavedCta,
+            cancel: copy.renameSavedCancel,
+            busy: copy.renaming,
+            close: copy.close,
+          }}
+          initialValue={pendingRenameAnalysis.chatName}
+          isBusy={isRenamingAnalysis}
+          onSave={(chatName) => {
+            void confirmRenameAnalysis(chatName)
+          }}
+          onCancel={cancelRenameAnalysis}
+        />
+      ) : null}
+
       {isConsentModalOpen ? (
         <AiConsentModal
           copy={{ ...copy.consent, close: copy.close }}
@@ -717,6 +771,15 @@ function TrashIcon() {
   )
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
 /** El historial guardado. Vivía escrito dos veces —una en la barra lateral del
  * análisis y otra en la pantalla de "todavía no subiste nada"— con el mismo JSX
  * copiado; ahora es uno solo, que es lo que permitió agregarle el borrado en los
@@ -727,12 +790,14 @@ function HistoryList({
   copy,
   onOpen,
   onDelete,
+  onRename,
 }: {
   items: SavedAnalysis[]
   language: Language
   copy: ShellCopy
   onOpen: (item: SavedAnalysis) => void
   onDelete: (item: SavedAnalysis) => void
+  onRename: (item: SavedAnalysis) => void
 }) {
   return (
     <div className="history-list">
@@ -750,8 +815,17 @@ function HistoryList({
           </button>
 
           {/* El nombre del chat va en la etiqueta: con diez filas iguales, diez
-              botones que digan sólo "Borrar" no le sirven a nadie que navegue
-              por lector de pantalla. */}
+              botones que digan sólo "Borrar" o "Renombrar" no le sirven a nadie
+              que navegue por lector de pantalla. */}
+          <button
+            type="button"
+            className="history-rename"
+            onClick={() => onRename(item)}
+            aria-label={`${copy.renameSaved}: ${item.chatName}`}
+          >
+            <PencilIcon />
+          </button>
+
           <button
             type="button"
             className="history-delete"

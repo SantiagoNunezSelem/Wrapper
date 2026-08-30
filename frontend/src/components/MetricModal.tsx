@@ -1,14 +1,15 @@
-import { useMemo, useState, type KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { isParticipantBarChart } from '../lib/metrics'
-import type { ChartData, ChatMessage, MetricCard as MetricCardData } from '../types'
+import type { ChatMessage, MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
+import { SearchIcon } from './IconButton'
 import { LockedPanel, type FreeUnlockPrompt } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
 import { ModalShell } from './ModalShell'
 import { useCountUp } from './useCountUp'
-import { useEditableWordCloud, type WordCloudSearchCopy } from './useEditableWordCloud'
+import type { WordCloudEditor, WordCloudSearchCopy } from './useEditableWordCloud'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
 
 export interface MetricModalCopy {
@@ -34,6 +35,10 @@ export function MetricModal({
    * cards are ever kept for those, never the raw chat (see the privacy note
    * in the landing copy). */
   messages,
+  /** Built by the caller (see `wordCloudEditor` in useVistazo) instead of here, so a
+   * search's added/removed words survive this modal closing and reopening — only the
+   * caller stays mounted for the whole session. */
+  wordCloudEditor,
   onClose,
   onUnlock,
 }: {
@@ -47,6 +52,7 @@ export function MetricModal({
    * see `revealingFreeUnlockId` in useVistazo. */
   isRevealingFreeUnlock?: boolean
   messages?: ChatMessage[]
+  wordCloudEditor: WordCloudEditor
   onClose: () => void
   onUnlock: () => void
 }) {
@@ -59,38 +65,29 @@ export function MetricModal({
   const detailLocked = !aiBlocked && !card.detail
   const statValue = useCountUp(card.basic?.value ?? '')
 
-  const hasWordCloud =
-    card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
+  // No search box without the raw chat to search — a replayed analysis from history
+  // only ever carries the precomputed cards (see the privacy note in the landing
+  // copy), so a search here could never do anything but fail.
+  const canSearchWords =
+    Boolean(messages) &&
+    (card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud')))
 
   // The hero bar chart and the "by participant" breakdown below are often the same
   // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
   const heroChartRepeatsBreakdown =
     isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
 
-  const filteredDetailChart = useMemo(
-    () => (card.detail?.chart ? filterWordCloud(card.detail.chart, wordSearch) : undefined),
-    [card.detail?.chart, wordSearch],
-  )
-
-  const filteredSeries = useMemo(
-    () => card.detail?.series?.map((entry) => ({ name: entry.name, chart: filterWordCloud(entry.chart, wordSearch) })) ?? [],
-    [card.detail?.series, wordSearch],
-  )
-
-  const wordCloudEditor = useEditableWordCloud({
-    chart: card.basic?.chart,
-    messages,
-    resetKey: card.id,
-    copy: copy.wordCloudSearch,
-  })
+  async function submitWordSearch() {
+    if (await wordCloudEditor.searchAndAdd(wordSearch)) {
+      setWordSearch('')
+    }
+  }
 
   function handleWordSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') {
       return
     }
-    if (wordCloudEditor.searchAndAdd(wordSearch)) {
-      setWordSearch('')
-    }
+    void submitWordSearch()
   }
 
   return (
@@ -113,14 +110,15 @@ export function MetricModal({
               <div className="modal-chart">
                 <ChartRenderer
                   chart={wordCloudEditor.displayChart ?? card.basic.chart}
+                  justAddedWord={wordCloudEditor.justAddedWord}
                   wordCloudEditing={
                     card.basic.chart.kind === 'wordCloud'
                       ? {
-                          selectedWord: wordCloudEditor.selectedWord,
-                          onWordClick: wordCloudEditor.onWordClick,
-                          onDeselect: wordCloudEditor.onDeselect,
                           onRemoveWord: wordCloudEditor.onRemoveWord,
                           removeLabel: copy.wordCloudSearch.removeLabel,
+                          removingWord: wordCloudEditor.removingWord,
+                          selectedWordForRemoval: wordCloudEditor.selectedWordForRemoval,
+                          onToggleSelection: wordCloudEditor.toggleWordSelection,
                         }
                       : undefined
                   }
@@ -149,35 +147,52 @@ export function MetricModal({
             <>
               {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
-              {hasWordCloud ? (
+              {canSearchWords ? (
                 <>
-                  <input
-                    type="search"
-                    className="word-search-input"
-                    placeholder={copy.searchPlaceholder}
-                    value={wordSearch}
-                    onChange={(event) => {
-                      setWordSearch(event.target.value.toLowerCase())
-                      wordCloudEditor.clearSearchError()
-                    }}
-                    onKeyDown={handleWordSearchKeyDown}
-                  />
+                  <div className="word-search-row">
+                    <input
+                      type="search"
+                      className="word-search-input"
+                      placeholder={copy.searchPlaceholder}
+                      value={wordSearch}
+                      disabled={wordCloudEditor.isSearching}
+                      onChange={(event) => {
+                        setWordSearch(event.target.value.toLowerCase())
+                        wordCloudEditor.clearSearchError()
+                      }}
+                      onKeyDown={handleWordSearchKeyDown}
+                    />
+                    <button
+                      type="button"
+                      className="word-search-button"
+                      onClick={() => void submitWordSearch()}
+                      disabled={wordCloudEditor.isSearching}
+                      aria-label={copy.searchPlaceholder}
+                    >
+                      {wordCloudEditor.isSearching ? <span className="word-search-spinner" aria-hidden="true" /> : <SearchIcon />}
+                    </button>
+                  </div>
                   {wordCloudEditor.searchError ? <p className="word-search-error">{wordCloudEditor.searchError}</p> : null}
                 </>
               ) : null}
 
-              {filteredDetailChart ? (
+              {card.detail.chart ? (
                 <div className="modal-chart">
-                  <ChartRenderer chart={filteredDetailChart} />
+                  <ChartRenderer chart={card.detail.chart} />
                 </div>
               ) : null}
 
-              {filteredSeries.length > 0 ? (
+              {wordCloudEditor.displaySeries && wordCloudEditor.displaySeries.length > 0 ? (
                 <div className="series-grid">
-                  {filteredSeries.map((entry) => (
+                  {wordCloudEditor.displaySeries.map((entry) => (
                     <div className="series-item" key={entry.name}>
                       <h4>{entry.name}</h4>
-                      <ChartRenderer chart={entry.chart} compact />
+                      <ChartRenderer
+                        chart={entry.chart}
+                        compact
+                        justAddedWord={wordCloudEditor.justAddedWord}
+                        protectedWords={wordCloudEditor.searchedWords}
+                      />
                     </div>
                   ))}
                 </div>
@@ -239,11 +254,4 @@ export function MetricModal({
         </div>
     </ModalShell>
   )
-}
-
-function filterWordCloud(chart: ChartData, search: string): ChartData {
-  if (chart.kind !== 'wordCloud' || !search) {
-    return chart
-  }
-  return { kind: 'wordCloud', words: chart.words.filter((word) => word.word.includes(search)) }
 }

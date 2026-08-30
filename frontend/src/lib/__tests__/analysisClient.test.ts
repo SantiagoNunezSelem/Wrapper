@@ -214,3 +214,24 @@ describe('applyAiVerdictsInWorker', () => {
     await expect(pending).rejects.toThrow('Unexpected worker response for applyAi.')
   })
 })
+
+describe('searchWordInWorker', () => {
+  it('manda el chat, la palabra y los participantes', async () => {
+    const { searchWordInWorker } = await freshClient()
+    const pending = searchWordInWorker([], 'finde', ['Ana', 'Beto'])
+
+    expect(worker().posted[0]).toMatchObject({ type: 'wordSearch', query: 'finde', participants: ['Ana', 'Beto'] })
+
+    worker().reply({ requestId: 0, type: 'wordSearch', count: 4, countsByParticipant: { Ana: 3, Beto: 1 } })
+    await expect(pending).resolves.toEqual({ count: 4, countsByParticipant: { Ana: 3, Beto: 1 } })
+  })
+
+  it('rechaza si el worker contesta otra cosa', async () => {
+    const { searchWordInWorker } = await freshClient()
+    const pending = searchWordInWorker([], 'finde', [])
+
+    worker().reply({ requestId: 0, type: 'analyze', core })
+
+    await expect(pending).rejects.toThrow('Unexpected worker response for wordSearch.')
+  })
+})

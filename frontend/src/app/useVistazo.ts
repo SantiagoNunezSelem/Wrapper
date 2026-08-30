@@ -49,10 +49,12 @@ import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
   AnalysisBundle,
+  ChartData,
   ChatMessage,
   FreeUnlockState,
   Language,
   MetricCard as MetricCardData,
+  MetricSeriesEntry,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
@@ -89,6 +91,11 @@ export function useVistazo() {
   // hablando de algo que ya no está.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [isDeletingAnalysis, setIsDeletingAnalysis] = useState(false)
+  // Mismo criterio que pendingDeleteId: se guarda el id, no el objeto, así una fila
+  // que se actualiza (por ejemplo por este mismo renombre) no deja el diálogo
+  // mostrando un nombre viejo.
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+  const [isRenamingAnalysis, setIsRenamingAnalysis] = useState(false)
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
   // Two sources for what's on screen: a live upload (kept as an ungated core so VIP
   // and AI state can be re-applied for free) and a bundle replayed from history.
@@ -1099,6 +1106,61 @@ export function useVistazo() {
     }
   }
 
+  /**
+   * Writes a word-cloud edit (a search-added word, or a removal) into the metric's
+   * saved snapshot, so reopening this chat from history later still has it — without
+   * this, an edit only ever lived in `useEditableWordCloud`'s in-memory state, which
+   * is gone the moment the chat itself is closed (the modal/sheet surviving a close
+   * only covers staying on the *same* chat — see `wordCloudEditor` in DesktopShell/
+   * MobileShell).
+   *
+   * Silent and best-effort on purpose: it runs after every add/remove while the
+   * viewer is mid-search, and a background history sync failing is not something
+   * worth interrupting them over — the edit is still right there on screen either way.
+   */
+  async function persistWordCloudEdit(
+    cardId: string,
+    chart: ChartData | undefined,
+    series: MetricSeriesEntry[] | undefined,
+  ) {
+    if (!token || !analysis || !chart) {
+      return
+    }
+
+    function patchCards(cards: MetricCardData[]): MetricCardData[] {
+      return cards.map((card) => {
+        if (card.id !== cardId) {
+          return card
+        }
+        return {
+          ...card,
+          basic: card.basic ? { ...card.basic, chart } : card.basic,
+          detail: card.detail ? { ...card.detail, series: series ?? card.detail.series } : card.detail,
+        }
+      })
+    }
+
+    const updated: AnalysisBundle = {
+      ...analysis,
+      freeMetrics: patchCards(analysis.freeMetrics),
+      vipMetrics: patchCards(analysis.vipMetrics),
+    }
+
+    try {
+      const saved = await saveAnalysis(token, {
+        chatName: updated.chatName,
+        dateRangeLabel: updated.dateRangeLabel,
+        messageCount: updated.messageCount,
+        participantCount: updated.participantCount,
+        resultsJson: JSON.stringify(updated),
+        sourceHash: updated.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+    } catch {
+      // Best-effort — see the doc above.
+    }
+  }
+
   function requestDeleteAnalysis(item: SavedAnalysis) {
     setPendingDeleteId(item.id)
   }
@@ -1137,6 +1199,62 @@ export function useVistazo() {
     } finally {
       setIsDeletingAnalysis(false)
       setPendingDeleteId(null)
+    }
+  }
+
+  function requestRenameAnalysis(item: SavedAnalysis) {
+    setPendingRenameId(item.id)
+  }
+
+  function cancelRenameAnalysis() {
+    setPendingRenameId(null)
+  }
+
+  /**
+   * Le pone nombre a un análisis guardado.
+   *
+   * No hay un endpoint propio para esto: reusa el mismo `POST /api/analyses` que ya
+   * hace upsert por `sourceHash` (ver persistAnalysis/persistWordCloudEdit más
+   * arriba), sólo que acá el que cambia es `chatName` en vez del contenido de una
+   * métrica. Se reescribe tanto la columna (lo que muestra la lista) como el
+   * `chatName` adentro del propio `resultsJson` (lo que se ve al reabrir el chat) —
+   * sin esto último, el nombre nuevo desaparecería en cuanto se reabriera desde el
+   * historial.
+   */
+  async function confirmRenameAnalysis(chatName: string) {
+    const id = pendingRenameId
+    const target = savedAnalyses.find((item) => item.id === id) ?? null
+
+    if (!token || !id || !target) {
+      return
+    }
+
+    setIsRenamingAnalysis(true)
+
+    try {
+      const bundle = { ...(JSON.parse(target.resultsJson) as AnalysisBundle), chatName }
+      const saved = await saveAnalysis(token, {
+        chatName,
+        dateRangeLabel: target.dateRangeLabel,
+        messageCount: target.messageCount,
+        participantCount: target.participantCount,
+        resultsJson: JSON.stringify(bundle),
+        sourceHash: target.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+
+      // Si es justo el chat abierto ahora mismo (un replay desde el historial), el
+      // título en pantalla tiene que cambiar con él, no sólo la fila de la lista.
+      if (isReplay && replayedAnalysis?.sourceHash === target.sourceHash) {
+        setReplayedAnalysis(bundle)
+      }
+
+      setPendingRenameId(null)
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.renameSavedError)
+    } finally {
+      setIsRenamingAnalysis(false)
     }
   }
 
@@ -1225,6 +1343,11 @@ export function useVistazo() {
     [savedAnalyses, pendingDeleteId],
   )
 
+  const pendingRenameAnalysis = useMemo(
+    () => savedAnalyses.find((item) => item.id === pendingRenameId) ?? null,
+    [savedAnalyses, pendingRenameId],
+  )
+
   /**
    * Publishes the current run as a public link and returns its URL.
    *
@@ -1270,11 +1393,14 @@ export function useVistazo() {
     savedAnalyses,
     pendingDeleteAnalysis,
     isDeletingAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
     interleavedMetrics,
     landingPreviewCards,
     selectedMetric,
     selectedMetricId,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -1348,6 +1474,9 @@ export function useVistazo() {
     requestDeleteAnalysis,
     cancelDeleteAnalysis,
     confirmDeleteAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
     backToLanding,
   }
 }
