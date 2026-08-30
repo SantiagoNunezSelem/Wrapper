@@ -1570,9 +1570,9 @@
 
 
 /* ---------------------------------------------------------------------- */
-/* Historial: la fila envuelve el botón que abre y el que borra.           */
-/* La papelera no puede ir adentro del primero (un botón dentro de otro no */
-/* es HTML válido), así que son hermanos y la fila los posiciona.          */
+/* Historial: la fila envuelve el botón que abre y los de renombrar/borrar. */
+/* Ninguno de los dos puede ir adentro del primero (un botón dentro de otro */
+/* no es HTML válido), así que son hermanos y la fila los posiciona.       */
 /* ---------------------------------------------------------------------- */
 
 .history-row {
@@ -1583,15 +1583,15 @@
 .history-row .history-item {
   flex: 1;
   min-width: 0;
-  /* Espacio a la derecha para que el nombre del chat no pase por debajo de la
-     papelera cuando ésta aparece. */
-  padding-right: 44px;
+  /* Espacio a la derecha para que el nombre del chat no pase por debajo de
+     renombrar/borrar cuando aparecen. */
+  padding-right: 76px;
 }
 
+.history-rename,
 .history-delete {
   position: absolute;
   top: 10px;
-  right: 10px;
   display: grid;
   place-items: center;
   width: 28px;
@@ -1601,16 +1601,32 @@
   background: transparent;
   color: var(--vz-text-dim);
   cursor: pointer;
-  /* Escondida hasta que la fila esté en hover o algo adentro tenga el foco:
-     borrar es la acción rara de esta lista, abrir es la común. `:focus-within`
-     es lo que la deja alcanzable con teclado, donde no hay hover. */
+  /* Escondidos hasta que la fila esté en hover o algo adentro tenga el foco:
+     renombrar y borrar son las acciones raras de esta lista, abrir es la
+     común. `:focus-within` es lo que las deja alcanzables con teclado, donde
+     no hay hover. */
   opacity: 0;
   transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
 }
 
+.history-rename {
+  right: 44px;
+}
+
+.history-delete {
+  right: 10px;
+}
+
+.history-row:hover .history-rename,
+.history-row:focus-within .history-rename,
 .history-row:hover .history-delete,
 .history-row:focus-within .history-delete {
   opacity: 1;
+}
+
+.history-rename:hover {
+  background: var(--vz-surface-4);
+  color: var(--vz-text-strong);
 }
 
 .history-delete:hover {
@@ -1618,9 +1634,10 @@
   color: var(--vz-danger-text);
 }
 
-/* Sin hover (táctil) nunca habría forma de llegar al botón, así que ahí queda
-   siempre visible. */
+/* Sin hover (táctil) nunca habría forma de llegar a los botones, así que ahí
+   quedan siempre visibles. */
 @media (hover: none) {
+  .history-rename,
   .history-delete {
     opacity: 1;
   }

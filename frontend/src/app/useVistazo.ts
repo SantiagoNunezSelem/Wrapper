@@ -91,6 +91,11 @@ export function useVistazo() {
   // hablando de algo que ya no está.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [isDeletingAnalysis, setIsDeletingAnalysis] = useState(false)
+  // Mismo criterio que pendingDeleteId: se guarda el id, no el objeto, así una fila
+  // que se actualiza (por ejemplo por este mismo renombre) no deja el diálogo
+  // mostrando un nombre viejo.
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+  const [isRenamingAnalysis, setIsRenamingAnalysis] = useState(false)
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
   // Two sources for what's on screen: a live upload (kept as an ungated core so VIP
   // and AI state can be re-applied for free) and a bundle replayed from history.
@@ -1197,6 +1202,62 @@ export function useVistazo() {
     }
   }
 
+  function requestRenameAnalysis(item: SavedAnalysis) {
+    setPendingRenameId(item.id)
+  }
+
+  function cancelRenameAnalysis() {
+    setPendingRenameId(null)
+  }
+
+  /**
+   * Le pone nombre a un análisis guardado.
+   *
+   * No hay un endpoint propio para esto: reusa el mismo `POST /api/analyses` que ya
+   * hace upsert por `sourceHash` (ver persistAnalysis/persistWordCloudEdit más
+   * arriba), sólo que acá el que cambia es `chatName` en vez del contenido de una
+   * métrica. Se reescribe tanto la columna (lo que muestra la lista) como el
+   * `chatName` adentro del propio `resultsJson` (lo que se ve al reabrir el chat) —
+   * sin esto último, el nombre nuevo desaparecería en cuanto se reabriera desde el
+   * historial.
+   */
+  async function confirmRenameAnalysis(chatName: string) {
+    const id = pendingRenameId
+    const target = savedAnalyses.find((item) => item.id === id) ?? null
+
+    if (!token || !id || !target) {
+      return
+    }
+
+    setIsRenamingAnalysis(true)
+
+    try {
+      const bundle = { ...(JSON.parse(target.resultsJson) as AnalysisBundle), chatName }
+      const saved = await saveAnalysis(token, {
+        chatName,
+        dateRangeLabel: target.dateRangeLabel,
+        messageCount: target.messageCount,
+        participantCount: target.participantCount,
+        resultsJson: JSON.stringify(bundle),
+        sourceHash: target.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+
+      // Si es justo el chat abierto ahora mismo (un replay desde el historial), el
+      // título en pantalla tiene que cambiar con él, no sólo la fila de la lista.
+      if (isReplay && replayedAnalysis?.sourceHash === target.sourceHash) {
+        setReplayedAnalysis(bundle)
+      }
+
+      setPendingRenameId(null)
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.renameSavedError)
+    } finally {
+      setIsRenamingAnalysis(false)
+    }
+  }
+
   function openSavedAnalysis(item: SavedAnalysis) {
     setActiveChat(null)
     setCore(null)
@@ -1282,6 +1343,11 @@ export function useVistazo() {
     [savedAnalyses, pendingDeleteId],
   )
 
+  const pendingRenameAnalysis = useMemo(
+    () => savedAnalyses.find((item) => item.id === pendingRenameId) ?? null,
+    [savedAnalyses, pendingRenameId],
+  )
+
   /**
    * Publishes the current run as a public link and returns its URL.
    *
@@ -1327,6 +1393,8 @@ export function useVistazo() {
     savedAnalyses,
     pendingDeleteAnalysis,
     isDeletingAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
     interleavedMetrics,
     landingPreviewCards,
     selectedMetric,
@@ -1406,6 +1474,9 @@ export function useVistazo() {
     requestDeleteAnalysis,
     cancelDeleteAnalysis,
     confirmDeleteAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
     backToLanding,
   }
 }

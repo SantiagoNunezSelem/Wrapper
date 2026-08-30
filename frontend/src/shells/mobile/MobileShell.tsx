@@ -8,6 +8,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
+import { RenameDialog } from '../../components/RenameDialog'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
@@ -105,6 +106,11 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     requestDeleteAnalysis,
     cancelDeleteAnalysis,
     confirmDeleteAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
   } = vistazo
 
   const [view, setView] = useState<MobileView>('home')
@@ -288,6 +294,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 onUpload={requestUpload}
                 onOpenSaved={openSavedAnalysis}
                 onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSeeAll={() => goTo('history')}
               />
             ) : null}
@@ -327,6 +334,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 user={user}
                 onOpenSaved={openSavedAnalysis}
                 onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onUpload={requestUpload}
               />
@@ -503,6 +511,26 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             void confirmDeleteAnalysis()
           }}
           onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
+      {pendingRenameAnalysis ? (
+        <RenameDialog
+          copy={{
+            title: copy.renameSavedTitle,
+            label: copy.renameSavedLabel,
+            placeholder: copy.renameSavedPlaceholder,
+            save: copy.renameSavedCta,
+            cancel: copy.renameSavedCancel,
+            busy: copy.renaming,
+            close: copy.close,
+          }}
+          initialValue={pendingRenameAnalysis.chatName}
+          isBusy={isRenamingAnalysis}
+          onSave={(chatName) => {
+            void confirmRenameAnalysis(chatName)
+          }}
+          onCancel={cancelRenameAnalysis}
         />
       ) : null}
 

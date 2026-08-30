@@ -727,11 +727,11 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 11px 12px;
-  border: 1px solid var(--vz-hairline);
-  border-radius: var(--vz-radius-sm);
-  background: var(--vz-surface-2);
+  border: 0;
+  background: transparent;
   text-align: left;
   color: inherit;
   cursor: pointer;
@@ -1272,6 +1272,11 @@
 
 .m-sheet-body {
   flex: 1 1 auto;
+  /* Sin esto, un hijo de flex no se achica más allá de lo que ocupa su
+     contenido (min-height:auto por default) — el overflow-y de arriba nunca
+     llegaba a activarse, y una nube con muchas palabras por integrante
+     terminaba cortada por el overflow:hidden de .m-sheet en vez de scrollear. */
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
@@ -1279,6 +1284,15 @@
   flex-direction: column;
   gap: 14px;
   padding: 14px 16px 20px;
+  /* El thumb del scroll no aporta nada acá — el gesto de arrastre ya deja
+     claro que hay más para ver, y una hoja que sube desde abajo no es donde
+     se espera una scrollbar de escritorio. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.m-sheet-body::-webkit-scrollbar {
+  display: none;
 }
 
 .m-sheet-body.m-center {
@@ -2111,33 +2125,39 @@
 }
 
 
-/* La fila del historial: el botón que abre, y la papelera al costado. En un
-   teléfono no hay hover, así que la papelera se ve siempre — pero angosta y en
-   gris, para que "abrir" siga siendo lo que el pulgar encuentra primero. */
+/* La fila del historial: el botón que abre, y renombrar/borrar al costado — los
+   tres son <button> hermanos (ver el comentario en MobileViews.tsx), pero un solo
+   borde compartido acá los hace leer como una única tarjeta en vez de como cajas
+   sueltas. En un teléfono no hay hover, así que las dos acciones se ven siempre —
+   angostas y en gris, para que "abrir" siga siendo lo que el pulgar encuentra
+   primero. */
 .m-saved-row {
   display: flex;
   align-items: stretch;
-  gap: 6px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-sm);
+  background: var(--vz-surface-2);
+  overflow: hidden;
 }
 
-.m-saved-row .m-saved {
-  flex: 1;
-  min-width: 0;
-}
-
-.m-saved-delete {
+.m-saved-action {
   flex: none;
   width: 40px;
-  border: 1px solid var(--vz-hairline);
-  border-radius: var(--vz-radius-md);
-  background: var(--vz-surface-1);
+  border: 0;
+  border-left: 1px solid var(--vz-hairline);
+  background: transparent;
   color: var(--vz-text-faint);
   display: grid;
   place-items: center;
   cursor: pointer;
 }
 
-.m-saved-delete:active {
+.m-saved-action:active {
+  background: var(--vz-surface-3);
+  color: var(--vz-text-strong);
+}
+
+.m-saved-action.is-danger:active {
   background: var(--vz-danger-bg);
   color: var(--vz-danger-text);
 }

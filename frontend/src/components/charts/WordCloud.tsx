@@ -4,10 +4,12 @@ import { Tooltip } from '../Tooltip'
 
 const MIN_SIZE = 0.85
 const MAX_SIZE = 2.4
-// A compact card only has room for a handful of words at a restrained size —
-// otherwise the tallest word cloud dictates the height of every card next to
-// it. The full list still renders wherever compact isn't set (e.g. "Ver más").
-const COMPACT_WORD_LIMIT = 14
+// Matches WORD_CLOUD_LIMIT in lib/metrics.ts — that's already the most words any
+// cloud (hero or per-participant) can ever carry, so this never actually trims
+// anything; it's here so a per-participant cloud renders at the same word count
+// as the hero instead of a shorter, unrelated cap. Compact stays about the smaller
+// font size (COMPACT_MAX_SIZE below), not about showing fewer words.
+const COMPACT_WORD_LIMIT = 40
 const COMPACT_MAX_SIZE = 1.5
 
 /** Slices to COMPACT_WORD_LIMIT, but never at the cost of a protected word — those

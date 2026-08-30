@@ -92,11 +92,13 @@ describe('WordCloud — modo editable', () => {
 })
 
 describe('WordCloud — recorte compacto', () => {
-  // Uno más que COMPACT_WORD_LIMIT (14), para que el recorte sea inevitable — la
-  // buscada va al final, que es justo la posición que un slice ciego descartaría
-  // (ver el comentario en useEditableWordCloud sobre por qué se agrega ahí).
+  // Uno más que COMPACT_WORD_LIMIT (40 — el mismo WORD_CLOUD_LIMIT que usa
+  // lib/metrics.ts para cualquier nube, principal o por participante), para que
+  // el recorte sea inevitable. La buscada va al final, que es justo la posición
+  // que un slice ciego descartaría (ver el comentario en useEditableWordCloud
+  // sobre por qué se agrega ahí).
   const manyWords = [
-    ...Array.from({ length: 14 }, (_, i) => ({ word: `w${i}`, count: 20 - i })),
+    ...Array.from({ length: 40 }, (_, i) => ({ word: `w${i}`, count: 60 - i })),
     { word: 'buscada', count: 1 },
   ]
 
@@ -118,6 +120,17 @@ describe('WordCloud — recorte compacto', () => {
     )
 
     expect(screen.getByText('buscada')).toBeInTheDocument()
-    expect(document.querySelectorAll('.chart-word-cloud-item')).toHaveLength(14)
+    expect(document.querySelectorAll('.chart-word-cloud-item')).toHaveLength(40)
+  })
+
+  it('una nube por participante con menos de 40 palabras no se recorta (misma cantidad que la principal)', () => {
+    const fewerWords = Array.from({ length: 25 }, (_, i) => ({ word: `w${i}`, count: 25 - i }))
+    render(
+      <TooltipProvider>
+        <WordCloud words={fewerWords} compact />
+      </TooltipProvider>,
+    )
+
+    expect(document.querySelectorAll('.chart-word-cloud-item')).toHaveLength(25)
   })
 })

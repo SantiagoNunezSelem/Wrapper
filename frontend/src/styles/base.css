@@ -551,6 +551,8 @@ h3 {
 .free-unlock-modal {
   max-width: 420px;
   text-align: center;
+  display: grid;
+  gap: 16px;
 }
 
 .free-unlock-metric {
@@ -563,7 +565,6 @@ h3 {
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
-  margin-top: 6px;
 }
 
 /* An AI-blocked card is not a locked one: the viewer already paid, so it reads as a
@@ -2675,4 +2676,22 @@ button.chat-bubble-divider.is-expandable:active {
 
 .confirm-modal {
   max-width: 460px;
+  display: grid;
+  gap: 16px;
+}
+
+.rename-form {
+  display: grid;
+  gap: 16px;
+}
+
+.rename-field {
+  display: grid;
+  gap: 6px;
+}
+
+.rename-field-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--vz-text-dim);
 }
