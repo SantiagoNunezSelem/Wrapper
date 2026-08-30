@@ -1,12 +1,3 @@
-/* ANTES (para volver atrás, restaurar este bloque y borrar todo lo marcado
-   "NUEVO" más abajo — tilt magnético + números que laten):
-
-import type { MetricCard as MetricCardData } from '../types'
-import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
-import { ChartRenderer } from './charts/ChartRenderer'
-import { LockedPanel } from './LockedPanel'
-
-*/
 import { memo, useRef, type MouseEvent } from 'react'
 import { prefersReducedMotion } from '../lib/prefersReducedMotion'
 import type { MetricCard as MetricCardData } from '../types'
@@ -15,8 +6,8 @@ import { ChartRenderer } from './charts/ChartRenderer'
 import { LockedPanel } from './LockedPanel'
 import { useCountUpOnView } from './useCountUp'
 
-/** NUEVO: how far a card tilts toward the cursor, in degrees at the very
- * edge. Read once — nobody changes their OS motion setting mid-session. */
+/** How far a card tilts toward the cursor, in degrees at the very edge. Read
+ * once — nobody changes their OS motion setting mid-session. */
 const MAX_TILT_DEG = 7
 const tiltEnabled = !prefersReducedMotion()
 
@@ -29,7 +20,7 @@ function CrownIcon() {
 }
 
 /**
- * NUEVO: memoizada. La grilla monta 25 de éstas, cada una con su gráfico (el
+ * Memoizada. La grilla monta 25 de éstas, cada una con su gráfico (el
  * heatmap anual son 365 celdas SVG), y sin esto cualquier cambio de estado del
  * shell —abrir el menú de cuenta, abrir el modal de una métrica— las volvía a
  * dibujar todas. Depende de que `ai` y `onUnlock` lleguen con identidad estable
@@ -57,8 +48,7 @@ export const MetricCard = memo(function MetricCard({
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const locked = !aiBlocked && card.tier === 'vip' && !card.basic
 
-  // --- NUEVO: tilt magnético + números que laten (para revertir, borrar
-  // desde acá hasta "FIN NUEVO" y restaurar el <article>/<strong> de abajo) ---
+  // Tilt magnético al cursor + números que laten al entrar en pantalla.
   const cardRef = useRef<HTMLElement>(null)
   const [statValue, statRef] = useCountUpOnView<HTMLElement>(card.basic?.value ?? '')
 
@@ -88,10 +78,8 @@ export const MetricCard = memo(function MetricCard({
       node.style.transform = ''
     }
   }
-  // --- FIN NUEVO ------------------------------------------------------------
 
   return (
-    /* ANTES: <article className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}> */
     <article
       ref={cardRef}
       className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}
@@ -116,7 +104,6 @@ export const MetricCard = memo(function MetricCard({
       ) : (
         <div className="metric-basic">
           <div className="metric-stat">
-            {/* ANTES: <strong>{card.basic.value}</strong> */}
             <strong ref={statRef}>{statValue}</strong>
             <span>{card.basic.label}</span>
           </div>

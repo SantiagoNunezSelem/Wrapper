@@ -50,10 +50,16 @@ especificación destaparon las pruebas: **[TESTING.md](TESTING.md)**.
 
 ## Configurar el frontend
 
-1. Copiá `frontend\.env.example` a `frontend\.env`.
-2. Reemplazá `VITE_GOOGLE_CLIENT_ID` por el mismo **Google Web Client ID** usado en el backend.
-3. En producción, poné `VITE_SITE_URL` con el origen público del sitio (sin barra final,
-   p. ej. `https://vistazo.app`).
+`frontend\.env` no viaja en el repo (está en `.gitignore`, junto con el resto de los
+`.env*`), así que hay que crearlo a mano con:
+
+```
+VITE_API_URL=http://localhost:5175
+VITE_GOOGLE_CLIENT_ID=<el mismo Google Web Client ID usado en el backend>
+```
+
+En producción, sumá además `VITE_SITE_URL` con el origen público del sitio (sin barra
+final, p. ej. `https://vistazo.app`).
 
 > `VITE_SITE_URL` sirve para una sola cosa: las etiquetas Open Graph de `index.html`.
 > `vite.config.ts` la usa para reemplazar el marcador `__SITE_URL__` y dejar la imagen
