@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { shellCopy } from '../../copy/shellCopy'
 import { SubscriptionPage } from '../SubscriptionPage'
+import { TooltipProvider } from '../TooltipProvider'
 import type {
   SubscriptionActions,
   SubscriptionOverview,
@@ -109,17 +110,19 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
   }
 
   render(
-    <SubscriptionPage
-      language="es"
-      copy={copy}
-      user={user}
-      token="token"
-      overview={data}
-      busyAction={null}
-      error=""
-      {...handlers}
-      {...props}
-    />,
+    <TooltipProvider>
+      <SubscriptionPage
+        language="es"
+        copy={copy}
+        user={user}
+        token="token"
+        overview={data}
+        busyAction={null}
+        error=""
+        {...handlers}
+        {...props}
+      />
+    </TooltipProvider>,
   )
 
   return handlers

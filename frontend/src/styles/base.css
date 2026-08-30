@@ -2100,21 +2100,25 @@ button.chat-bubble-divider.is-expandable:active {
   font-size: 0.8rem;
 }
 
-/* Status pills, tinted by what the state actually means for the customer. */
+/* Status pills, tinted by what the state actually means for the customer. Lives here
+   rather than in a per-shell stylesheet because the markup is shell-agnostic — mobile
+   has no equivalent of its own, so a copy left behind in only one shell's CSS is a pill
+   that silently renders in the generic grey on the other. */
 .subpage-status.status-activa,
 .subpage-status.status-trial {
-  background: rgba(34, 197, 94, 0.16);
-  color: #bbf7d0;
-}
-
-.subpage-status.status-pendiente {
-  background: rgba(251, 191, 36, 0.18);
-  color: #fde68a;
+  background: var(--vz-success-bg);
+  color: var(--vz-success-text);
 }
 
 .subpage-status.status-pago_fallido {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fecaca;
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}
+
+.subpage-status.status-pendiente,
+.subpage-status.status-pausada {
+  background: var(--vz-warning-bg);
+  color: var(--vz-warning-text);
 }
 
 .subpage-current {

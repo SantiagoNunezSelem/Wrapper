@@ -1,5 +1,7 @@
-import { useEffect, useId, useState } from 'react'
+import { useState } from 'react'
 import { formatMoney } from '../lib/format'
+import { ConfirmDialog } from './ConfirmDialog'
+import { ModalShell } from './ModalShell'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
@@ -477,28 +479,29 @@ function CurrentPlanSection({
 
       {confirming === 'cancel' ? (
         <ConfirmDialog
-          title={copy.cancelConfirmTitle}
-          body={buildCancelBody(current, copy, locale)}
-          confirmLabel={copy.cancelConfirmYes}
-          cancelLabel={copy.cancelConfirmNo}
+          copy={{
+            title: copy.cancelConfirmTitle,
+            body: buildCancelBody(current, copy, locale),
+            confirm: copy.cancelConfirmYes,
+            cancel: copy.cancelConfirmNo,
+            busy: copy.cancelling,
+            close: copy.close,
+          }}
           isBusy={isBusy}
-          danger
           onConfirm={() => {
             setConfirming(null)
             onCancel()
           }}
-          onDismiss={() => setConfirming(null)}
+          onCancel={() => setConfirming(null)}
         />
       ) : null}
 
       {confirming === 'pause' ? (
-        <ConfirmDialog
-          title={copy.pauseConfirmTitle}
+        <PauseConfirmDialog
+          copy={copy}
           body={fillTokens(copy.pauseConfirmBody, {
             date: formatDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
           })}
-          confirmLabel={copy.pauseConfirmYes}
-          cancelLabel={copy.cancelConfirmNo}
           isBusy={isBusy}
           onConfirm={() => {
             setConfirming(null)
@@ -508,6 +511,42 @@ function CurrentPlanSection({
         />
       ) : null}
     </section>
+  )
+}
+
+/**
+ * Pausing is not a destructive action — the shared `ConfirmDialog` always renders its
+ * confirm button as `is-danger`, which would misrepresent it as one — so this builds
+ * directly on `ModalShell` instead, the same way `FreeUnlockConfirm` does for its own
+ * non-destructive confirm.
+ */
+function PauseConfirmDialog({
+  copy,
+  body,
+  isBusy,
+  onConfirm,
+  onDismiss,
+}: {
+  copy: SubscriptionPageCopy
+  body: string
+  isBusy: boolean
+  onConfirm: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <ModalShell onDismiss={onDismiss} label={copy.pauseConfirmTitle} className="confirm-modal" closeLabel={copy.close}>
+      <h2>{copy.pauseConfirmTitle}</h2>
+      <p className="panel-copy">{body}</p>
+
+      <div className="free-unlock-actions">
+        <button type="button" className="ghost-button" onClick={onDismiss} disabled={isBusy}>
+          {copy.cancelConfirmNo}
+        </button>
+        <button type="button" className="primary-button" onClick={onConfirm} disabled={isBusy}>
+          {isBusy ? copy.pausing : copy.pauseConfirmYes}
+        </button>
+      </div>
+    </ModalShell>
   )
 }
 
@@ -530,70 +569,6 @@ function buildCancelBody(current: SubscriptionRecord, copy: SubscriptionPageCopy
   }
 
   return fillTokens(copy.cancelConfirmBody, { date, amount })
-}
-
-function ConfirmDialog({
-  title,
-  body,
-  confirmLabel,
-  cancelLabel,
-  isBusy,
-  danger = false,
-  onConfirm,
-  onDismiss,
-}: {
-  title: string
-  body: string
-  confirmLabel: string
-  cancelLabel: string
-  isBusy: boolean
-  danger?: boolean
-  onConfirm: () => void
-  onDismiss: () => void
-}) {
-  const titleId = useId()
-
-  // Escape backs out. Worth wiring on this dialog in particular: both of the things it
-  // guards — cancelling and pausing — are ones people open to read and then decide against,
-  // and a confirm you can only escape by finding the right button reads as a trap.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onDismiss()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onDismiss])
-
-  return (
-    <div className="modal-backdrop nested-backdrop" role="presentation" onClick={onDismiss}>
-      <section
-        className="modal-card confirm-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h3 id={titleId}>{title}</h3>
-        <p className="panel-copy">{body}</p>
-        <div className="consent-actions">
-          <button
-            type="button"
-            className={`primary-button ${danger ? 'danger-button' : ''}`}
-            onClick={onConfirm}
-            disabled={isBusy}
-          >
-            {confirmLabel}
-          </button>
-          <button type="button" className="ghost-button" onClick={onDismiss}>
-            {cancelLabel}
-          </button>
-        </div>
-      </section>
-    </div>
-  )
 }
 
 /** The plan picker. Built as an expandable card — a "desplegable" — rather than a
