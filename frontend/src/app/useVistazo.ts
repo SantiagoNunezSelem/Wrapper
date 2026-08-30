@@ -278,8 +278,9 @@ export function useVistazo() {
     window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
 
     void takeSharedFile().then(({ file, debug }) => {
-      // Puesto directo en el mensaje de error (no sólo en consola): sin cable ni PC a
-      // mano, esto es lo único que deja ver qué llegó realmente en el POST del share.
+      // Sólo a consola: sirve para diagnosticar qué llegó realmente en el POST del
+      // share sin cable ni PC a mano, pero es información nuestra, no del usuario — no
+      // pertenece al mensaje de error que se muestra en pantalla.
       const debugSuffix = debug ? ` [debug: ${JSON.stringify(debug)}]` : ''
 
       if (debug) {
@@ -289,7 +290,7 @@ export function useVistazo() {
       if (file) {
         void processFile(file, debugSuffix)
       } else {
-        setError(`${copy.shareTargetError}${debugSuffix}`)
+        setError(copy.shareTargetError)
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -938,12 +939,20 @@ export function useVistazo() {
 
       if (messages.length === 0) {
         // Un archivo que "parsea" pero no matchea ni una línea es, en la práctica,
-        // indistinguible de uno vacío o corrupto — mejor un error accionable (con los
-        // datos reales del File recibido y una vista previa de su contenido) que una
+        // indistinguible de uno vacío o corrupto — mejor un error accionable que una
         // pantalla de 0 personas / 0 mensajes que parece haber funcionado.
-        const fileInfo = `${file.name || 'sin nombre'} · ${file.type || 'sin tipo'} · ${file.size} bytes`
-        const preview = rawTextPreview ? ` · content: "${rawTextPreview}"` : ''
-        throw new Error(`${copy.emptyChatError} [${fileInfo}${preview}]${diagnosticSuffix}`)
+        //
+        // Los datos reales del File y el contenido que trajo van SOLO a la consola, no
+        // al mensaje que ve el usuario: ese archivo puede no ser un chat en absoluto (a
+        // alguien le puede tocar subir cualquier cosa por error) y su contenido no es
+        // nuestro para mostrar en pantalla.
+        console.warn(
+          '[processFile] empty parse result:',
+          `${file.name || 'sin nombre'} · ${file.type || 'sin tipo'} · ${file.size} bytes`,
+          rawTextPreview ? `· content: "${rawTextPreview}"` : '',
+          diagnosticSuffix,
+        )
+        throw new Error(copy.emptyChatError)
       }
 
       setIsReplay(false)

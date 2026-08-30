@@ -120,12 +120,16 @@ describe('ApiError', () => {
     expect(error.status).toBe(403)
   })
 
-  it('conserva el texto crudo cuando la respuesta no es JSON (proxy, 502)', async () => {
+  it('NO muestra el texto crudo cuando la respuesta no es JSON (proxy, 502)', async () => {
+    // Esa página no la escribió nuestro backend para que alguien la lea — es lo que
+    // devuelve lo que sea que esté delante (un proxy, un load balancer) cuando la
+    // request ni siquiera llegó a la API. Mostrarla tal cual sería renderizar HTML o
+    // texto de un tercero en la pantalla del usuario.
     failWith(502, '<html>Bad Gateway</html>')
 
     const error = await captureApiError(getCurrentUser('tok'))
 
-    expect(error.message).toBe('<html>Bad Gateway</html>')
+    expect(error.message).toBe('Request failed with status 502')
     expect(error.code).toBeUndefined()
     expect(error.status).toBe(502)
   })
@@ -138,13 +142,15 @@ describe('ApiError', () => {
     expect(error.message).toBe('Request failed with status 500')
   })
 
-  it('usa el texto crudo si el JSON no trae "message"', async () => {
+  it('un JSON de la propia API sin "message" conserva el code, pero no el texto crudo', async () => {
+    // JSON válido significa que SÍ pasó por nuestro backend — el code es uno de
+    // nuestros propios códigos cortos, seguro de confiar incluso si faltó el message.
     failWith(400, JSON.stringify({ code: 'invalid_request' }))
 
     const error = await captureApiError(getCurrentUser('tok'))
 
     expect(error.code).toBe('invalid_request')
-    expect(error.message).toBe('{"code":"invalid_request"}')
+    expect(error.message).toBe('Request failed with status 400')
   })
 })
 

@@ -19,6 +19,15 @@ public static class SubscriptionEndpoints
     /// </summary>
     private static readonly TimeSpan WebhookBudget = TimeSpan.FromSeconds(18);
 
+    /// <summary>
+    /// Shown to the customer whenever a <see cref="MercadoPagoException"/> reaches an
+    /// endpoint. <see cref="MercadoPagoException.Message"/> is not safe to forward as-is —
+    /// on a rejected request it embeds Mercado Pago's own raw error text, and on others the
+    /// HTTP method and path we called — so every catch site logs the real exception and
+    /// hands the customer this instead.
+    /// </summary>
+    private const string ProviderErrorMessage = "We couldn't reach Mercado Pago. Please try again in a moment.";
+
     public static void MapSubscriptionEndpoints(this WebApplication app)
     {
         // Public: the landing page needs a price to advertise before anyone signs in.
@@ -55,6 +64,7 @@ public static class SubscriptionEndpoints
             AppDbContext db,
             SubscriptionService subscriptions,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             CancellationToken cancellationToken) =>
         {
             var user = await LoadUserAsync(principal, db, cancellationToken);
@@ -76,8 +86,9 @@ public static class SubscriptionEndpoints
             }
             catch (MercadoPagoException exception)
             {
+                logger.LogError(exception, "Checkout failed for user {UserId}.", user.Id);
                 return Results.Json(
-                    new { message = exception.Message, code = "provider_error" },
+                    new { message = ProviderErrorMessage, code = "provider_error" },
                     statusCode: StatusCodes.Status502BadGateway);
             }
 
@@ -90,6 +101,7 @@ public static class SubscriptionEndpoints
             SubscriptionService subscriptions,
             TrialEligibilityService trialEligibility,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             CancellationToken cancellationToken) =>
         {
             var user = await LoadUserAsync(principal, db, cancellationToken);
@@ -111,8 +123,9 @@ public static class SubscriptionEndpoints
             }
             catch (MercadoPagoException exception)
             {
+                logger.LogError(exception, "Cancel failed for user {UserId}.", user.Id);
                 return Results.Json(
-                    new { message = exception.Message, code = "provider_error" },
+                    new { message = ProviderErrorMessage, code = "provider_error" },
                     statusCode: StatusCodes.Status502BadGateway);
             }
 
@@ -137,6 +150,7 @@ public static class SubscriptionEndpoints
             SubscriptionService subscriptions,
             TrialEligibilityService trialEligibility,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             CancellationToken cancellationToken) =>
             await RunSubscriptionActionAsync(
                 principal,
@@ -144,6 +158,7 @@ public static class SubscriptionEndpoints
                 subscriptions,
                 trialEligibility,
                 http,
+                logger,
                 (service, user, token) => service.PauseAsync(user, token),
                 cancellationToken));
 
@@ -153,6 +168,7 @@ public static class SubscriptionEndpoints
             SubscriptionService subscriptions,
             TrialEligibilityService trialEligibility,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             CancellationToken cancellationToken) =>
             await RunSubscriptionActionAsync(
                 principal,
@@ -160,6 +176,7 @@ public static class SubscriptionEndpoints
                 subscriptions,
                 trialEligibility,
                 http,
+                logger,
                 (service, user, token) => service.ResumeAsync(user, token),
                 cancellationToken));
 
@@ -172,6 +189,7 @@ public static class SubscriptionEndpoints
             SubscriptionService subscriptions,
             TrialEligibilityService trialEligibility,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             CancellationToken cancellationToken) =>
         {
             var user = await LoadUserAsync(principal, db, cancellationToken);
@@ -188,12 +206,13 @@ public static class SubscriptionEndpoints
             {
                 // A sync failure is not fatal: the stored state is still shown, and the
                 // webhook remains the authoritative path.
+                logger.LogError(exception, "Sync failed for user {UserId}.", user.Id);
                 return Results.Ok(await BuildOverviewAsync(
                     user,
                     subscriptions,
                     await trialEligibility.EvaluateAsync(user, http, null, cancellationToken),
                     cancellationToken,
-                    warning: exception.Message));
+                    warning: ProviderErrorMessage));
             }
 
             var eligibility = await trialEligibility.EvaluateAsync(user, http, null, cancellationToken);
@@ -352,6 +371,7 @@ public static class SubscriptionEndpoints
         SubscriptionService subscriptions,
         TrialEligibilityService trialEligibility,
         HttpContext http,
+        ILogger<SubscriptionService> logger,
         Func<SubscriptionService, User, CancellationToken, Task<Subscription>> action,
         CancellationToken cancellationToken)
     {
@@ -373,8 +393,9 @@ public static class SubscriptionEndpoints
         }
         catch (MercadoPagoException exception)
         {
+            logger.LogError(exception, "Subscription action failed for user {UserId}.", user.Id);
             return Results.Json(
-                new { message = exception.Message, code = "provider_error" },
+                new { message = ProviderErrorMessage, code = "provider_error" },
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
