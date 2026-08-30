@@ -1301,34 +1301,6 @@
   border-color: rgba(192, 132, 252, 0.6);
 }
 
-/* Sits above whatever page opened it (the subscription page's cancel-confirm dialog). */
-.nested-backdrop {
-  z-index: 40;
-}
-
-.confirm-card {
-  width: min(440px, 100%);
-  display: grid;
-  gap: 14px;
-}
-
-.subpage-status.status-activa,
-.subpage-status.status-trial {
-  background: var(--vz-success-bg);
-  color: var(--vz-success-text);
-}
-
-.subpage-status.status-pago_fallido {
-  background: var(--vz-danger-bg);
-  color: var(--vz-danger-text);
-}
-
-.subpage-status.status-pendiente,
-.subpage-status.status-pausada {
-  background: var(--vz-warning-bg);
-  color: var(--vz-warning-text);
-}
-
 .plan-card-chevron.is-open {
   transform: rotate(180deg);
 }

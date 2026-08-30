@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { formatMoney } from '../lib/format'
+import { ConfirmDialog } from './ConfirmDialog'
+import { ModalShell } from './ModalShell'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
@@ -8,6 +10,9 @@ import type {
   SubscriptionRecord,
   UserProfile,
 } from '../types'
+
+/** Every action the account screen can be waiting on. */
+export type SubscriptionBusyAction = 'cancel' | 'refresh' | 'pause' | 'resume'
 
 export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   eyebrow: string
@@ -19,6 +24,14 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   close: string
   statuses: Record<string, string>
   statusHints: Record<string, string>
+  statusNext: Record<string, string>
+  pendingReasons: Record<string, string>
+  pendingReasonFallback: string
+  pendingReasonLabel: string
+  resumeCheckoutCta: string
+  resumeCheckoutHint: string
+  alreadyPaidNote: string
+  checkingStatus: string
   currentPlanTitle: string
   perMonth: string
   freeTrialBadge: string
@@ -29,17 +42,39 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   paymentMethod: string
   startedOn: string
   lastPayment: string
+  pausedSince: string
+  accessUntilLabel: string
+  lastCheckedLabel: string
+  daysLeft: string
+  oneDayLeft: string
+  lastDay: string
   cancelCta: string
   cancelConfirmTitle: string
   cancelConfirmBody: string
+  cancelConfirmTrialBody: string
+  cancelConfirmPendingBody: string
   cancelConfirmYes: string
   cancelConfirmNo: string
+  cancelledNothingCharged: string
+  cancelledKeepsAccess: string
+  cancelledDone: string
+  pauseCta: string
+  pausing: string
+  pauseConfirmTitle: string
+  pauseConfirmBody: string
+  pauseConfirmYes: string
+  pauseHint: string
+  resumeCta: string
+  resuming: string
   refreshCta: string
   refreshing: string
   cancelling: string
   billedBy: string
   autoRenewOn: string
   autoRenewOff: string
+  changeCardCta: string
+  changeCardHint: string
+  resubscribeTitle: string
   adminNote: string
   devNote: string
   plansTitle: string
@@ -52,6 +87,7 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   historyTitle: string
   noHistory: string
   eventsTitle: string
+  eventsToggle: string
   noEvents: string
 }
 
@@ -62,9 +98,15 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
  * visual language is deliberately calmer than the rest of the app: solid panels, no
  * gradients on headings, no confetti.
  *
- * Buying redirects straight to Mercado Pago's hosted checkout from wherever the plan
- * card lives (see PlanPurchaseFlow), so it renders inline here exactly like it does in
- * the "Desbloquear VIP" popover — there is no separate payment step to hand off to.
+ * The screen is organised around one question — *what is going to happen to my money, and
+ * when* — because that is what people actually come here to find out. So the state, what
+ * it means, what happens next and the one button that changes it all live together at the
+ * top, above the plan card; the facts, the billing history and the audit trail come after,
+ * in that order of how often anyone needs them.
+ *
+ * Which buttons exist is decided by the server (`overview.actions`), not here. Otherwise
+ * the rules drift between this screen and the mobile shell, and the UI ends up offering an
+ * action the API answers with a 409.
  */
 export function SubscriptionPage({
   language,
@@ -77,6 +119,8 @@ export function SubscriptionPage({
   onBack,
   onLanguageToggle,
   onCancel,
+  onPause,
+  onResume,
   onRefresh,
   onSignIn,
 }: {
@@ -85,25 +129,21 @@ export function SubscriptionPage({
   user: UserProfile | null
   token: string | null
   overview: SubscriptionOverview | null
-  busyAction: 'cancel' | 'refresh' | null
+  busyAction: SubscriptionBusyAction | null
   error: string
   onBack: () => void
   onLanguageToggle: () => void
   onCancel: () => void
+  onPause: () => void
+  onResume: () => void
   onRefresh: () => void
   onSignIn: () => void
 }) {
   const isBusy = busyAction !== null
   const current = overview?.current ?? null
   const plan = overview?.plan ?? null
+  const actions = overview?.actions ?? null
   const locale = language === 'es' ? 'es-AR' : 'en-US'
-
-  const canCancel =
-    current !== null &&
-    !overview?.accessFromAdminOverride &&
-    ['trial', 'activa', 'pago_fallido', 'pausada'].includes(current.status)
-
-  const canSubscribe = current === null || ['inactiva', 'cancelada', 'pendiente'].includes(current.status)
 
   return (
     <div className="subpage">
@@ -130,6 +170,7 @@ export function SubscriptionPage({
 
         {error ? <p className="subpage-error">{error}</p> : null}
         {overview?.warning ? <p className="subpage-error">{overview.warning}</p> : null}
+        {overview?.cancellation ? <CancellationNote overview={overview} copy={copy} locale={locale} /> : null}
 
         {!user ? (
           <section className="subpage-section subpage-signin">
@@ -141,22 +182,41 @@ export function SubscriptionPage({
         ) : null}
 
         {current ? (
-          <CurrentPlanSection
-            current={current}
-            plan={plan}
-            copy={copy}
-            locale={locale}
-            overview={overview}
-            isBusy={isBusy}
-            busyAction={busyAction}
-            canCancel={canCancel}
-            onCancel={onCancel}
-            onRefresh={onRefresh}
-          />
+          <>
+            <StatusBanner
+              current={current}
+              copy={copy}
+              locale={locale}
+              isBusy={isBusy}
+              busyAction={busyAction}
+              canResumeCheckout={Boolean(actions?.canResumeCheckout)}
+              onRefresh={onRefresh}
+            />
+
+            <CurrentPlanSection
+              current={current}
+              plan={plan}
+              copy={copy}
+              locale={locale}
+              overview={overview}
+              isBusy={isBusy}
+              busyAction={busyAction}
+              onCancel={onCancel}
+              onPause={onPause}
+              onResume={onResume}
+            />
+          </>
         ) : null}
 
-        {user && token && canSubscribe ? (
-          <PlansSection copy={copy} token={token} userEmail={user.email} plan={plan} overview={overview} />
+        {user && token && (actions?.canSubscribe ?? current === null) ? (
+          <PlansSection
+            copy={copy}
+            token={token}
+            userEmail={user.email}
+            plan={plan}
+            overview={overview}
+            title={current ? copy.resubscribeTitle : copy.plansTitle}
+          />
         ) : null}
 
         {user ? (
@@ -187,30 +247,111 @@ export function SubscriptionPage({
               )}
             </section>
 
-            <section className="subpage-section subpage-section-muted">
-              <h2>{copy.eventsTitle}</h2>
-              {overview && overview.events.length > 0 ? (
-                <ul className="subpage-list subpage-events">
-                  {overview.events.map((item) => (
-                    <li key={item.id}>
-                      <div>
-                        <strong>{item.topic}</strong>
-                        {item.action ? <span className="subpage-muted"> · {item.action}</span> : null}
-                        {item.notes ? <p className="subpage-muted">{item.notes}</p> : null}
-                      </div>
-                      <span className="subpage-muted">{formatDateTime(item.createdAtUtc, locale)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="subpage-muted-copy">{copy.noEvents}</p>
-              )}
-            </section>
+            <EventsSection overview={overview} copy={copy} locale={locale} />
           </>
         ) : null}
       </main>
     </div>
   )
+}
+
+/**
+ * The one block that answers "what is happening with my payment". It is a separate,
+ * louder panel rather than a line inside the plan card because in the states that matter —
+ * a payment stuck on pending, a card that was declined — this is the only thing on the
+ * page anybody is reading, and the action that resolves it has to be right underneath.
+ */
+function StatusBanner({
+  current,
+  copy,
+  locale,
+  isBusy,
+  busyAction,
+  canResumeCheckout,
+  onRefresh,
+}: {
+  current: SubscriptionRecord
+  copy: SubscriptionPageCopy
+  locale: string
+  isBusy: boolean
+  busyAction: SubscriptionBusyAction | null
+  canResumeCheckout: boolean
+  onRefresh: () => void
+}) {
+  const needsAttention = current.status === 'pendiente' || current.status === 'pago_fallido'
+  const nextStep = fillTokens(copy.statusNext[current.status] ?? '', {
+    date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
+    amount: formatMoney(current.amount, current.currencyId, locale),
+  })
+
+  return (
+    <section className={`subpage-banner ${needsAttention ? 'is-attention' : 'is-calm'} banner-${current.status}`}>
+      <div className="subpage-banner-head">
+        <span className={`subpage-status status-${current.status}`}>
+          {copy.statuses[current.status] ?? current.status}
+        </span>
+        {current.hasAccess && current.accessUntilUtc ? (
+          <span className="subpage-banner-countdown">{formatRemaining(current.accessUntilUtc, copy)}</span>
+        ) : null}
+      </div>
+
+      {copy.statusHints[current.status] ? <p className="subpage-banner-body">{copy.statusHints[current.status]}</p> : null}
+      {nextStep ? <p className="subpage-banner-next">{nextStep}</p> : null}
+
+      {/* Only ever shown with a real status_detail behind it: inventing a reason is worse
+          than saying nothing, and the fallback already covers "no sabemos todavía". */}
+      {current.pendingReason ? (
+        <p className="subpage-banner-reason">
+          <strong>{copy.pendingReasonLabel}:</strong>{' '}
+          {copy.pendingReasons[current.pendingReason] ?? copy.pendingReasonFallback}
+        </p>
+      ) : null}
+
+      {current.status === 'pendiente' ? (
+        <>
+          <div className="subpage-banner-actions">
+            {canResumeCheckout && current.checkoutUrl ? (
+              <a className="primary-button" href={current.checkoutUrl}>
+                {copy.resumeCheckoutCta}
+              </a>
+            ) : null}
+            <button type="button" className="ghost-button" onClick={onRefresh} disabled={isBusy}>
+              {busyAction === 'refresh' ? copy.checkingStatus : copy.refreshCta}
+            </button>
+          </div>
+          {canResumeCheckout && current.checkoutUrl ? (
+            <p className="subpage-banner-fineprint">{copy.resumeCheckoutHint}</p>
+          ) : null}
+          <p className="subpage-banner-fineprint">{copy.alreadyPaidNote}</p>
+        </>
+      ) : null}
+    </section>
+  )
+}
+
+/** The short-lived confirmation after cancelling — it says what was actually decided,
+ * which "cancelada" alone does not. Gone on the next load of the overview. */
+function CancellationNote({
+  overview,
+  copy,
+  locale,
+}: {
+  overview: SubscriptionOverview
+  copy: SubscriptionPageCopy
+  locale: string
+}) {
+  const result = overview.cancellation
+  if (!result) {
+    return null
+  }
+
+  const message = result.nothingWillBeCharged
+    ? copy.cancelledNothingCharged
+    : result.accessUntilUtc
+      ? fillTokens(copy.cancelledKeepsAccess, { date: formatDate(result.accessUntilUtc, locale) })
+      : copy.cancelledDone
+
+  return <p className="subpage-note subpage-note-success">{message}</p>
 }
 
 function CurrentPlanSection({
@@ -221,30 +362,34 @@ function CurrentPlanSection({
   overview,
   isBusy,
   busyAction,
-  canCancel,
   onCancel,
-  onRefresh,
+  onPause,
+  onResume,
 }: {
-  current: NonNullable<SubscriptionOverview['current']>
+  current: SubscriptionRecord
   plan: SubscriptionOverview['plan'] | null
   copy: SubscriptionPageCopy
   locale: string
   overview: SubscriptionOverview | null
   isBusy: boolean
-  busyAction: 'cancel' | 'refresh' | null
-  canCancel: boolean
+  busyAction: SubscriptionBusyAction | null
   onCancel: () => void
-  onRefresh: () => void
+  onPause: () => void
+  onResume: () => void
 }) {
-  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false)
+  const [confirming, setConfirming] = useState<'cancel' | 'pause' | null>(null)
+  const actions = overview?.actions ?? null
+  const manageUrl = overview?.manageUrl ?? null
 
   return (
     <section className="subpage-section">
       <div className="subpage-section-head">
         <h2>{copy.currentPlanTitle}</h2>
-        <button type="button" className="ghost-button" onClick={onRefresh} disabled={isBusy}>
-          {busyAction === 'refresh' ? copy.refreshing : copy.refreshCta}
-        </button>
+        {current.lastSyncedAtUtc ? (
+          <span className="subpage-muted">
+            {copy.lastCheckedLabel}: {formatDateTime(current.lastSyncedAtUtc, locale)}
+          </span>
+        ) : null}
       </div>
 
       {overview?.accessFromAdminOverride ? <p className="subpage-note">{copy.adminNote}</p> : null}
@@ -252,87 +397,178 @@ function CurrentPlanSection({
 
       <div className="subpage-current">
         <div className="subpage-current-head">
-          <span className={`subpage-status status-${current.status}`}>{copy.statuses[current.status] ?? current.status}</span>
+          <p className="subpage-price">
+            {formatMoney(current.amount || plan?.amount || 0, current.currencyId || plan?.currencyId || 'ARS', locale)}
+            <small> {copy.perMonth}</small>
+          </p>
           {current.trialWasApplied && current.status === 'trial' ? (
             <span className="subpage-trial-badge">{copy.freeTrialBadge}</span>
           ) : null}
         </div>
 
-        <p className="subpage-price">
-          {formatMoney(current.amount || plan?.amount || 0, current.currencyId || plan?.currencyId || 'ARS', locale)}
-          <small> {copy.perMonth}</small>
-        </p>
-
-        {copy.statusHints[current.status] ? <p className="subpage-hint">{copy.statusHints[current.status]}</p> : null}
-
         <dl className="subpage-facts">
           {current.status === 'trial' && current.trialEndsAtUtc ? (
             <Fact label={copy.trialEndsOn} value={formatDate(current.trialEndsAtUtc, locale)} />
           ) : null}
+          {/* Renewal and expiry are the same date wearing different hats — which one it is
+              depends on whether anything is still going to be charged. */}
           {current.nextBillingAtUtc ? (
             <Fact
-              label={current.status === 'cancelada' || current.status === 'pausada' ? copy.endsOn : copy.renewsOn}
+              label={current.autoRenewEnabled ? copy.renewsOn : copy.endsOn}
               value={formatDate(current.nextBillingAtUtc, locale)}
             />
           ) : null}
+          {!current.nextBillingAtUtc && current.accessUntilUtc ? (
+            <Fact label={copy.accessUntilLabel} value={formatDate(current.accessUntilUtc, locale)} />
+          ) : null}
           {current.status === 'pago_fallido' && current.graceEndsAtUtc ? (
             <Fact label={copy.graceUntil} value={formatDate(current.graceEndsAtUtc, locale)} />
+          ) : null}
+          {current.status === 'pausada' && current.pausedAtUtc ? (
+            <Fact label={copy.pausedSince} value={formatDate(current.pausedAtUtc, locale)} />
           ) : null}
           {current.subscriptionStartsAtUtc ? (
             <Fact label={copy.startedOn} value={formatDate(current.subscriptionStartsAtUtc, locale)} />
           ) : null}
           {current.lastPaymentAtUtc ? <Fact label={copy.lastPayment} value={formatDate(current.lastPaymentAtUtc, locale)} /> : null}
           {current.paymentMethodLabel ? <Fact label={copy.paymentMethod} value={current.paymentMethodLabel} /> : null}
-          <Fact
-            label={copy.billedBy}
-            value={current.status === 'cancelada' || current.status === 'pausada' ? copy.autoRenewOff : copy.autoRenewOn}
-          />
+          <Fact label={copy.billedBy} value={current.autoRenewEnabled ? copy.autoRenewOn : copy.autoRenewOff} />
         </dl>
       </div>
 
-      {canCancel ? (
-        <div className="subpage-actions">
-          <button type="button" className="ghost-button danger-button" onClick={() => setIsConfirmingCancel(true)} disabled={isBusy}>
-            {busyAction === 'cancel' ? copy.cancelling : copy.cancelCta}
-          </button>
+      {/* The card lives in the payer's Mercado Pago account and there is no API to replace
+          it, so this links out rather than pretending to be a form. */}
+      {manageUrl && current.externalSubscriptionId ? (
+        <div className="subpage-manage">
+          <a className="ghost-button" href={manageUrl} target="_blank" rel="noreferrer noopener">
+            {copy.changeCardCta}
+          </a>
+          <p className="subpage-muted">{copy.changeCardHint}</p>
         </div>
       ) : null}
 
-      {isConfirmingCancel ? (
-        <div className="modal-backdrop nested-backdrop" role="presentation" onClick={() => setIsConfirmingCancel(false)}>
-          <section className="modal-card confirm-card" onClick={(event) => event.stopPropagation()}>
-            <h3>{copy.cancelConfirmTitle}</h3>
-            <p className="panel-copy">
-              {copy.cancelConfirmBody.replace(
-                '{date}',
-                current.nextBillingAtUtc
-                  ? formatDate(current.nextBillingAtUtc, locale)
-                  : current.trialEndsAtUtc
-                    ? formatDate(current.trialEndsAtUtc, locale)
-                    : '—',
-              )}
-            </p>
-            <div className="consent-actions">
-              <button
-                type="button"
-                className="primary-button danger-button"
-                onClick={() => {
-                  setIsConfirmingCancel(false)
-                  onCancel()
-                }}
-                disabled={isBusy}
-              >
-                {copy.cancelConfirmYes}
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setIsConfirmingCancel(false)}>
-                {copy.cancelConfirmNo}
-              </button>
-            </div>
-          </section>
+      {actions && (actions.canResume || actions.canPause || actions.canCancel) ? (
+        <div className="subpage-actions">
+          {actions.canResume ? (
+            <button type="button" className="primary-button" onClick={onResume} disabled={isBusy}>
+              {busyAction === 'resume' ? copy.resuming : copy.resumeCta}
+            </button>
+          ) : null}
+
+          {actions.canPause ? (
+            <button type="button" className="ghost-button" onClick={() => setConfirming('pause')} disabled={isBusy}>
+              {busyAction === 'pause' ? copy.pausing : copy.pauseCta}
+            </button>
+          ) : null}
+
+          {actions.canCancel ? (
+            <button
+              type="button"
+              className="ghost-button danger-button"
+              onClick={() => setConfirming('cancel')}
+              disabled={isBusy}
+            >
+              {busyAction === 'cancel' ? copy.cancelling : copy.cancelCta}
+            </button>
+          ) : null}
         </div>
+      ) : null}
+
+      {/* Offered next to "cancelar", where the decision is actually being made. */}
+      {actions?.canPause ? <p className="subpage-muted-copy">{copy.pauseHint}</p> : null}
+
+      {confirming === 'cancel' ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.cancelConfirmTitle,
+            body: buildCancelBody(current, copy, locale),
+            confirm: copy.cancelConfirmYes,
+            cancel: copy.cancelConfirmNo,
+            busy: copy.cancelling,
+            close: copy.close,
+          }}
+          isBusy={isBusy}
+          onConfirm={() => {
+            setConfirming(null)
+            onCancel()
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+
+      {confirming === 'pause' ? (
+        <PauseConfirmDialog
+          copy={copy}
+          body={fillTokens(copy.pauseConfirmBody, {
+            date: formatDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
+          })}
+          isBusy={isBusy}
+          onConfirm={() => {
+            setConfirming(null)
+            onPause()
+          }}
+          onDismiss={() => setConfirming(null)}
+        />
       ) : null}
     </section>
   )
+}
+
+/**
+ * Pausing is not a destructive action — the shared `ConfirmDialog` always renders its
+ * confirm button as `is-danger`, which would misrepresent it as one — so this builds
+ * directly on `ModalShell` instead, the same way `FreeUnlockConfirm` does for its own
+ * non-destructive confirm.
+ */
+function PauseConfirmDialog({
+  copy,
+  body,
+  isBusy,
+  onConfirm,
+  onDismiss,
+}: {
+  copy: SubscriptionPageCopy
+  body: string
+  isBusy: boolean
+  onConfirm: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <ModalShell onDismiss={onDismiss} label={copy.pauseConfirmTitle} className="confirm-modal" closeLabel={copy.close}>
+      <h2>{copy.pauseConfirmTitle}</h2>
+      <p className="panel-copy">{body}</p>
+
+      <div className="free-unlock-actions">
+        <button type="button" className="ghost-button" onClick={onDismiss} disabled={isBusy}>
+          {copy.cancelConfirmNo}
+        </button>
+        <button type="button" className="primary-button" onClick={onConfirm} disabled={isBusy}>
+          {isBusy ? copy.pausing : copy.pauseConfirmYes}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+/**
+ * What cancelling actually costs, stated in the terms of the state being cancelled.
+ * Inside the free week no money ever moves — Mercado Pago's engine is what schedules the
+ * first debit and removing the preapproval means it is never attempted — and that is a
+ * stronger, truer promise than the generic "no te volvemos a cobrar".
+ */
+function buildCancelBody(current: SubscriptionRecord, copy: SubscriptionPageCopy, locale: string): string {
+  if (current.status === 'pendiente') {
+    return copy.cancelConfirmPendingBody
+  }
+
+  const date = formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
+  const amount = formatMoney(current.amount, current.currencyId, locale)
+
+  if (current.status === 'trial' && !current.lastPaymentAtUtc) {
+    return fillTokens(copy.cancelConfirmTrialBody, { date, amount })
+  }
+
+  return fillTokens(copy.cancelConfirmBody, { date, amount })
 }
 
 /** The plan picker. Built as an expandable card — a "desplegable" — rather than a
@@ -344,18 +580,20 @@ function PlansSection({
   userEmail,
   plan,
   overview,
+  title,
 }: {
   copy: SubscriptionPageCopy
   token: string
   userEmail: string
   plan: SubscriptionOverview['plan'] | null
   overview: SubscriptionOverview | null
+  title: string
 }) {
   const [isOpen, setIsOpen] = useState(true)
 
   return (
     <section className="subpage-section">
-      <h2>{copy.plansTitle}</h2>
+      <h2>{title}</h2>
 
       <div className="plan-card">
         <button type="button" className="plan-card-summary" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen}>
@@ -384,6 +622,50 @@ function PlansSection({
   )
 }
 
+/** The raw provider trail. Behind a toggle: it is the thing that settles a billing dispute,
+ * and also the thing nobody wants to scroll past on an ordinary visit. */
+function EventsSection({
+  overview,
+  copy,
+  locale,
+}: {
+  overview: SubscriptionOverview | null
+  copy: SubscriptionPageCopy
+  locale: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <section className="subpage-section subpage-section-muted">
+      <div className="subpage-section-head">
+        <h2>{copy.eventsTitle}</h2>
+        <button type="button" className="ghost-button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen}>
+          {copy.eventsToggle}
+        </button>
+      </div>
+
+      {isOpen ? (
+        overview && overview.events.length > 0 ? (
+          <ul className="subpage-list subpage-events">
+            {overview.events.map((item) => (
+              <li key={item.id}>
+                <div>
+                  <strong>{item.topic}</strong>
+                  {item.action ? <span className="subpage-muted"> · {item.action}</span> : null}
+                  {item.notes ? <p className="subpage-muted">{item.notes}</p> : null}
+                </div>
+                <span className="subpage-muted">{formatDateTime(item.createdAtUtc, locale)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="subpage-muted-copy">{copy.noEvents}</p>
+        )
+      ) : null}
+    </section>
+  )
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="subpage-fact">
@@ -395,12 +677,16 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; copy: SubscriptionPageCopy; locale: string }) {
   const date = invoice.paidAtUtc ?? invoice.debitScheduledAtUtc ?? invoice.periodStartUtc ?? invoice.createdAtUtc
+  // Only worth a line when the charge did not simply go through — "Aprobado · Acreditado"
+  // is noise, "Rechazado · La tarjeta no tenía saldo suficiente" is the whole story.
+  const detail = invoice.status !== 'aprobado' && invoice.statusDetail ? copy.pendingReasons[invoice.statusDetail] : null
 
   return (
     <li>
       <div>
         <strong>{formatMoney(invoice.amount, invoice.currencyId, locale)}</strong>
         <span className={`invoice-status invoice-${invoice.status}`}>{copy.invoiceStatuses[invoice.status] ?? invoice.status}</span>
+        {detail ? <p className="subpage-muted">{detail}</p> : null}
         {invoice.periodStartUtc && invoice.periodEndUtc ? (
           <p className="subpage-muted">
             {copy.invoicePeriod
@@ -457,6 +743,24 @@ function ChevronIcon({ className = '' }: { className?: string }) {
   )
 }
 
+/** `{name}` substitution. Kept dumb on purpose — the copy owns the sentence, this only
+ * fills the holes, so a translation can move the date to the front without code changes. */
+function fillTokens(template: string, values: Record<string, string>): string {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(value), template)
+}
+
+/** Days left, rounded up: someone whose access ends in nine hours has "1 día", not zero. */
+function formatRemaining(untilUtc: string, copy: SubscriptionPageCopy): string {
+  const days = Math.ceil((new Date(untilUtc).getTime() - Date.now()) / 86_400_000)
+
+  if (days <= 0) {
+    return copy.lastDay
+  }
+  if (days === 1) {
+    return copy.oneDayLeft
+  }
+  return copy.daysLeft.replace('{n}', String(days))
+}
 
 function formatDate(value: string | null, locale: string): string {
   if (!value) {

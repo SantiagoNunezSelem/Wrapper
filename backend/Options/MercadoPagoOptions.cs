@@ -84,6 +84,46 @@ public sealed class MercadoPagoOptions
     /// <summary>Create the plan on demand when <see cref="PreapprovalPlanId"/> is empty.</summary>
     public bool AutoCreatePlan { get; set; } = true;
 
+    /// <summary>
+    /// Open each checkout as its own <c>preapproval</c> (<c>POST /preapproval</c> with
+    /// <c>status: "pending"</c> and no card token) instead of sending everyone to the
+    /// shared plan's <c>init_point</c>.
+    ///
+    /// This is what makes a payment stop getting stuck on "pendiente". The plan link is
+    /// anonymous: Mercado Pago creates the real subscription on their side with an id we
+    /// never see and no <c>external_reference</c>, so the only way back to the local row
+    /// is the payer's Mercado Pago account email — which is frequently not the Google
+    /// address they signed in with. When they differ, neither the webhook nor a manual
+    /// sync can ever link the two and the account screen says "pendiente" forever while
+    /// Mercado Pago happily charges the card. Creating the preapproval ourselves hands
+    /// back its id *before* the redirect and lets us stamp <c>external_reference</c> with
+    /// our own subscription id, so every later notification matches by id.
+    /// </summary>
+    public bool UseDirectPreapproval { get; set; } = true;
+
+    /// <summary>
+    /// How often the background reconciler re-reads subscriptions that Mercado Pago may
+    /// have moved without us hearing about it. Webhooks get lost — a deploy mid-delivery,
+    /// a secret rotated, a topic never enabled in the panel — and without this a paying
+    /// customer stays locked out until they happen to press "Actualizar estado".
+    /// Zero disables it.
+    /// </summary>
+    public int ReconcileIntervalMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// How long an unfinished checkout keeps being polled before it is written off. A
+    /// payer who closed the tab should not be re-read every quarter of an hour forever.
+    /// </summary>
+    public int PendingCheckoutHours { get; set; } = 48;
+
+    /// <summary>
+    /// Where the payer manages the card behind the subscription. Mercado Pago exposes no
+    /// API to replace a card on an existing preapproval — it happens on their site, in
+    /// the payer's own account — so the account screen links there instead of pretending
+    /// to offer it.
+    /// </summary>
+    public string ManageUrl { get; set; } = "https://www.mercadopago.com.ar/subscriptions";
+
     public int TimeoutSeconds { get; set; } = 20;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(AccessToken);
@@ -105,7 +145,19 @@ public sealed class MercadoPagoOptions
         get
         {
             var url = $"{BackUrl.TrimEnd('/')}/suscripcion?checkout=return";
-            return url.Contains("localhost", StringComparison.OrdinalIgnoreCase) ? "https://www.mercadopago.com/" : url;
+            return HasPublicBackUrl ? url : "https://www.mercadopago.com/";
         }
     }
+
+    /// <summary>
+    /// Whether <see cref="BackUrl"/> is a real public origin Mercado Pago will accept.
+    /// Worth knowing beyond plan creation: without it the payer is never sent back to
+    /// <c>/suscripcion?checkout=return</c>, so the immediate post-checkout sync never
+    /// runs and the only thing left to move the row off "pendiente" is the webhook or the
+    /// background reconciler.
+    /// </summary>
+    public bool HasPublicBackUrl =>
+        !string.IsNullOrWhiteSpace(BackUrl) &&
+        !BackUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+        !BackUrl.Contains("127.0.0.1", StringComparison.Ordinal);
 }

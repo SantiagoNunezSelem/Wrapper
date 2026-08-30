@@ -30,6 +30,26 @@ public sealed class Subscription
     /// <summary>Mercado Pago's payer id, for support lookups.</summary>
     public string? ExternalPayerId { get; set; }
 
+    /// <summary>
+    /// The checkout this subscription was opened with, kept so an interrupted payment can
+    /// be resumed from the account screen instead of starting over. Mercado Pago's
+    /// <c>init_point</c> for a <c>pending</c> preapproval stays valid until it is
+    /// authorised, which is exactly the window in which someone closes the tab.
+    /// </summary>
+    public string? CheckoutUrl { get; set; }
+
+    /// <summary>
+    /// Why the last charge is not settled yet, verbatim from Mercado Pago
+    /// (<c>pending_contingency</c>, <c>pending_challenge</c>, <c>cc_rejected_…</c>).
+    /// A payment sitting in "pendiente" is not one thing — it can be the issuer asking
+    /// for confirmation, an offline method awaiting the payer, or Mercado Pago's own
+    /// two-day review — and the account screen is useless if it cannot say which.
+    /// </summary>
+    public string? LastPaymentStatusDetail { get; set; }
+
+    /// <summary>When the subscription was paused, so "reanudar" can say since when.</summary>
+    public DateTime? PausedAtUtc { get; set; }
+
     public decimal Amount { get; set; }
     public string CurrencyId { get; set; } = "ARS";
 

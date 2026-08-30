@@ -87,6 +87,10 @@ builder.Services.AddSingleton<ClientFingerprint>();
 builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.AddScoped<SubscriptionService>();
+// The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
+// notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
+// there are no credentials.
+builder.Services.AddHostedService<SubscriptionReconciliationService>();
 builder.Services.AddOpenApi();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -700,8 +704,26 @@ static void LogPaymentsConfiguration(WebApplication app)
     {
         logger.LogWarning(
             "MercadoPago:WebhookSecret is empty — every incoming notification will be rejected, so " +
-            "subscriptions will never activate. Copy the secret shown when registering the webhook URL.");
+            "subscriptions will never activate. Copy the secret shown when registering the webhook URL. " +
+            "In the panel, tick all three of: payment, subscription_preapproval and " +
+            "subscription_authorized_payment. Leaving 'payment' off is the usual reason a paid " +
+            "subscription stays on 'pendiente'.");
     }
+
+    if (!mercadoPago.HasPublicBackUrl)
+    {
+        logger.LogWarning(
+            "MercadoPago:BackUrl is {BackUrl}, which Mercado Pago will not redirect back to — the payer " +
+            "lands on mercadopago.com instead of /suscripcion, so nothing re-syncs right after paying. " +
+            "Expected in development; in production set it to the site's own origin.",
+            mercadoPago.BackUrl);
+    }
+
+    logger.LogInformation(
+        mercadoPago.ReconcileIntervalMinutes > 0
+            ? "Subscription reconciliation runs every {Interval} min, so a lost webhook self-heals."
+            : "Subscription reconciliation is OFF (MercadoPago:ReconcileIntervalMinutes = {Interval}); a lost webhook will need a manual 'Actualizar estado'.",
+        mercadoPago.ReconcileIntervalMinutes);
 }
 
 /// <summary>

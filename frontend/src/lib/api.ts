@@ -27,6 +27,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turns a failed response's body into `{ message, code }`.
+ *
+ * Every endpoint that means to talk to the user answers with `{ message, code }` — that
+ * `message` is written for display and safe to show as-is. A body that *isn't* that shape
+ * (an HTML proxy page, a bare 502, anything a load balancer or CDN generated before the
+ * request even reached the API) is not: showing it verbatim is how a stack trace or a
+ * third-party error page ends up rendered in the UI. The raw text still goes to the
+ * console, for whoever is debugging with devtools open.
+ */
+function readErrorBody(text: string, status: number): { message: string; code?: string } {
+  try {
+    // Valid JSON means this came from our own API, which always writes `message` for
+    // display — `code` is safe to trust even on the rare response that left it out,
+    // since it is always one of our own short, structured labels, never arbitrary text.
+    const parsed = JSON.parse(text) as { message?: string; code?: string }
+    return { message: parsed.message || `Request failed with status ${status}`, code: parsed.code }
+  } catch {
+    // Not JSON at all means this never went through our API's error handling — a proxy's
+    // HTML page, a bare 502 from something in front of it. Nothing in that body was
+    // written to be shown to anyone, so nothing in it gets shown here either.
+    if (text) {
+      console.error(`[api] non-JSON error body for status ${status}:`, text)
+    }
+    return { message: `Request failed with status ${status}` }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -38,19 +66,8 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
   })
 
   if (!response.ok) {
-    const text = await response.text()
-    let message = text
-    let code: string | undefined
-
-    try {
-      const parsed = JSON.parse(text) as { message?: string; code?: string }
-      message = parsed.message ?? text
-      code = parsed.code
-    } catch {
-      // Not every failure comes back as JSON (proxies, 502s) — keep the raw text.
-    }
-
-    throw new ApiError(message || `Request failed with status ${response.status}`, response.status, code)
+    const { message, code } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code)
   }
 
   return (await response.json()) as T
@@ -181,7 +198,7 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
  * is sent back (see `syncSubscription`) or the webhook lands.
  */
 export async function startCheckout(token: string): Promise<CheckoutStart> {
-  const response = await request<{ initPoint: string; subscriptionId: string }>(
+  return request<CheckoutStart>(
     '/api/subscription/checkout',
     {
       method: 'POST',
@@ -189,13 +206,25 @@ export async function startCheckout(token: string): Promise<CheckoutStart> {
     },
     token,
   )
-
-  return { initPoint: response.initPoint, subscriptionId: response.subscriptionId }
 }
 
-/** Stops automatic renewal. Access continues until the end of the paid period. */
+/**
+ * Stops automatic renewal. Access continues until the end of the paid period, and the
+ * reply's `cancellation` says whether any money is going to move at all — cancelling
+ * inside the free week means the first debit is never attempted.
+ */
 export async function cancelSubscription(token: string): Promise<SubscriptionOverview> {
   return request<SubscriptionOverview>('/api/subscription/cancel', { method: 'POST' }, token)
+}
+
+/** Suspends debits without giving up the subscription: same card, same price, resumable. */
+export async function pauseSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/pause', { method: 'POST' }, token)
+}
+
+/** Puts a paused subscription back on its schedule. */
+export async function resumeSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/resume', { method: 'POST' }, token)
 }
 
 /** Re-reads the subscription from Mercado Pago. Used on return from checkout, where the
@@ -304,19 +333,8 @@ export async function deleteAnalysis(token: string, id: string): Promise<void> {
   })
 
   if (!response.ok) {
-    const text = await response.text()
-    let message = text
-    let code: string | undefined
-
-    try {
-      const parsed = JSON.parse(text) as { message?: string; code?: string }
-      message = parsed.message ?? text
-      code = parsed.code
-    } catch {
-      // Igual que en `request`: no toda falla vuelve como JSON.
-    }
-
-    throw new ApiError(message || `Request failed with status ${response.status}`, response.status, code)
+    const { message, code } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code)
   }
 }
 

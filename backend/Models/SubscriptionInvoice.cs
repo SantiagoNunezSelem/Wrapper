@@ -30,6 +30,14 @@ public sealed class SubscriptionInvoice
     /// <summary>Provider status verbatim, so a surprising value can still be traced.</summary>
     public string? RawStatus { get; set; }
 
+    /// <summary>
+    /// Mercado Pago's <c>status_detail</c> — the only field that says <em>why</em> a
+    /// charge is pending or rejected. Stored raw and translated at the edge, so a value
+    /// Mercado Pago adds later still reaches the billing history instead of being
+    /// flattened into "pendiente".
+    /// </summary>
+    public string? StatusDetail { get; set; }
+
     public string? PaymentMethodLabel { get; set; }
 
     /// <summary>The period this charge paid for.</summary>

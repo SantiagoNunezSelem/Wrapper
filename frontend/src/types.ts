@@ -69,10 +69,40 @@ export interface SubscriptionRecord {
   lastPaymentAtUtc: string | null
   cancelledAtUtc: string | null
   graceEndsAtUtc: string | null
+  pausedAtUtc: string | null
+  lastSyncedAtUtc: string | null
   trialWasApplied: boolean
   isDevSimulated: boolean
   hasAccess: boolean
+  /** Whether Mercado Pago will charge this again. Separate from `hasAccess` on purpose:
+   * a cancelled subscription keeps Pro until the paid period ends, so "¿tengo acceso?"
+   * and "¿me van a cobrar?" have different answers and the screen states both. */
+  autoRenewEnabled: boolean
+  /** When Pro ends if nothing changes. */
+  accessUntilUtc: string | null
+  /** The unfinished checkout to go back to, when the payer left one half-done. */
+  checkoutUrl: string | null
+  /** Mercado Pago's `status_detail` for a charge that has not settled — `pending_contingency`,
+   * `pending_challenge`, `cc_rejected_insufficient_amount`… See `pendingReasons` in the copy. */
+  pendingReason: string | null
   createdAtUtc: string
+}
+
+/** Which buttons the server will actually honour. Decided backend-side so the screen never
+ * offers an action that would come back as a 409. */
+export interface SubscriptionActions {
+  canSubscribe: boolean
+  canResumeCheckout: boolean
+  canCancel: boolean
+  canPause: boolean
+  canResume: boolean
+}
+
+/** What a cancellation just did, sent once, on the response to the cancel call. */
+export interface CancellationResult {
+  nothingWillBeCharged: boolean
+  alreadyCancelled: boolean
+  accessUntilUtc: string | null
 }
 
 export interface SubscriptionInvoice {
@@ -81,6 +111,8 @@ export interface SubscriptionInvoice {
   currencyId: string
   /** `aprobado` | `rechazado` | `pendiente` | `reintentando` | `devuelto` */
   status: string
+  /** Mercado Pago's `status_detail`, untranslated. */
+  statusDetail: string | null
   paymentMethodLabel: string | null
   periodStartUtc: string | null
   periodEndUtc: string | null
@@ -104,6 +136,9 @@ export interface SubscriptionEvent {
 export interface CheckoutStart {
   initPoint: string
   subscriptionId: string
+  /** True when this handed back an earlier unfinished checkout instead of opening a new
+   * one — two checkouts open at once means two subscriptions the payer could authorise. */
+  resumed: boolean
 }
 
 export interface SubscriptionOverview {
@@ -116,10 +151,15 @@ export interface SubscriptionOverview {
   trialAvailable: boolean
   /** `account_used` | `ip_used` | `network_used` | `device_used` | `country_not_allowed` */
   trialDeniedReason: string | null
+  actions: SubscriptionActions
+  /** Mercado Pago's own subscription page, where the card behind the plan is replaced.
+   * There is no API for that, so this is a link out rather than a form. */
+  manageUrl: string | null
   history: SubscriptionRecord[]
   invoices: SubscriptionInvoice[]
   events: SubscriptionEvent[]
   warning: string | null
+  cancellation: CancellationResult | null
 }
 
 /**

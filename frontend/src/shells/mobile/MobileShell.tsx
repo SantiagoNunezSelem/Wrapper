@@ -98,6 +98,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleLogout,
     handleConsentAccept,
     handleCancelSubscription,
+    handlePauseSubscription,
+    handleResumeSubscription,
     handleRefreshSubscription,
     openSavedAnalysis,
     persistWordCloudEdit,
@@ -242,6 +244,12 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
           onCancel={() => {
             void handleCancelSubscription()
+          }}
+          onPause={() => {
+            void handlePauseSubscription()
+          }}
+          onResume={() => {
+            void handleResumeSubscription()
           }}
           onRefresh={() => {
             void handleRefreshSubscription()

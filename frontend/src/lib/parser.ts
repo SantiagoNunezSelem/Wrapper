@@ -35,8 +35,9 @@ export interface ParsedChat {
   messages: ChatMessage[]
   sourceHash: string
   // Sólo para diagnóstico cuando `messages` termina vacío — los primeros caracteres
-  // del texto ya decodificado, para poder ver en el mensaje de error qué contenido
-  // llegó realmente sin necesitar acceso a la consola del dispositivo.
+  // del texto ya decodificado, para poder ver en la consola qué contenido llegó
+  // realmente. Va a console.warn, nunca al mensaje de error en pantalla: el archivo
+  // puede no ser un chat en absoluto, y su contenido no es nuestro para mostrar.
   rawTextPreview: string
 }
 

@@ -226,6 +226,188 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     // -----------------------------------------------------------------------
+    // Acciones ofrecidas
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Una_cuenta_sin_suscripcion_solo_puede_suscribirse()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient();
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.True(actions.GetProperty("canSubscribe").GetBoolean());
+        foreach (var action in new[] { "canResumeCheckout", "canCancel", "canPause", "canResume" })
+        {
+            Assert.False(actions.GetProperty(action).GetBoolean());
+        }
+    }
+
+    [Fact]
+    public async Task Una_suscripcion_vigente_y_vinculada_se_puede_cancelar_y_pausar_pero_no_reanudar()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: ApiFactory.ActiveSubscription());
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.True(actions.GetProperty("canCancel").GetBoolean());
+        Assert.True(actions.GetProperty("canPause").GetBoolean());
+        Assert.False(actions.GetProperty("canResume").GetBoolean());
+        Assert.False(actions.GetProperty("canSubscribe").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Un_checkout_a_medias_ofrece_retomarlo_y_devuelve_su_link()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+        });
+
+        var body = await ReadJson(await client.GetAsync("/api/subscription"));
+
+        Assert.True(body.GetProperty("actions").GetProperty("canResumeCheckout").GetBoolean());
+        Assert.Equal("https://mp.test/subscribe/pre-1", body.GetProperty("current").GetProperty("checkoutUrl").GetString());
+    }
+
+    [Fact]
+    public async Task Un_pendiente_sin_link_para_retomar_NO_es_un_callejon_sin_salida()
+    {
+        // Sin checkout que retomar y sin poder suscribirse, la pantalla no tendría ninguna
+        // salida: ni seguir adelante ni empezar de nuevo.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription { Status = "pendiente" });
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.False(actions.GetProperty("canResumeCheckout").GetBoolean());
+        Assert.True(actions.GetProperty("canSubscribe").GetBoolean());
+    }
+
+    [Fact]
+    public async Task El_acceso_de_admin_no_ofrece_ninguna_accion_de_facturacion()
+    {
+        // No compró nada: no hay nada que cancelar, pausar ni reanudar.
+        var (client, _) = factory.CreateAuthenticatedClient(isAdmin: true);
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        foreach (var action in new[] { "canSubscribe", "canResumeCheckout", "canCancel", "canPause", "canResume" })
+        {
+            Assert.False(actions.GetProperty(action).GetBoolean());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Pausar y reanudar
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("/api/subscription/pause")]
+    [InlineData("/api/subscription/resume")]
+    public async Task Pausar_y_reanudar_exigen_sesion(string route)
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsync(route, null)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/subscription/pause")]
+    [InlineData("/api/subscription/resume")]
+    public async Task Pausar_y_reanudar_sin_suscripcion_son_409_no_subscription(string route)
+    {
+        var (client, _) = factory.CreateAuthenticatedClient();
+
+        Assert.Equal("no_subscription", await CodeOf(await client.PostAsync(route, null)));
+    }
+
+    [Fact]
+    public async Task Reanudar_algo_que_no_esta_pausado_es_409_not_paused()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: ApiFactory.ActiveSubscription());
+
+        Assert.Equal("not_paused", await CodeOf(await client.PostAsync("/api/subscription/resume", null)));
+    }
+
+    [Fact]
+    public async Task Pausar_una_suscripcion_simulada_es_409_not_linked()
+    {
+        // El interruptor local nunca tocó Mercado Pago, así que no hay nada que pausar allá.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "activa",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(20),
+            IsDevSimulated = true,
+        });
+
+        Assert.Equal("not_linked", await CodeOf(await client.PostAsync("/api/subscription/pause", null)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Qué se le dice al usuario
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Cancelar_responde_QUE_paso_ademas_del_estado_nuevo()
+    {
+        // "cancelada" no alcanza para escribir el mensaje: hace falta saber si se va a
+        // cobrar algo y hasta cuándo llega el acceso.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "activa",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(20),
+            IsDevSimulated = true,
+        });
+
+        var body = await ReadJson(await client.PostAsync("/api/subscription/cancel", null));
+
+        var cancellation = body.GetProperty("cancellation");
+        Assert.False(cancellation.GetProperty("nothingWillBeCharged").GetBoolean());
+        Assert.False(cancellation.GetProperty("alreadyCancelled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task La_vista_general_NO_trae_el_aviso_de_cancelacion()
+    {
+        // Es la respuesta a una acción, no un estado: si viviera en la vista general, el
+        // cartel volvería a aparecer en cada recarga.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: ApiFactory.ActiveSubscription());
+
+        var body = await ReadJson(await client.GetAsync("/api/subscription"));
+
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("cancellation").ValueKind);
+    }
+
+    [Fact]
+    public async Task La_vista_general_dice_adonde_se_cambia_la_tarjeta()
+    {
+        // Mercado Pago no tiene API para reemplazar la tarjeta de un preapproval, así que
+        // la pantalla linkea en vez de fingir un formulario que no puede guardar.
+        var (client, _) = factory.CreateAuthenticatedClient();
+
+        var manageUrl = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("manageUrl").GetString();
+
+        Assert.False(string.IsNullOrWhiteSpace(manageUrl));
+    }
+
+    [Fact]
+    public async Task Una_suscripcion_cancelada_conserva_el_acceso_pero_ya_no_renueva()
+    {
+        // Dos preguntas distintas con respuestas distintas, y la pantalla contesta las dos.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(9),
+            CancelledAtUtc = DateTime.UtcNow.AddDays(-1),
+        });
+
+        var current = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("current");
+
+        Assert.True(current.GetProperty("hasAccess").GetBoolean());
+        Assert.False(current.GetProperty("autoRenewEnabled").GetBoolean());
+        Assert.NotEqual(JsonValueKind.Null, current.GetProperty("accessUntilUtc").ValueKind);
+    }
+
+    // -----------------------------------------------------------------------
     // Sincronización
     // -----------------------------------------------------------------------
 

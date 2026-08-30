@@ -106,57 +106,44 @@ El resto de la configuración vive en `backend\appsettings.json`, bajo `GoogleAi
   recortados a 50 palabras alrededor de la palabra clave, con un par de líneas de contexto
   y con los nombres reemplazados por letras.
 
-## Configurar Mercado Pago (suscripciones con Payment Brick)
+## Configurar Mercado Pago (suscripciones)
 
 Plan único: **$7.800 ARS por mes**, con **1 semana de prueba gratis** para la primera
-suscripción. El checkout es el [Card Payment
-Brick](https://www.mercadopago.com.ar/developers/es/docs/checkout-bricks/card-payment-brick/introduction)
-de Mercado Pago **embebido en la propia app** — la tarjeta se completa en un formulario
-que aparece ahí mismo (en el popover de "Desbloquear VIP" o en `/suscripcion`), nunca hay
-una redirección a mercadopago.com. Ya no se usa el link de pago que habías pasado antes
-(`https://mpago.la/2pihzoE`): sigue existiendo como plan en tu panel de Mercado Pago, pero
-la app no lo usa más.
+suscripción.
 
-Cómo entran los datos de la tarjeta al sistema, en dos pasos:
+El checkout **crea una suscripción propia para cada pagador** y lo manda a la página
+alojada de Mercado Pago a autorizarla:
 
-1. **En el navegador**, el Brick (`@mercadopago/sdk-react`) captura los campos de
-   tarjeta —número, vencimiento, código de seguridad— en **iframes de Mercado Pago**, no
-   en el DOM de la app: ese texto nunca es legible por nuestro código ni viaja a nuestro
-   backend. El Brick lo tokeniza directo contra Mercado Pago y entrega un `token` de un
-   solo uso.
-2. **El backend** recibe ese `token` (`POST /api/subscription/checkout`) y llama a
-   `POST /preapproval` con `card_token_id`, autorizando la suscripción ahí mismo — la
-   respuesta ya dice si quedó en `trial` o `activa`, sin pasos intermedios.
+1. `POST /api/subscription/checkout` llama a
+   [`POST /preapproval`](https://www.mercadopago.com.ar/developers/es/reference/subscriptions/_preapproval/post)
+   con `status: "pending"`, `payer_email`, `back_url`, el `auto_recurring` (con
+   `free_trial` cuando corresponde) y —lo importante— `external_reference` con el id de
+   la fila local.
+2. Mercado Pago devuelve el `id` del preapproval y un `init_point`. El id se guarda
+   **antes** de mandar a nadie a pagar; el navegador va al `init_point`.
+3. El pagador autoriza en la página de Mercado Pago y el preapproval pasa de `pending` a
+   `authorized`. La notificación llega por webhook, y la app ya sabe a qué fila
+   corresponde.
 
-> ⚠️ **Bloqueo activo del lado de Mercado Pago — probado, no es un bug de este código.**
-> Con tus credenciales de test, `POST /preapproval` con `card_token_id` devuelve
-> siempre **404 `"Card token service not found"`**, sin importar si el token es nuevo, si
-> viene de una tarjeta guardada en un Customer, o si se tokeniza con la public key o con
-> el access token. Repro exacta (con tu access token de test):
-> ```bash
-> curl -X POST "https://api.mercadopago.com/v1/card_tokens?public_key=TEST-2b072cf5-bf1a-47cb-aec0-5a1f07458e8c" \
->   -H "Content-Type: application/json" \
->   -d '{"card_number":"5031755734530604","security_code":"123","expiration_month":11,"expiration_year":2030,"cardholder":{"name":"APRO","identification":{"type":"DNI","number":"12345678"}}}'
-> # devuelve un token válido — hasta acá anda bien
->
-> curl -X POST "https://api.mercadopago.com/preapproval" \
->   -H "Authorization: Bearer TEST-4188444718723319-080223-b4cdfce44f8501a236b8719b04b5043b-1654404229" \
->   -H "Content-Type: application/json" \
->   -d '{"preapproval_plan_id":"36559e9e0fe24550a71ca3c4d58c8add","card_token_id":"EL_TOKEN_DE_ARRIBA","payer_email":"tu-email","status":"authorized"}'
-> # {"message":"Card token service not found","status":404}
-> ```
-> No es un caso aislado: es el mismo error, con el mismo texto, que otro desarrollador
-> reportó en el [foro oficial de
-> Mercado Pago](https://github.com/mercadopago/sdk-nodejs/discussions/362) intentando
-> exactamente esto mismo. Construí todo según la documentación oficial (que sí describe
-> `card_token_id` como campo válido de `/preapproval`), así que lo más probable es que
-> sea (a) algo que se resuelve pasando a credenciales de **producción** en vez de test, o
-> (b) una función que Mercado Pago tiene que habilitarte en la cuenta/aplicación. Con el
-> repro de arriba en mano, valdría la pena escribirle a soporte de desarrolladores de
-> Mercado Pago citando ese mismo error. Mientras tanto, la app ya queda **completamente
-> lista**: en el momento en que ese llamado empiece a funcionar de tu lado, todo el resto
-> (trial, webhook, cancelación, historial) ya está enchufado y no hace falta tocar nada
-> más.
+**Por qué así, y por qué antes quedaba todo en "pendiente".** El camino anterior mandaba a
+todos al `init_point` compartido del *plan*. Ese link es anónimo: Mercado Pago crea la
+suscripción de su lado con un id que nunca vemos y sin `external_reference`, así que lo
+único que quedaba para volver a la fila local era el **mail de la cuenta de Mercado Pago
+del pagador** — que muy seguido no es el mismo Gmail con el que se logueó en Vistazo.
+Cuando difieren, ni el webhook ni "Actualizar estado" pueden vincularlos: la tarjeta se
+cobra y la app dice "pendiente" para siempre.
+
+> **Nota sobre el 404 `"Card token service not found"`.** Ese error aparecía al usar
+> `POST /preapproval` con `card_token_id` (el flujo *authorized*, el del Card Payment
+> Brick embebido). Este flujo **no manda ningún card token** —la tarjeta se carga del lado
+> de Mercado Pago— así que no lo toca. La suscripción con plan asociado sí exige
+> `card_token_id` + `status: "authorized"`, y por eso el trial va declarado por
+> suscripción en vez de por plan.
+
+Si `POST /preapproval` fuera rechazado (hay cuentas y países donde no está habilitado), el
+checkout **cae automáticamente** al link del plan compartido: se pierde el id de arranque,
+pero no se pierde la venta. Queda anotado en el log con nivel `Warning`. Se puede forzar
+ese camino con `MercadoPago:UseDirectPreapproval: false`.
 
 ### 1. Credenciales (ya cargadas para pruebas)
 
@@ -164,7 +151,9 @@ Las credenciales de **test** que pasaste ya están en el repo, listas para proba
 
 - Backend (`backend\appsettings.Development.json`, sección `MercadoPago`): `AccessToken`
   y `PublicKey`.
-- Frontend (`frontend\.env`): `VITE_MERCADO_PAGO_PUBLIC_KEY`.
+- Frontend: nada. La tarjeta se carga en la página de Mercado Pago, así que el
+  navegador no necesita ninguna credencial suya. (`VITE_MERCADO_PAGO_PUBLIC_KEY` en
+  `frontend\.env` quedó del checkout embebido anterior y ya no se lee.)
 
 Para pasar a producción:
 
@@ -173,10 +162,6 @@ cd backend
 dotnet user-secrets set "MercadoPago:AccessToken" "APP_USR-..."
 dotnet user-secrets set "MercadoPago:WebhookSecret" "..."
 ```
-
-Y en `frontend\.env`, reemplazá `VITE_MERCADO_PAGO_PUBLIC_KEY` por la public key de
-producción (esta sí puede ir en el repo — a diferencia del access token, una public key
-está pensada para exponerse en el navegador).
 
 > Igual que la key de IA: el **access token** y el **webhook secret** no van en
 > `appsettings.json` ni en `appsettings.Development.json` cuando son de producción —
@@ -200,7 +185,7 @@ checkout desde el propio sitio de Mercado Pago en vez de por API):
 | Comprador | `3587267080` | `TESTUSER3495729252306500887` | `avlnIQqBTf` | `267080` |
 | Vendedor | `3587267082` | `TESTUSER4000554943837637660` | `eiukCdxpbt` | `267082` |
 
-Tarjetas de prueba (Argentina) — cualquiera de estas funciona con el Brick:
+Tarjetas de prueba (Argentina):
 
 | Tarjeta | Número | Código de seguridad | Vencimiento |
 | --- | --- | --- | --- |
@@ -210,8 +195,9 @@ Tarjetas de prueba (Argentina) — cualquiera de estas funciona con el Brick:
 | Mastercard Débito | `5287 3383 1025 3304` | `123` | `11/30` |
 | Visa Débito | `4002 7686 9439 5619` | `123` | `11/30` |
 
-El **nombre del titular** que cargues en el Brick simula el resultado del pago (DNI
-`12345678` donde aplica):
+El **nombre del titular** simula el resultado del pago (DNI `12345678` donde aplica).
+Vale la pena probar `CONT` en particular: es el que reproduce el estado pendiente que la
+pantalla ahora explica en vez de sólo nombrar.
 
 | Nombre del titular | Resultado |
 | --- | --- |
@@ -235,17 +221,42 @@ apenas se resuelva — vos tendrías que activarlo a mano por cada pago. En el
 https://TU-DOMINIO/api/webhooks/mercadopago
 ```
 
-Suscribite a los eventos **Suscripciones** (`subscription_preapproval`) y **Pagos de
-suscripción** (`subscription_authorized_payment`). Copiá la **clave secreta** que muestra
-el panel y guardala como `MercadoPago:WebhookSecret`.
+Suscribite a **los tres** eventos:
+
+| Evento en el panel | Topic | Para qué |
+| --- | --- | --- |
+| Suscripciones | `subscription_preapproval` | La suscripción cambió de estado (`pending` → `authorized`, pausada, cancelada). |
+| Pagos de suscripción | `subscription_authorized_payment` | Cada cobro programado del ciclo. |
+| **Pagos** | `payment` | El movimiento de plata en sí. |
+
+> ⚠️ **`payment` no es opcional.** La documentación de Mercado Pago pide habilitarlo junto
+> a los otros dos, y para un **primer cobro suele ser la única notificación que llega**.
+> Además es el único que trae `status_detail`, que es lo que permite decir *por qué* un
+> pago está pendiente (`pending_contingency`, `pending_challenge`, `cc_rejected_…`) en vez
+> de repetir la palabra "pendiente". Tenerlo apagado es la causa más común de una
+> suscripción pagada que se queda colgada.
+
+Copiá la **clave secreta** que muestra el panel y guardala como
+`MercadoPago:WebhookSecret`.
 
 > Sin ese secreto **toda notificación se rechaza con 401** y ninguna suscripción llega a
 > activarse. Es a propósito: un webhook sin firma verificada es un endpoint público que
 > reparte acceso pago a quien adivine la URL.
 
 Para probar en local, exponé el puerto 5175 con un túnel (ngrok, Cloudflare Tunnel) y usá
-esa URL. También podés forzar una reconciliación desde `/suscripcion` con **Actualizar
-estado**, que vuelve a leer todo desde Mercado Pago sin depender del webhook.
+esa URL.
+
+**Aun así el webhook no es un punto único de falla.** Tres cosas lo cubren, de más rápida a
+más lenta:
+
+1. Al volver del checkout, `/suscripcion` re-consulta sola unas cinco veces (3 s, 6 s, 12 s,
+   24 s, 48 s) hasta que el estado deja de ser "pendiente".
+2. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
+3. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
+   15 minutos las suscripciones que están en movimiento —pendientes recientes, cobros
+   rechazados, renovaciones vencidas— y aplica lo que Mercado Pago diga. Una notificación
+   perdida (topic sin habilitar, secreto rotado, deploy que se comió la entrega) se
+   resuelve sola dentro de ese intervalo en vez de convertirse en un ticket.
 
 ### 4. Ajustes
 
@@ -258,10 +269,46 @@ Todo en `backend\appsettings.json`, bajo `MercadoPago`:
 | `Frequency` / `FrequencyType` | `1` / `months` | Ciclo de facturación. |
 | `TrialFrequency` / `TrialFrequencyType` | `7` / `days` | Duración del trial. |
 | `FailedPaymentGraceDays` | `3` | Días de acceso tras un cobro rechazado, mientras Mercado Pago reintenta. |
-| `PreapprovalPlanId` | tu plan real (`36559e9e0fe24550a71ca3c4d58c8add`) | El plan al que se atan las suscripciones nuevas. |
+| `PreapprovalPlanId` | tu plan real (`36559e9e0fe24550a71ca3c4d58c8add`) | Solo se usa en el camino de fallback (ver arriba). |
 | `AutoCreatePlan` | `true` | Si `PreapprovalPlanId` estuviera vacío, crea uno solo la primera vez. |
+| `UseDirectPreapproval` | `true` | Crear un `preapproval` por pagador en vez de mandar al link del plan. **Es el arreglo del "pago pendiente"**; ponelo en `false` solo para volver al camino viejo. |
+| `BackUrl` | `http://localhost:5173` | **En producción tiene que ser el origen real del sitio** (`https://vistazo.app`). Mercado Pago rechaza un `back_url` que apunte a localhost, así que con el default el pagador termina en mercadopago.com y nunca vuelve a `/suscripcion` — con lo cual la re-consulta inmediata post-pago no corre. El backend lo avisa al arrancar. |
+| `ReconcileIntervalMinutes` | `15` | Cada cuánto corre el reconciliador. `0` lo apaga. |
+| `PendingCheckoutHours` | `48` | Cuánto tiempo un checkout sin terminar se sigue ofreciendo para retomar (y se sigue consultando). Después se da por abandonado. |
+| `ManageUrl` | `https://www.mercadopago.com.ar/subscriptions` | Adónde manda "Cambiar la tarjeta". Mercado Pago **no tiene API** para reemplazar la tarjeta de un preapproval existente: se hace desde la cuenta del pagador, así que la app linkea en vez de fingir un formulario que no puede guardar. |
 
-### 5. Anti-abuso del trial
+### 5. Qué puede hacer el usuario en `/suscripcion`
+
+La pantalla está organizada alrededor de una sola pregunta —*¿qué va a pasar con mi plata
+y cuándo?*— porque es a lo que se entra. Arriba de todo, un panel dice el estado, qué
+significa, **qué sigue** y el botón que lo cambia; recién después vienen los datos, el
+historial de cobros y la auditoría.
+
+| Acción | Endpoint | Qué hace de verdad |
+| --- | --- | --- |
+| Terminar un pago a medias | — (link guardado) | Vuelve al mismo `init_point`. Abrir un checkout nuevo estando uno pendiente **no crea otro**: se retoma, porque dos suscripciones autorizables son dos cobros mensuales. |
+| Actualizar estado | `POST /api/subscription/sync` | Relee el preapproval, sus cobros y el `status_detail` del pago que no cerró. |
+| Cancelar renovación | `POST /api/subscription/cancel` | Cancela en Mercado Pago. **El acceso NO se corta**: se conserva hasta el final del período pago. |
+| Pausar / Reanudar | `POST /api/subscription/pause` · `/resume` | Suspende los débitos conservando tarjeta y precio. Existe para que "este mes viene difícil" no tenga que ser una cancelación. |
+| Cambiar la tarjeta | — (link externo) | Mercado Pago no expone API para reemplazar la tarjeta de un preapproval existente; se linkea a la cuenta del pagador. |
+
+Dos detalles que valen por sí solos:
+
+- **Cancelar durante la prueba gratis dice explícitamente que no se cobra nada**, y no es
+  una promesa de marketing: el motor de Mercado Pago es el que agenda el primer débito, así
+  que si el preapproval ya no existe cuando llega la fecha, el cobro **no se intenta**. El
+  backend decide eso (`CancellationOutcome.NothingWillBeCharged`) mirando el estado que
+  Mercado Pago acaba de confirmar, no lo que el usuario clickeó.
+- **Un pago pendiente dice por qué.** `status_detail` se traduce a una frase accionable
+  ("tu banco pide una confirmación extra", "la tarjeta no tenía saldo suficiente", "Mercado
+  Pago lo está procesando, hasta 2 días hábiles"). Un código que no conocemos cae en un
+  texto genérico — nunca se muestra el código crudo.
+
+Qué botones existen lo decide el **backend** (`overview.actions`), no la pantalla: si no,
+las reglas se separan entre el shell de escritorio y el móvil, y la UI termina ofreciendo
+una acción que la API contesta con un 409.
+
+### 6. Anti-abuso del trial
 
 La semana gratis se otorga una sola vez, y se controla por tres vías a la vez (en
 `backend\appsettings.json`, sección `TrialGuard`):
@@ -277,11 +324,19 @@ La semana gratis se otorga una sola vez, y se controla por tres vías a la vez (
 Las IPs y los ids de dispositivo se guardan **hasheados con sal**: la tabla solo necesita
 responder "¿ya lo vi?", nunca "¿quién era?".
 
+**Cuándo se quema y cuándo se devuelve.** La semana se marca como usada al **abrir** el
+checkout, no al convertir — así abandonar el pago a mitad de camino no deja la oferta
+disponible para siempre. La excepción es cancelar un checkout que Mercado Pago **nunca
+llegó a autorizar**: ahí se devuelve, porque esa persona no usó ni un día y "Cancelar" es
+su única salida de un pago del que se arrepintió. No abre un agujero: sigue habiendo
+exactamente una semana gratis por cuenta cuando finalmente se suscriba, y el registro de
+la semana que sí se usó nunca se toca.
+
 > `TrustProxyHeaders` viene en `false`. Prendelo **solo** cuando la app esté detrás de un
 > proxy/CDN que reescriba `X-Forwarded-For`: si no, cualquiera manda ese header y se
 > regala un trial nuevo.
 
-### 6. Botones de desarrollo (solo localhost)
+### 7. Botones de desarrollo (solo localhost)
 
 Arriba a la derecha aparecen dos switches que **no existen fuera de localhost**:
 
@@ -296,7 +351,7 @@ El endpoint que respalda el segundo exige **dos** condiciones: entorno `Developm
 que la request venga de loopback. Un build de producción mal configurado sigue sin regalar
 Pro por internet.
 
-### 7. Producción: el hosting necesita fallback a `index.html`
+### 8. Producción: el hosting necesita fallback a `index.html`
 
 `/suscripcion` es una ruta que solo existe del lado del cliente (no hay un servidor atrás
 que la sirva) — en desarrollo, Vite ya resuelve esto solo. En producción, el hosting tiene
@@ -371,7 +426,7 @@ una autoridad certificadora local) — es un paso que solo un humano puede acept
 - Dashboard con 12 métricas gratis y 13 VIP (intercaladas, sin catalogar a las gratuitas como "gratis"), cada una con gráfico (barras, dona, heatmap horario/anual, radar, calendario de rachas, timeline o nube de palabras) y una vista de detalle paginada por integrante
 - El botón "Ver más" (desglose por integrante) es una función VIP para **todas** las métricas, incluidas las gratuitas — solo la vista básica de cada tarjeta depende de si esa métrica en particular es gratis o VIP
 - Gating VIP real: los datos bloqueados nunca se calculan hacia el estado de React ni al DOM (no es un blur solo de CSS); al desbloquear VIP se recalcula localmente con los mensajes ya parseados
-- Suscripciones con Mercado Pago de punta a punta: checkout embebido con el Card Payment Brick (sin redirecciones), trial de 1 semana, cobro mensual recurrente, webhooks con firma verificada, cancelación, historial de pagos y auditoría de eventos — bloqueado hoy solo por el 404 de Mercado Pago documentado más arriba, no por nada de este lado
+- Suscripciones con Mercado Pago de punta a punta: un `preapproval` por pagador con `external_reference` propio, trial de 1 semana, cobro mensual recurrente, webhooks con firma verificada (incluido el topic `payment`), reconciliador en segundo plano para las notificaciones que se pierden, cancelar / pausar / reanudar, historial de pagos con el motivo real de cada rechazo y auditoría de eventos
 - `/suscripcion`: ruta propia (no un modal), con diseño más formal separado del resto de la app — estado del plan, selector de plan desplegable con precio/beneficios/trial, historial de pagos y de suscripciones, y actividad de la cuenta. Se llega ahí desde el menú de la cuenta (**Gestionar suscripción**)
 - "Desbloquear VIP" en cualquier tarjeta bloqueada abre un **popover** con el plan y el formulario de tarjeta directo (sin el desplegable del plan, que solo tiene sentido en `/suscripcion`) — comprar no saca al usuario de donde estaba
 
