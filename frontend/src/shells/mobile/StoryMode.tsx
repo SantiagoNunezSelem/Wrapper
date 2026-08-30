@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-// NUEVO: números que laten — para revertir, borrar este import y los usos de
-// useCountUp más abajo (volver a heroSplit?.rest y lockedCount directos).
 import { useCountUp } from '../../components/useCountUp'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
 import { prefersReducedMotion } from '../../lib/prefersReducedMotion'
 import type { MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
-// NUEVO: la mascota con humor — para revertir, borrar este import, el de
-// mascotMood, y el <MascotBlob> más abajo.
 import { MascotBlob } from './MascotBlob'
 import { mascotMoodFor } from './mascotMood'
 
@@ -385,8 +381,8 @@ export function StoryMode({
   }
 
   const heroSplit = card?.basic ? splitLeadingEmoji(card.basic.value) : null
-  const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
-  const lockedCountValue = useCountUp(isOutro ? String(lockedCount) : '') // NUEVO
+  const statValue = useCountUp(heroSplit?.rest ?? '')
+  const lockedCountValue = useCountUp(isOutro ? String(lockedCount) : '')
 
   return (
     <div
@@ -442,7 +438,6 @@ export function StoryMode({
               <h2 className="m-story-kicker">Vistazo Pro</h2>
             </div>
 
-            {/* ANTES: <strong className="m-story-huge gradient-text">{lockedCount}</strong> */}
             <strong className="m-story-huge gradient-text">{lockedCountValue}</strong>
             <p className="m-story-label">{m.outroTitle}</p>
             {reducedMotion || lockedNames.length === 0 ? (
@@ -468,7 +463,6 @@ export function StoryMode({
             <>
               <strong className="m-story-huge">
                 {heroSplit?.emoji ? <span className="stat-emoji">{heroSplit.emoji} </span> : null}
-                {/* ANTES: <span className="gradient-text">{heroSplit?.rest}</span> */}
                 <span className="gradient-text">{statValue}</span>
               </strong>
               <p className="m-story-label">{card.basic.label}</p>
@@ -490,8 +484,8 @@ export function StoryMode({
             <ChevronIcon size={14} />
           </button>
 
-          {/* NUEVO: la mascota reacciona a esta métrica puntual — nunca en el
-              cierre, que no tiene una métrica propia de la cual tomar el humor. */}
+          {/* La mascota reacciona a esta métrica puntual — nunca en el cierre,
+              que no tiene una métrica propia de la cual tomar el humor. */}
           <MascotBlob mood={mascotMoodFor(card.id)} />
         </div>
       ) : null}

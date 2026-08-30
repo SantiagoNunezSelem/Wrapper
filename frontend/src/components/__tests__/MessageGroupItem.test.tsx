@@ -1,8 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { shellCopy } from '../../copy/shellCopy'
 import type { MessageGroup } from '../../types'
 import { MessageGroupItem } from '../MessageGroupItem'
+
+const privacyCopy = shellCopy.es.sharedPrivacy
 
 const group: MessageGroup = {
   id: 'msg-1',
@@ -50,7 +53,7 @@ describe('MessageGroupItem — en la app', () => {
 
 describe('MessageGroupItem — en un link compartido', () => {
   it('NUNCA muestra las burbujas, por más que se toque', async () => {
-    render(<MessageGroupItem group={group} isSharedStory />)
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={privacyCopy} />)
 
     await userEvent.click(screen.getByRole('button'))
 
@@ -59,31 +62,39 @@ describe('MessageGroupItem — en un link compartido', () => {
   })
 
   it('explica por qué no se ven', async () => {
-    render(<MessageGroupItem group={group} isSharedStory />)
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={privacyCopy} />)
 
     await userEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText(/políticas de privacidad/)).toBeInTheDocument()
-    expect(screen.getByText(/Únicamente el autor que generó el chat/)).toBeInTheDocument()
+    expect(screen.getByText(privacyCopy.body)).toBeInTheDocument()
+  })
+
+  it('lo explica en el idioma del recorrido, no siempre en español', async () => {
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={shellCopy.en.sharedPrivacy} />)
+
+    await userEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText(shellCopy.en.sharedPrivacy.body)).toBeInTheDocument()
+    expect(screen.queryByText(privacyCopy.body)).not.toBeInTheDocument()
   })
 
   it('el aviso se puede cerrar', async () => {
-    render(<MessageGroupItem group={group} isSharedStory />)
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={privacyCopy} />)
 
     await userEvent.click(screen.getByRole('button', { name: /tardó/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Entendido' }))
+    await userEvent.click(screen.getByRole('button', { name: privacyCopy.dismiss }))
 
-    expect(screen.queryByText(/políticas de privacidad/)).not.toBeInTheDocument()
+    expect(screen.queryByText(privacyCopy.body)).not.toBeInTheDocument()
   })
 
   it('el encabezado sí se muestra: es un agregado, no una cita', () => {
-    render(<MessageGroupItem group={group} isSharedStory />)
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={privacyCopy} />)
 
     expect(screen.getByText(group.heading)).toBeInTheDocument()
   })
 
   it('nunca queda marcado como expandido', async () => {
-    render(<MessageGroupItem group={group} isSharedStory />)
+    render(<MessageGroupItem group={group} isSharedStory privacyCopy={privacyCopy} />)
 
     await userEvent.click(screen.getByRole('button'))
 

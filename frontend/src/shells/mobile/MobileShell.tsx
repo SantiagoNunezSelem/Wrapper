@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AiConsentModal } from '../../components/AiConsentModal'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DevToolbar } from '../../components/DevToolbar'
+import { ErrorBanner } from '../../components/ErrorBanner'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
@@ -97,6 +100,11 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleRefreshSubscription,
     openSavedAnalysis,
     persistWordCloudEdit,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
   } = vistazo
 
   const [view, setView] = useState<MobileView>('home')
@@ -124,6 +132,12 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       setView('home')
     }
   }, [analysis, view])
+
+  /* Baja a las 25 filas memoizadas — ver el memo de MetricRow. */
+  const openMetricFromList = useCallback((card: MetricCard) => {
+    setOpenMetricId(card.id)
+    setIsDetailOverStory(false)
+  }, [])
 
   const openMetricIndex = useMemo(
     () => (openMetricId === null ? -1 : interleavedMetrics.findIndex((card) => card.id === openMetricId)),
@@ -260,7 +274,9 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           </header>
 
           {!hasGoogleClientId ? <p className="warning-banner m-banner">{copy.setupWarning}</p> : null}
-          {error ? <p className="error-banner m-banner">{error}</p> : null}
+          {error ? (
+            <ErrorBanner message={error} dismissLabel={copy.dismissError} onDismiss={() => setError('')} className="m-banner" />
+          ) : null}
 
           <main className="m-main">
             {view === 'home' ? (
@@ -271,6 +287,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 busyMessage={busyMessage}
                 onUpload={requestUpload}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
                 onSeeAll={() => goTo('history')}
               />
             ) : null}
@@ -285,10 +302,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                   generatedAt={generatedAt}
                   showReprocessHint={showReprocessHint}
                   ai={aiPanel}
-                  onOpenMetric={(card: MetricCard) => {
-                    setOpenMetricId(card.id)
-                    setIsDetailOverStory(false)
-                  }}
+                  onOpenMetric={openMetricFromList}
                   onStartStory={() => setIsStoryOpen(true)}
                 />
               ) : (
@@ -312,6 +326,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 language={language}
                 user={user}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onUpload={requestUpload}
               />
@@ -409,44 +424,35 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       )}
 
       {isAuthModalOpen ? (
-        <div className="m-layer">
-          <button type="button" className="m-scrim" onClick={() => setIsAuthModalOpen(false)} aria-label={copy.close} />
-          <section className="m-sheet is-short">
-            <span className="m-grabber" aria-hidden="true" />
-            <header className="m-sheet-head">
-              <div className="m-sheet-title">
-                <h2>{needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}</h2>
-                <p>{needsRecaptchaChallenge ? copy.recaptchaChallengeBody : analysis ? copy.loginAfterUpload : copy.saveInfo}</p>
-              </div>
-              <button type="button" className="m-sheet-close" onClick={() => setIsAuthModalOpen(false)} aria-label={copy.close}>
-                ✕
-              </button>
-            </header>
-            <div className="m-sheet-body m-center">
-              {needsRecaptchaChallenge ? (
-                <RecaptchaChallenge
-                  siteKey={recaptchaSiteKeyV2}
-                  onSolved={(token) => {
-                    void handleRecaptchaChallengeSuccess(token)
-                  }}
-                />
-              ) : hasGoogleClientId ? (
-                <ResponsiveGoogleLogin
-                  onSuccess={(credentialResponse) => {
-                    void handleGoogleSuccess(credentialResponse)
-                  }}
-                  onError={() => setError(copy.loadError)}
-                />
-              ) : null}
-              {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
-            </div>
-          </section>
-        </div>
+        <AuthSheet
+          title={needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}
+          body={needsRecaptchaChallenge ? copy.recaptchaChallengeBody : analysis ? copy.loginAfterUpload : copy.saveInfo}
+          closeLabel={copy.close}
+          onClose={() => setIsAuthModalOpen(false)}
+        >
+          {needsRecaptchaChallenge ? (
+            <RecaptchaChallenge
+              siteKey={recaptchaSiteKeyV2}
+              onSolved={(token) => {
+                void handleRecaptchaChallengeSuccess(token)
+              }}
+            />
+          ) : hasGoogleClientId ? (
+            <ResponsiveGoogleLogin
+              onSuccess={(credentialResponse) => {
+                void handleGoogleSuccess(credentialResponse)
+              }}
+              onError={() => setError(copy.loadError)}
+            />
+          ) : null}
+          {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
+        </AuthSheet>
       ) : null}
 
       {isVipPopoverOpen ? (
         <VipUnlockPopover
           copy={{ ...copy.subscriptionPage, ...copy.vipPopover }}
+          language={language}
           user={user}
           token={token}
           plan={subscription?.plan ?? null}
@@ -482,6 +488,24 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
         />
       ) : null}
 
+      {pendingDeleteAnalysis ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.deleteSavedTitle,
+            body: copy.deleteSavedConfirm.replace('{chat}', pendingDeleteAnalysis.chatName),
+            confirm: copy.deleteSavedCta,
+            cancel: copy.deleteSavedCancel,
+            busy: copy.deleting,
+            close: copy.close,
+          }}
+          isBusy={isDeletingAnalysis}
+          onConfirm={() => {
+            void confirmDeleteAnalysis()
+          }}
+          onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
       {isConsentModalOpen ? (
         <AiConsentModal
           copy={{ ...copy.consent, close: copy.close }}
@@ -507,6 +531,45 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       {busyMessage ? (
         <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
       ) : null}
+    </div>
+  )
+}
+
+
+/* La hoja de login, separada del shell nada más que para que `useModalDismiss` se
+   monte y se desmonte con ella: un hook no puede vivir detrás del ternario que la
+   muestra, y es justo al abrirse cuando tiene que llevarse el foco adentro. */
+function AuthSheet({
+  title,
+  body,
+  closeLabel,
+  onClose,
+  children,
+}: {
+  title: string
+  body: string
+  closeLabel: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  const panelRef = useModalDismiss<HTMLElement>(onClose)
+
+  return (
+    <div className="m-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <button type="button" className="m-scrim" onClick={onClose} aria-label={closeLabel} />
+      <section className="m-sheet is-short" ref={panelRef}>
+        <span className="m-grabber" aria-hidden="true" />
+        <header className="m-sheet-head">
+          <div className="m-sheet-title">
+            <h2>{title}</h2>
+            <p>{body}</p>
+          </div>
+          <button type="button" className="m-sheet-close" onClick={onClose} aria-label={closeLabel}>
+            ✕
+          </button>
+        </header>
+        <div className="m-sheet-body m-center">{children}</div>
+      </section>
     </div>
   )
 }

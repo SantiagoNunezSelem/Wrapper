@@ -1,4 +1,4 @@
-import { CrossButton } from './IconButton'
+import { ModalShell } from './ModalShell'
 
 export interface FreeUnlockConfirmCopy {
   eyebrow: string
@@ -40,15 +40,7 @@ export function FreeUnlockConfirm({
   onCancel: () => void
 }) {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
-      <section
-        className="modal-card free-unlock-modal"
-        role="dialog"
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <CrossButton label={copy.close} onClick={onCancel} className="close-button" />
-
+    <ModalShell onDismiss={onCancel} label={copy.title} className="free-unlock-modal" closeLabel={copy.close}>
         <p className="eyebrow">{copy.eyebrow}</p>
         <h2>{copy.title}</h2>
 
@@ -65,7 +57,6 @@ export function FreeUnlockConfirm({
             {copy.confirm}
           </button>
         </div>
-      </section>
-    </div>
+    </ModalShell>
   )
 }

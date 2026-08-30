@@ -461,6 +461,38 @@ app.MapPost("/api/analyses", [Authorize] async (
     return Results.Created($"/api/analyses/{analysis.Id}", SavedAnalysisResponse.FromEntity(analysis));
 });
 
+// Borrar un análisis guardado.
+//
+// Hasta acá el historial sólo crecía: no había forma de sacar una subida
+// equivocada, un chat que el usuario no quiere ver listado, ni de hacer lugar
+// cuando la cuenta llega al tope de SavedAnalysisLimits.MaxAnalysesPerUser.
+//
+// El filtro por UserId va en el WHERE, no en un chequeo posterior: así una cuenta
+// que adivine el id de otra recibe exactamente el mismo 404 que si el análisis no
+// existiera, sin que la respuesta le confirme que ese id existe.
+app.MapDelete("/api/analyses/{id:guid}", [Authorize] async (
+    Guid id,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var userId = principal.GetRequiredUserId();
+
+    var analysis = await db.Analyses.FirstOrDefaultAsync(
+        item => item.Id == id && item.UserId == userId,
+        cancellationToken);
+
+    if (analysis is null)
+    {
+        return Results.NotFound(new { message = "Analysis not found.", code = "analysis_not_found" });
+    }
+
+    db.Analyses.Remove(analysis);
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.NoContent();
+});
+
 // ---------------------------------------------------------------------------
 // AI-backed Pro metrics
 //

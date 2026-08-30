@@ -2109,3 +2109,35 @@
 .m-shared-state .primary-button {
   margin-top: 8px;
 }
+
+
+/* La fila del historial: el botón que abre, y la papelera al costado. En un
+   teléfono no hay hover, así que la papelera se ve siempre — pero angosta y en
+   gris, para que "abrir" siga siendo lo que el pulgar encuentra primero. */
+.m-saved-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.m-saved-row .m-saved {
+  flex: 1;
+  min-width: 0;
+}
+
+.m-saved-delete {
+  flex: none;
+  width: 40px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-surface-1);
+  color: var(--vz-text-faint);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.m-saved-delete:active {
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}

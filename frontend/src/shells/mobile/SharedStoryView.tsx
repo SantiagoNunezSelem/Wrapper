@@ -57,6 +57,13 @@ export function SharedStoryView({ slug }: { slug: string }) {
   const copy = shellCopy[payload?.language ?? 'es']
   const s = copy.shared
 
+  /* Y el idioma del documento con él: esta página se sirve en el idioma en que se
+     generaron las etiquetas, no en el del visitante, así que `lang` tiene que decir
+     ese — es lo que hace que un lector de pantalla la pronuncie bien. */
+  useEffect(() => {
+    document.documentElement.lang = payload?.language ?? 'es'
+  }, [payload?.language])
+
   /* Las tarjetas compartidas ya vienen sin `note` ni sin los `bubbles` de cada
      grupo (ver SharePayloadSanitizer.cs) — sólo el heading sobrevive. Reponer
      `bubbles: []` acá no es adorno: es lo que convierte a la tarjeta en el

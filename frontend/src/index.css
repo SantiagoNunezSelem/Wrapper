@@ -66,3 +66,25 @@ button,
 input {
   font: inherit;
 }
+
+/* --- Foco visible -------------------------------------------------------
+   Hasta acá no había NINGUNA regla de `:focus` en toda la app. Sobre botones
+   pintados oscuros o con degradado, el anillo por defecto del navegador es
+   prácticamente invisible, así que recorrer Vistazo con teclado era a ciegas.
+
+   `:focus-visible` y no `:focus`: el anillo aparece cuando el navegador
+   entiende que el foco vino del teclado, y no después de cada click del mouse.
+   Va en `:where()` para no sumar especificidad — cualquier componente que
+   quiera su propio anillo lo pisa sin pelear. El navegador ya sigue el
+   `border-radius` del elemento, así que no hace falta declararlo. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--vz-brand-cyan);
+  outline-offset: 3px;
+}
+
+/* Los tres que se dibujan encima del degradado de marca: ahí el cyan se pierde
+   contra el fondo, y el contraste lo da el oscuro. */
+:where(.primary-button, .m-fab, .unlock-button):focus-visible {
+  outline-color: var(--vz-text-strong);
+  outline-offset: 2px;
+}

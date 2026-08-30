@@ -170,3 +170,21 @@ export function SearchIcon({ size = 16 }: IconProps) {
     </Svg>
   )
 }
+
+export function TrashIcon({ size = 16 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
+  )
+}
+
+export function InstallIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3v11" />
+      <polyline points="8 10 12 14 16 10" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </Svg>
+  )
+}

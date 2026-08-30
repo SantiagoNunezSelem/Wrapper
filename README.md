@@ -13,7 +13,7 @@ Arquitectura inicial del proyecto basada en los documentos de `Project_Context\`
 
 - `frontend\` — app web, parser de export de WhatsApp y dashboard de métricas
 - `backend\` — API, login con Google, JWT, SQLite y guardado de análisis
-- `backend.Tests\` — pruebas de los servicios y de los 22 endpoints
+- `backend.Tests\` — pruebas de los servicios y de los 23 endpoints
 - `Project_Context\` — especificación funcional y técnica fuente
 
 ## Tests
@@ -50,8 +50,22 @@ especificación destaparon las pruebas: **[TESTING.md](TESTING.md)**.
 
 ## Configurar el frontend
 
-1. Copiá `frontend\.env.example` a `frontend\.env`.
-2. Reemplazá `VITE_GOOGLE_CLIENT_ID` por el mismo **Google Web Client ID** usado en el backend.
+`frontend\.env` no viaja en el repo (está en `.gitignore`, junto con el resto de los
+`.env*`), así que hay que crearlo a mano con:
+
+```
+VITE_API_URL=http://localhost:5175
+VITE_GOOGLE_CLIENT_ID=<el mismo Google Web Client ID usado en el backend>
+```
+
+En producción, sumá además `VITE_SITE_URL` con el origen público del sitio (sin barra
+final, p. ej. `https://vistazo.app`).
+
+> `VITE_SITE_URL` sirve para una sola cosa: las etiquetas Open Graph de `index.html`.
+> `vite.config.ts` la usa para reemplazar el marcador `__SITE_URL__` y dejar la imagen
+> de la vista previa en una URL absoluta, que es lo que piden los crawlers que arman
+> la tarjeta al pegar un link en WhatsApp. Vacía (el default) las rutas quedan
+> relativas, que es lo correcto en local.
 
 ## Configurar Google AI Studio (métricas con IA)
 
@@ -351,6 +365,7 @@ una autoridad certificadora local) — es un paso que solo un humano puede acept
 
 - Login con Google validado en backend
 - Persistencia de usuario y análisis, con deduplicación por hash del chat (re-subir el mismo `.txt` actualiza la fila existente en vez de duplicarla)
+- Borrado de un análisis guardado (`DELETE /api/analyses/{id}`), con confirmación, desde el historial de los dos shells. El id de otra cuenta responde 404 igual que uno inexistente: la respuesta nunca confirma que exista algo ajeno
 - Usuario admin/VIP configurable por email
 - Parser local de `.txt` y `.zip` exportados por WhatsApp, que excluye los marcadores automáticos de WhatsApp (`<Media omitted>`, `<This message was edited>`, etc.) de las estadísticas de texto
 - Dashboard con 12 métricas gratis y 13 VIP (intercaladas, sin catalogar a las gratuitas como "gratis"), cada una con gráfico (barras, dona, heatmap horario/anual, radar, calendario de rachas, timeline o nube de palabras) y una vista de detalle paginada por integrante
