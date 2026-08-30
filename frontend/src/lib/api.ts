@@ -302,6 +302,36 @@ export async function getSharedStory(slug: string): Promise<SharedStoryPayload> 
   return request<SharedStoryPayload>(`/api/shares/${encodeURIComponent(slug)}`)
 }
 
+/**
+ * Borra un análisis guardado. Responde 204 sin cuerpo, así que no pasa por
+ * `request` —que siempre intenta parsear JSON— y se resuelve acá.
+ *
+ * Un id de otra cuenta da 404, igual que uno inexistente: el backend no confirma
+ * que exista algo ajeno.
+ */
+export async function deleteAnalysis(token: string, id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/analyses/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text
+    let code: string | undefined
+
+    try {
+      const parsed = JSON.parse(text) as { message?: string; code?: string }
+      message = parsed.message ?? text
+      code = parsed.code
+    } catch {
+      // Igual que en `request`: no toda falla vuelve como JSON.
+    }
+
+    throw new ApiError(message || `Request failed with status ${response.status}`, response.status, code)
+  }
+}
+
 export async function saveAnalysis(
   token: string,
   payload: {

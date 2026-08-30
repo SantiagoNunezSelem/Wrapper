@@ -134,6 +134,35 @@
   border-radius: var(--vz-radius-md);
 }
 
+/* El banner de error ahora trae su propia × — el mensaje se queda con el ancho y
+   el botón no se estira con él. */
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.error-banner-text {
+  flex: 1;
+}
+
+.error-banner-close {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--vz-radius-xs);
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.error-banner-close:hover {
+  opacity: 1;
+  background: var(--vz-surface-3);
+}
+
 .warning-banner {
   background: var(--vz-warning-bg);
   color: var(--vz-warning-text);
@@ -142,6 +171,20 @@
 .error-banner {
   background: var(--vz-danger-bg);
   color: var(--vz-danger-text);
+}
+
+/* El rechazo de un archivo soltado: vive dentro de la propia zona de subida, no
+   en el banner de arriba de todo, porque es la respuesta a un gesto puntual y
+   tiene que leerse donde ocurrió. */
+.upload-rejected {
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+  font-size: 0.86rem;
+  text-align: center;
+  max-width: 34ch;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2622,4 +2665,24 @@ button.chat-bubble-divider.is-expandable:active {
     transition: opacity 90ms linear;
     transform: none;
   }
+}
+
+
+/* La acción destructiva de un ConfirmDialog. Mantiene la forma del botón
+   primario —es la acción principal del diálogo— pero cambia el degradado de
+   marca por el rojo de estado: confirmar un borrado no debería verse igual que
+   confirmar una compra. */
+.primary-button.is-danger {
+  background: var(--vz-danger-bg);
+  border: 1px solid var(--vz-danger-border);
+  color: var(--vz-danger-text);
+  box-shadow: none;
+}
+
+.primary-button.is-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.26);
+}
+
+.confirm-modal {
+  max-width: 460px;
 }

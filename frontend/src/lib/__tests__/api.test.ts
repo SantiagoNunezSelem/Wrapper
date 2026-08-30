@@ -4,6 +4,7 @@ import {
   analyzeAiMetrics,
   cancelSubscription,
   createShare,
+  deleteAnalysis,
   getAiMetrics,
   getCurrentUser,
   getFreeUnlocks,
@@ -201,6 +202,40 @@ describe('análisis guardados', () => {
     expect(url).toBe(`${BASE}/api/analyses`)
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string).chatName).toBe('Grupo')
+  })
+
+  it('borra con DELETE, con el id escapado en la ruta', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204, text: async () => '' })
+
+    await deleteAnalysis('tok', 'a b/c')
+    const { url, init, headers } = lastCall()
+
+    expect(url).toBe(`${BASE}/api/analyses/a%20b%2Fc`)
+    expect(init.method).toBe('DELETE')
+    expect(headers.Authorization).toBe('Bearer tok')
+  })
+
+  it('no intenta parsear el cuerpo vacío de un 204', async () => {
+    // El 204 no trae JSON: pasar por `request` (que siempre hace .json()) rompía acá.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 204,
+      text: async () => '',
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input')
+      },
+    })
+
+    await expect(deleteAnalysis('tok', 'id')).resolves.toBeUndefined()
+  })
+
+  it('un borrado rechazado llega como ApiError con su código', async () => {
+    failWith(404, JSON.stringify({ message: 'Analysis not found.', code: 'analysis_not_found' }))
+
+    const error = await captureApiError(deleteAnalysis('tok', 'id'))
+
+    expect(error.status).toBe(404)
+    expect(error.code).toBe('analysis_not_found')
   })
 })
 

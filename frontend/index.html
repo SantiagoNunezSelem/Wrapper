@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en">
+<!-- El idioma real lo fija la app en cuanto arranca (ver useVistazo / SharedStoryView);
+     esto es sólo el valor con el que se sirve el HTML, y español es el idioma por
+     defecto del producto. -->
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -8,6 +11,36 @@
     <meta name="theme-color" content="#0b1120" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vistazo — Wrapped de tu chat de WhatsApp</title>
+    <meta
+      name="description"
+      content="Subí un export de WhatsApp y mirá el Wrapped de tu chat: quién monologuea, quién clava el visto, a qué hora explota la conversación y 25 métricas más. Se procesa en tu navegador."
+    />
+
+    <!-- Vista previa al pegar el link. El bucle central del producto es compartir un
+         recorrido (/s/{slug}) por WhatsApp, donde sin esto aparecía como una URL pelada:
+         sin título, sin imagen y sin una línea que explique qué es.
+         __SITE_URL__ lo reemplaza vite.config.ts con VITE_SITE_URL; sin esa variable
+         queda vacío y las rutas caen a relativas, que es lo correcto en local. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Vistazo" />
+    <meta property="og:locale" content="es_AR" />
+    <meta property="og:title" content="Vistazo — Wrapped de tu chat de WhatsApp" />
+    <meta
+      property="og:description"
+      content="Quién monologuea, quién clava el visto y a qué hora explota la conversación. Tu chat, en 25 métricas."
+    />
+    <meta property="og:image" content="__SITE_URL__/icon-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="Vistazo" />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Vistazo — Wrapped de tu chat de WhatsApp" />
+    <meta
+      name="twitter:description"
+      content="Quién monologuea, quién clava el visto y a qué hora explota la conversación. Tu chat, en 25 métricas."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/icon-512.png" />
   </head>
   <body>
     <div id="root"></div>

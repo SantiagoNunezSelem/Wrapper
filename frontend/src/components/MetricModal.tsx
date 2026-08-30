@@ -4,11 +4,9 @@ import type { ChartData, ChatMessage, MetricCard as MetricCardData } from '../ty
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
-import { CrossButton } from './IconButton'
 import { LockedPanel, type FreeUnlockPrompt } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
-// NUEVO: números que laten — para revertir, borrar este import y el uso de
-// useCountUp más abajo (volver a `card.basic.value` directo).
+import { ModalShell } from './ModalShell'
 import { useCountUp } from './useCountUp'
 import { useEditableWordCloud, type WordCloudSearchCopy } from './useEditableWordCloud'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
@@ -59,7 +57,7 @@ export function MetricModal({
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
-  const statValue = useCountUp(card.basic?.value ?? '') // NUEVO
+  const statValue = useCountUp(card.basic?.value ?? '')
 
   const hasWordCloud =
     card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
@@ -96,10 +94,7 @@ export function MetricModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card metric-modal" onClick={(event) => event.stopPropagation()}>
-        <CrossButton label={copy.close} onClick={onClose} className="close-button" />
-
+    <ModalShell onDismiss={onClose} label={card.title} className="metric-modal" closeLabel={copy.close}>
         <h2>{card.title}</h2>
         <p className="panel-copy modal-description">{card.description}</p>
 
@@ -110,7 +105,6 @@ export function MetricModal({
         ) : card.basic ? (
           <div className="modal-basic">
             <div className="metric-stat is-large">
-              {/* ANTES: <strong>{card.basic.value}</strong> */}
               <strong>{statValue}</strong>
               <span>{card.basic.label}</span>
             </div>
@@ -243,8 +237,7 @@ export function MetricModal({
             </>
           ) : null}
         </div>
-      </section>
-    </div>
+    </ModalShell>
   )
 }
 
