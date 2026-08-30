@@ -1022,8 +1022,12 @@ export function useVistazo() {
     const runKey = `${chat.sourceHash}:${language}`
     const isStale = () => aiAttemptedFor.current !== runKey
 
+    // Deliberately not routed through busyMessage/LoadingOverlay: the AI pass only
+    // affects the handful of AI-backed cards (each showing its own "pending" state via
+    // aiCardStates), so the rest of the dashboard should stay fully interactive while
+    // it runs in the background — whether it started automatically after upload or was
+    // triggered by hand from a card's consent/retry button.
     setIsAiBusy(true)
-    setBusyMessage(copy.analyzingAi)
 
     try {
       const candidateSets = await getAiCandidates(chat)
@@ -1104,7 +1108,6 @@ export function useVistazo() {
       setError(copy.aiPartialError)
     } finally {
       setIsAiBusy(false)
-      setBusyMessage('')
     }
   }
 
