@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
 import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import { usePwaInstall } from '../../lib/usePwaInstall'
 
 /**
@@ -22,18 +23,8 @@ export function ExportTutorialSheet({
   const [step, setStep] = useState(0)
   const { canInstall, isInstalled, install } = usePwaInstall()
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.body.style.overflow = previous
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [onClose])
+  // Escape, scroll de fondo y foco: los mismos que el resto de los diálogos.
+  const panelRef = useModalDismiss<HTMLElement>(onClose)
 
   const steps = copy.steps[platform]
   const active = steps[step]
@@ -64,7 +55,7 @@ export function ExportTutorialSheet({
     <div className="m-layer" role="dialog" aria-modal="true" aria-label={copy.title}>
       <button type="button" className="m-scrim" onClick={onClose} aria-label={copy.close} />
 
-      <section className="m-sheet">
+      <section className="m-sheet" ref={panelRef}>
         <span className="m-grabber" aria-hidden="true" />
 
         <header className="m-sheet-head">

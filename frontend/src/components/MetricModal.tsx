@@ -4,9 +4,9 @@ import type { ChartData, ChatMessage, MetricCard as MetricCardData } from '../ty
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
-import { CrossButton } from './IconButton'
 import { LockedPanel, type FreeUnlockPrompt } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
+import { ModalShell } from './ModalShell'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a `card.basic.value` directo).
 import { useCountUp } from './useCountUp'
@@ -96,10 +96,7 @@ export function MetricModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card metric-modal" onClick={(event) => event.stopPropagation()}>
-        <CrossButton label={copy.close} onClick={onClose} className="close-button" />
-
+    <ModalShell onDismiss={onClose} label={card.title} className="metric-modal" closeLabel={copy.close}>
         <h2>{card.title}</h2>
         <p className="panel-copy modal-description">{card.description}</p>
 
@@ -243,8 +240,7 @@ export function MetricModal({
             </>
           ) : null}
         </div>
-      </section>
-    </div>
+    </ModalShell>
   )
 }
 

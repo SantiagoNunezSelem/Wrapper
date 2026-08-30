@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { AiPanelProps } from '../../components/AiStatePanel'
 import type { ShellCopy } from '../../copy/shellCopy'
 import type { AiMetricStatus, MetricCard } from '../../types'
@@ -15,8 +16,11 @@ import { ChevronIcon, CrownIcon, LockIcon, SparkIcon } from './icons'
  * ser "Búhos", "😂 ×1.243", "4 h 12 min" o el nombre de un participante. Una
  * columna de ancho fijo tendría que reservar lugar para el peor caso y se lo
  * quitaría al título en las otras veinticuatro.
+ *
+ * NUEVO: memoizada, por lo mismo que `MetricCard` en desktop — la lista monta 25
+ * y cualquier cambio de estado del shell las redibujaba todas.
  */
-export function MetricRow({
+export const MetricRow = memo(function MetricRow({
   card,
   copy,
   ai,
@@ -89,7 +93,7 @@ export function MetricRow({
       ) : null}
     </button>
   )
-}
+})
 
 /** Versión mínima de `AiStatePanel` para la fila. El panel completo, con el
  * botón de reintentar y la cuenta regresiva, aparece al abrir la métrica. */

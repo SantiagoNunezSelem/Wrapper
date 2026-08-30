@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { usePwaInstall } from '../lib/usePwaInstall'
 import { ExportTutorialArt, type ExportTutorialPlatform } from './ExportTutorialArt'
-import { CrossButton } from './IconButton'
+import { ModalShell } from './ModalShell'
 
 export interface ExportTutorialCopy {
   eyebrow: string
@@ -62,10 +62,7 @@ export function ExportTutorialModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card export-tutorial-modal" onClick={(event) => event.stopPropagation()}>
-        <CrossButton label={copy.close} onClick={onClose} className="close-button" />
-
+    <ModalShell onDismiss={onClose} label={copy.title} className="export-tutorial-modal" closeLabel={copy.close}>
         <p className="eyebrow">{copy.eyebrow}</p>
         <h2>{copy.title}</h2>
 
@@ -120,7 +117,6 @@ export function ExportTutorialModal({
             </button>
           </div>
         </div>
-      </section>
-    </div>
+    </ModalShell>
   )
 }

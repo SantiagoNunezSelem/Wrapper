@@ -8,6 +8,7 @@ import { MessageGroupItem } from '../../components/MessageGroupItem'
 // useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
 import { useCountUp } from '../../components/useCountUp'
 import { useEditableWordCloud } from '../../components/useEditableWordCloud'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
@@ -88,24 +89,19 @@ export function MetricSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id])
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+  /* Escape, el bloqueo del scroll de fondo y la trampa de foco los pone
+     `useModalDismiss`, compartido con los modales de desktop. Lo único propio de
+     esta hoja son las flechas. */
+  const panelRef = useModalDismiss<HTMLElement>(onClose, {
+    onKeyDown: (event) => {
       // Sobre el recorrido no hay paso a la métrica siguiente (ver `overStory`),
       // así que las flechas tampoco lo hacen: moverían la hoja a una métrica que
       // no es la de la pantalla congelada abajo.
       if (overStory) return
       if (event.key === 'ArrowRight') onNext()
       if (event.key === 'ArrowLeft') onPrev()
-    }
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.body.style.overflow = previous
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [onClose, onNext, onPrev, overStory])
+    },
+  })
 
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
@@ -158,7 +154,7 @@ export function MetricSheet({
     >
       <button type="button" className="m-scrim" onClick={onClose} aria-label={copy.close} />
 
-      <section className="m-sheet">
+      <section className="m-sheet" ref={panelRef}>
         <span className="m-grabber" aria-hidden="true" />
 
         <header className="m-sheet-head">
@@ -280,6 +276,7 @@ export function MetricSheet({
                             group={group}
                             isNew={groups.revealedFrom !== null && position >= groups.revealedFrom}
                             isSharedStory={isSharedStory}
+                            privacyCopy={copy.sharedPrivacy}
                           />
                         ))}
                       </div>

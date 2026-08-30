@@ -19,7 +19,26 @@ function LockIcon() {
   )
 }
 
-export function MessageGroupItem({ group, isNew, isSharedStory = false }: { group: MessageGroup; isNew?: boolean; isSharedStory?: boolean }) {
+/** El aviso que ve quien abre una historia compartida. Antes estaba escrito en
+ * español dentro del componente — justo el texto que puede leer un desconocido
+ * con la app en inglés. */
+export interface SharedPrivacyCopy {
+  body: string
+  dismiss: string
+}
+
+export function MessageGroupItem({
+  group,
+  isNew,
+  isSharedStory = false,
+  privacyCopy,
+}: {
+  group: MessageGroup
+  isNew?: boolean
+  isSharedStory?: boolean
+  /** Requerido cuando `isSharedStory` está activo — es el único caso que lo muestra. */
+  privacyCopy?: SharedPrivacyCopy
+}) {
   const [expanded, setExpanded] = useState(false)
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false)
 
@@ -51,10 +70,10 @@ export function MessageGroupItem({ group, isNew, isSharedStory = false }: { grou
             <span className="message-group-privacy-icon">
               <LockIcon />
             </span>
-            <p>No se pueden visualizar los chats debido a políticas de privacidad. Únicamente el autor que generó el chat puede acceder a esta funcionalidad.</p>
+            <p>{privacyCopy?.body}</p>
           </div>
           <button type="button" className="message-group-privacy-action" onClick={() => setShowPrivacyNotice(false)}>
-            Entendido
+            {privacyCopy?.dismiss}
           </button>
         </div>
       ) : null}
