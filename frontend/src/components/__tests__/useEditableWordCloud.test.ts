@@ -302,3 +302,63 @@ describe('useEditableWordCloud — reinicio entre métricas', () => {
     expect(result.current.justAddedWord).toBeNull()
   })
 })
+
+describe('useEditableWordCloud — onEdit', () => {
+  it('se llama con la nube ya fusionada después de un agregado exitoso', async () => {
+    const onEdit = vi.fn()
+    const { result } = renderHook(() => useEditableWordCloud({ chart: baseChart, messages, resetKey: 'wordcloud', copy, onEdit }))
+
+    await act(async () => {
+      await result.current.searchAndAdd('finde')
+    })
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    const [chartArg] = onEdit.mock.calls[0]
+    expect(words(chartArg)).toEqual(['pizza', 'laburo', 'finde'])
+  })
+
+  it('se llama de nuevo después de un borrado', async () => {
+    const onEdit = vi.fn()
+    const { result } = renderHook(() => useEditableWordCloud({ chart: baseChart, messages, resetKey: 'wordcloud', copy, onEdit }))
+
+    await act(async () => {
+      const pending = result.current.onRemoveWord('pizza')
+      vi.advanceTimersByTime(REMOVE_DELAY_MS)
+      await pending
+    })
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    const [chartArg] = onEdit.mock.calls[0]
+    expect(words(chartArg)).toEqual(['laburo'])
+  })
+
+  it('no se llama al montar ni al cambiar resetKey — sólo por un agregado o borrado real', async () => {
+    const onEdit = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ resetKey }) => useEditableWordCloud({ chart: baseChart, messages, resetKey, copy, onEdit }),
+      { initialProps: { resetKey: 'wordcloud' } },
+    )
+
+    expect(onEdit).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.searchAndAdd('finde')
+    })
+    onEdit.mockClear()
+
+    rerender({ resetKey: 'other-metric' })
+
+    expect(onEdit).not.toHaveBeenCalled()
+  })
+
+  it('un intento de búsqueda rechazado (vacía, duplicada, sin resultado) no lo llama', async () => {
+    const onEdit = vi.fn()
+    const { result } = renderHook(() => useEditableWordCloud({ chart: baseChart, messages, resetKey: 'wordcloud', copy, onEdit }))
+
+    await act(async () => {
+      await result.current.searchAndAdd('pizza')
+    })
+
+    expect(onEdit).not.toHaveBeenCalled()
+  })
+})

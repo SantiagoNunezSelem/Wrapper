@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { searchWordInWorker } from '../lib/analysisClient'
 import type { ChartData, ChatMessage, MetricSeriesEntry, WordCloudDatum } from '../types'
 
@@ -46,6 +46,7 @@ export function useEditableWordCloud({
   messages,
   resetKey,
   copy,
+  onEdit,
 }: {
   chart: ChartData | undefined
   /** The per-participant clouds (`card.detail.series`) — each search also
@@ -57,6 +58,12 @@ export function useEditableWordCloud({
    * cards (or reopening one) doesn't carry over another metric's edits. */
   resetKey: string
   copy: WordCloudSearchCopy
+  /** Fires once per add/remove that actually lands, with the freshly-merged chart and
+   * series — lets the caller write the edit into the metric's saved snapshot (see
+   * `persistWordCloudEdit` in useVistazo) so it survives closing the chat entirely, not
+   * just closing and reopening the modal/sheet within the same session. Never fires for
+   * the reset that switching resetKey causes — that is a card change, not an edit. */
+  onEdit?: (chart: ChartData | undefined, series: MetricSeriesEntry[] | undefined) => void
 }) {
   const [removedWords, setRemovedWords] = useState<Set<string>>(new Set())
   const [addedWords, setAddedWords] = useState<WordCloudDatum[]>([])
@@ -71,6 +78,12 @@ export function useEditableWordCloud({
   // The word from the most recent successful search — lets every cloud it
   // landed in play an entrance animation on just that bubble.
   const [justAddedWord, setJustAddedWord] = useState<string | null>(null)
+  // The word whose remove button is currently visible (on click toggle)
+  const [selectedWordForRemoval, setSelectedWordForRemoval] = useState<string | null>(null)
+  // Set right before an add/remove's state updates, so the effect below can tell "the
+  // merged chart changed because of a real edit" apart from "...because resetKey moved
+  // to a different card" — both touch the same state, only one should call `onEdit`.
+  const editedRef = useRef(false)
 
   useEffect(() => {
     setRemovedWords(new Set())
@@ -80,6 +93,8 @@ export function useEditableWordCloud({
     setIsSearching(false)
     setRemovingWord(null)
     setJustAddedWord(null)
+    setSelectedWordForRemoval(null)
+    editedRef.current = false
   }, [resetKey])
 
   const baseWords = chart?.kind === 'wordCloud' ? chart.words : []
@@ -113,6 +128,22 @@ export function useEditableWordCloud({
     })
   }, [series, addedWordsByParticipant, removedWords])
 
+  // Every word ever landed by a search this session, still visible (a removed one drops
+  // out of `addedWords` — see onRemoveWord below). Exists so a compact participant cloud
+  // (see COMPACT_WORD_LIMIT in WordCloud) can keep a searched word out of the entries its
+  // own truncation would otherwise drop, without changing the merge order above — that
+  // order is what every other cloud (and the tests pinning it) expects.
+  const searchedWords = useMemo(() => addedWords.map((word) => word.word), [addedWords])
+
+  useEffect(() => {
+    if (!editedRef.current) {
+      return
+    }
+    editedRef.current = false
+    onEdit?.(displayChart, displaySeries)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayChart, displaySeries])
+
   async function onRemoveWord(word: string) {
     setRemovingWord(word)
     await new Promise((resolve) => setTimeout(resolve, REMOVE_DELAY_MS))
@@ -129,6 +160,7 @@ export function useEditableWordCloud({
       }
       return next
     })
+    editedRef.current = true
     setRemovingWord(null)
   }
 
@@ -182,6 +214,7 @@ export function useEditableWordCloud({
       })
       setSearchError('')
       setJustAddedWord(query)
+      editedRef.current = true
       return true
     } catch {
       setSearchError(copy.searchFailed)
@@ -195,15 +228,27 @@ export function useEditableWordCloud({
     setSearchError('')
   }
 
+  function toggleWordSelection(word: string) {
+    setSelectedWordForRemoval((current) => (current === word ? null : word))
+  }
+
   return {
     displayChart,
     displaySeries,
+    searchedWords,
     searchError,
     isSearching,
     removingWord,
     justAddedWord,
+    selectedWordForRemoval,
     onRemoveWord,
     searchAndAdd,
     clearSearchError,
+    toggleWordSelection,
   }
 }
+
+/** The editor's return shape — shared by every caller so it can be built once at a
+ * level that outlives the modal/sheet (see the `wordCloudEditor` prop on MetricModal
+ * and MetricSheet) instead of being rebuilt, and reset, every time either mounts. */
+export type WordCloudEditor = ReturnType<typeof useEditableWordCloud>

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { getSharedStory } from '../../lib/api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { shellCopy } from '../../copy/shellCopy'
+import { getSharedStory } from '../../lib/api'
 import type { SharedCard, SharedStoryPayload } from '../../lib/shareStory'
 import type { MetricCard } from '../../types'
 import { MetricSheet } from './MetricSheet'
@@ -73,6 +74,23 @@ export function SharedStoryView({ slug }: { slug: string }) {
   )
   const openMetric = openMetricIndex >= 0 ? metrics[openMetricIndex] : null
 
+  // Called here, at the top level, so the editor survives the sheet closing and
+  // reopening — see the same pattern in DesktopShell/MobileShell. `messages` is
+  // always undefined here: a shared story never carries the raw chat (see the
+  // privacy note in the landing copy), so the search box stays hidden and only
+  // the "×"-to-remove editing is actually reachable.
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (openMetric) {
+    wordCloudCardIdRef.current = openMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: openMetric?.basic?.chart,
+    series: openMetric?.detail?.series,
+    messages: undefined,
+    resetKey: `${payload?.chatName ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+  })
+
   if (status === 'loading') {
     return (
       <div className="m-shared-state">
@@ -126,6 +144,7 @@ export function SharedStoryView({ slug }: { slug: string }) {
           copy={copy}
           overStory
           isSharedStory
+          wordCloudEditor={wordCloudEditor}
           onClose={() => setOpenMetricId(null)}
           // Sin paso a la métrica siguiente sobre el recorrido (ver `overStory`),
           // así que estos nunca se llaman.

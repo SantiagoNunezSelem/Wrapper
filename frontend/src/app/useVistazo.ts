@@ -48,10 +48,12 @@ import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
   AnalysisBundle,
+  ChartData,
   ChatMessage,
   FreeUnlockState,
   Language,
   MetricCard as MetricCardData,
+  MetricSeriesEntry,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
@@ -1058,6 +1060,61 @@ export function useVistazo() {
     }
   }
 
+  /**
+   * Writes a word-cloud edit (a search-added word, or a removal) into the metric's
+   * saved snapshot, so reopening this chat from history later still has it — without
+   * this, an edit only ever lived in `useEditableWordCloud`'s in-memory state, which
+   * is gone the moment the chat itself is closed (the modal/sheet surviving a close
+   * only covers staying on the *same* chat — see `wordCloudEditor` in DesktopShell/
+   * MobileShell).
+   *
+   * Silent and best-effort on purpose: it runs after every add/remove while the
+   * viewer is mid-search, and a background history sync failing is not something
+   * worth interrupting them over — the edit is still right there on screen either way.
+   */
+  async function persistWordCloudEdit(
+    cardId: string,
+    chart: ChartData | undefined,
+    series: MetricSeriesEntry[] | undefined,
+  ) {
+    if (!token || !analysis || !chart) {
+      return
+    }
+
+    function patchCards(cards: MetricCardData[]): MetricCardData[] {
+      return cards.map((card) => {
+        if (card.id !== cardId) {
+          return card
+        }
+        return {
+          ...card,
+          basic: card.basic ? { ...card.basic, chart } : card.basic,
+          detail: card.detail ? { ...card.detail, series: series ?? card.detail.series } : card.detail,
+        }
+      })
+    }
+
+    const updated: AnalysisBundle = {
+      ...analysis,
+      freeMetrics: patchCards(analysis.freeMetrics),
+      vipMetrics: patchCards(analysis.vipMetrics),
+    }
+
+    try {
+      const saved = await saveAnalysis(token, {
+        chatName: updated.chatName,
+        dateRangeLabel: updated.dateRangeLabel,
+        messageCount: updated.messageCount,
+        participantCount: updated.participantCount,
+        resultsJson: JSON.stringify(updated),
+        sourceHash: updated.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+    } catch {
+      // Best-effort — see the doc above.
+    }
+  }
+
   function openSavedAnalysis(item: SavedAnalysis) {
     setActiveChat(null)
     setCore(null)
@@ -1173,6 +1230,7 @@ export function useVistazo() {
     selectedMetric,
     selectedMetricId,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,

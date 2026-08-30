@@ -10,6 +10,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricModal } from '../../components/MetricModal'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
@@ -45,6 +46,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     landingPreviewCards,
     selectedMetric,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -99,6 +101,29 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     openSavedAnalysis,
     backToLanding,
   } = vistazo
+
+  // Called here rather than inside MetricModal so its state survives the modal
+  // closing and reopening — this shell stays mounted for the whole session, the
+  // modal doesn't. `resetKey` sticks to the last selected card's id instead of
+  // following `selectedMetric` straight through `null` while the modal is closed,
+  // so it only actually clears the editor when the *next* card opened is a
+  // different one, or `sourceHash` changes (a new upload replacing the chat).
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (selectedMetric) {
+    wordCloudCardIdRef.current = selectedMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: selectedMetric?.basic?.chart,
+    series: selectedMetric?.detail?.series,
+    messages: activeChat?.messages,
+    resetKey: `${analysis?.sourceHash ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+    onEdit: (chart, series) => {
+      if (wordCloudCardIdRef.current) {
+        void persistWordCloudEdit(wordCloudCardIdRef.current, chart, series)
+      }
+    },
+  })
 
   // Las secciones de la landing aparecen al entrar en viewport, cada una por
   // su cuenta para que la página se arme por etapas y no toda de golpe.
@@ -605,6 +630,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           freeUnlock={freeUnlockFor(selectedMetric)}
           isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
           messages={activeChat?.messages}
+          wordCloudEditor={wordCloudEditor}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
         />

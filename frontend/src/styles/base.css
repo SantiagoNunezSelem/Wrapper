@@ -1402,31 +1402,23 @@ h3 {
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease, color 140ms ease;
+  opacity: 1;
+  pointer-events: auto;
+  transition: color 140ms ease;
   -webkit-appearance: none;
   appearance: none;
   box-sizing: border-box;
-}
-
-.chart-word-cloud-item.is-editable:hover .chart-word-cloud-remove,
-.chart-word-cloud-item.is-editable:focus-within .chart-word-cloud-remove {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .chart-word-cloud-remove:hover {
   color: var(--vz-danger-text);
 }
 
-/* Touch devices have no real hover to reveal it with — show it plainly
-   instead of hiding it behind a gesture that will never fire. */
-@media (hover: none) {
-  .chart-word-cloud-remove {
-    opacity: 1;
-    pointer-events: auto;
-  }
+/* Show visual feedback when a word is selected for removal */
+.chart-word-cloud-item.is-selected {
+  outline: 1px solid var(--vz-text-dim);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* The word fades while its removal is committing, so the spinner reads as

@@ -10,7 +10,7 @@ import { MessageGroupItem } from './MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a `card.basic.value` directo).
 import { useCountUp } from './useCountUp'
-import { useEditableWordCloud, type WordCloudSearchCopy } from './useEditableWordCloud'
+import type { WordCloudEditor, WordCloudSearchCopy } from './useEditableWordCloud'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
 
 export interface MetricModalCopy {
@@ -36,6 +36,10 @@ export function MetricModal({
    * cards are ever kept for those, never the raw chat (see the privacy note
    * in the landing copy). */
   messages,
+  /** Built by the caller (see `wordCloudEditor` in useVistazo) instead of here, so a
+   * search's added/removed words survive this modal closing and reopening — only the
+   * caller stays mounted for the whole session. */
+  wordCloudEditor,
   onClose,
   onUnlock,
 }: {
@@ -49,6 +53,7 @@ export function MetricModal({
    * see `revealingFreeUnlockId` in useVistazo. */
   isRevealingFreeUnlock?: boolean
   messages?: ChatMessage[]
+  wordCloudEditor: WordCloudEditor
   onClose: () => void
   onUnlock: () => void
 }) {
@@ -61,21 +66,17 @@ export function MetricModal({
   const detailLocked = !aiBlocked && !card.detail
   const statValue = useCountUp(card.basic?.value ?? '') // NUEVO
 
-  const hasWordCloud =
-    card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
+  // No search box without the raw chat to search — a replayed analysis from history
+  // only ever carries the precomputed cards (see the privacy note in the landing
+  // copy), so a search here could never do anything but fail.
+  const canSearchWords =
+    Boolean(messages) &&
+    (card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud')))
 
   // The hero bar chart and the "by participant" breakdown below are often the same
   // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
   const heroChartRepeatsBreakdown =
     isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
-
-  const wordCloudEditor = useEditableWordCloud({
-    chart: card.basic?.chart,
-    series: card.detail?.series,
-    messages,
-    resetKey: card.id,
-    copy: copy.wordCloudSearch,
-  })
 
   async function submitWordSearch() {
     if (await wordCloudEditor.searchAndAdd(wordSearch)) {
@@ -121,6 +122,8 @@ export function MetricModal({
                           onRemoveWord: wordCloudEditor.onRemoveWord,
                           removeLabel: copy.wordCloudSearch.removeLabel,
                           removingWord: wordCloudEditor.removingWord,
+                          selectedWordForRemoval: wordCloudEditor.selectedWordForRemoval,
+                          onToggleSelection: wordCloudEditor.toggleWordSelection,
                         }
                       : undefined
                   }
@@ -149,7 +152,7 @@ export function MetricModal({
             <>
               {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
-              {hasWordCloud ? (
+              {canSearchWords ? (
                 <>
                   <div className="word-search-row">
                     <input
@@ -189,7 +192,12 @@ export function MetricModal({
                   {wordCloudEditor.displaySeries.map((entry) => (
                     <div className="series-item" key={entry.name}>
                       <h4>{entry.name}</h4>
-                      <ChartRenderer chart={entry.chart} compact justAddedWord={wordCloudEditor.justAddedWord} />
+                      <ChartRenderer
+                        chart={entry.chart}
+                        compact
+                        justAddedWord={wordCloudEditor.justAddedWord}
+                        protectedWords={wordCloudEditor.searchedWords}
+                      />
                     </div>
                   ))}
                 </div>

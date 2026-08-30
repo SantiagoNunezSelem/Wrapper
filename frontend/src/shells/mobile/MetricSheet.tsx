@@ -7,7 +7,7 @@ import { MessageGroupItem } from '../../components/MessageGroupItem'
 // NUEVO: números que laten — para revertir, borrar este import y el uso de
 // useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
 import { useCountUp } from '../../components/useCountUp'
-import { useEditableWordCloud } from '../../components/useEditableWordCloud'
+import type { WordCloudEditor } from '../../components/useEditableWordCloud'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
@@ -42,6 +42,7 @@ export function MetricSheet({
   overStory = false,
   isSharedStory = false,
   messages,
+  wordCloudEditor,
   onClose,
   onPrev,
   onNext,
@@ -69,6 +70,10 @@ export function MetricSheet({
    * guardado: esos nunca traen los mensajes crudos, sólo las tarjetas ya
    * calculadas. */
   messages?: ChatMessage[]
+  /** Armado por quien llama (ver `wordCloudEditor` en useVistazo, o el propio de
+   * SharedStoryView) en vez de acá adentro, así lo buscado sobrevive a que esta
+   * hoja se cierre y se reabra — sólo quien llama queda montado toda la sesión. */
+  wordCloudEditor: WordCloudEditor
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -111,21 +116,17 @@ export function MetricSheet({
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
 
-  const hasWordCloud =
-    card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
+  // No search box without the raw chat to search — a replayed analysis from history
+  // only ever carries the precomputed cards (see the privacy note in the landing
+  // copy), so a search here could never do anything but fail.
+  const canSearchWords =
+    Boolean(messages) &&
+    (card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud')))
 
   // The hero bar chart and the "by participant" breakdown below are often the same
   // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
   const heroChartRepeatsBreakdown =
     isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
-
-  const wordCloudEditor = useEditableWordCloud({
-    chart: card.basic?.chart,
-    series: card.detail?.series,
-    messages,
-    resetKey: card.id,
-    copy: copy.wordCloudSearch,
-  })
 
   async function submitWordSearch() {
     if (await wordCloudEditor.searchAndAdd(wordSearch)) {
@@ -190,6 +191,8 @@ export function MetricSheet({
                           onRemoveWord: wordCloudEditor.onRemoveWord,
                           removeLabel: copy.wordCloudSearch.removeLabel,
                           removingWord: wordCloudEditor.removingWord,
+                          selectedWordForRemoval: wordCloudEditor.selectedWordForRemoval,
+                          onToggleSelection: wordCloudEditor.toggleWordSelection,
                         }
                       : undefined
                   }
@@ -216,7 +219,7 @@ export function MetricSheet({
                 <>
                   {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
-                  {hasWordCloud ? (
+                  {canSearchWords ? (
                     <>
                       <div className="word-search-row">
                         <input
@@ -252,7 +255,12 @@ export function MetricSheet({
                       {wordCloudEditor.displaySeries.map((entry) => (
                         <div className="m-series-item" key={entry.name}>
                           <h4>{entry.name}</h4>
-                          <Chart chart={entry.chart} compact justAddedWord={wordCloudEditor.justAddedWord} />
+                          <Chart
+                            chart={entry.chart}
+                            compact
+                            justAddedWord={wordCloudEditor.justAddedWord}
+                            protectedWords={wordCloudEditor.searchedWords}
+                          />
                         </div>
                       ))}
                     </div>
@@ -366,17 +374,25 @@ function Chart({
   compact = false,
   wordCloudEditing,
   justAddedWord,
+  protectedWords,
 }: {
   chart: ChartData
   compact?: boolean
   wordCloudEditing?: WordCloudEditing
   justAddedWord?: string | null
+  protectedWords?: string[]
 }) {
   if (WIDE_CHARTS.has(chart.kind)) {
     return (
       <div className="m-chart m-scroll-x">
         <div className="m-chart-wide">
-          <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} justAddedWord={justAddedWord} />
+          <ChartRenderer
+            chart={chart}
+            compact={compact}
+            wordCloudEditing={wordCloudEditing}
+            justAddedWord={justAddedWord}
+            protectedWords={protectedWords}
+          />
         </div>
       </div>
     )
@@ -384,7 +400,13 @@ function Chart({
 
   return (
     <div className="m-chart">
-      <ChartRenderer chart={chart} compact={compact} wordCloudEditing={wordCloudEditing} justAddedWord={justAddedWord} />
+      <ChartRenderer
+        chart={chart}
+        compact={compact}
+        wordCloudEditing={wordCloudEditing}
+        justAddedWord={justAddedWord}
+        protectedWords={protectedWords}
+      />
     </div>
   )
 }
