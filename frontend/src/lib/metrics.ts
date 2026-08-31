@@ -820,6 +820,47 @@ export function gateAnalysis(
   }
 }
 
+/**
+ * What gets written to the backend, as opposed to what gets rendered right now (see
+ * `gateAnalysis`): free-tier detail is saved in full regardless of today's allowance,
+ * because a free unlock spent later — possibly in a different session, on this same
+ * chat reopened from history — only has to change what is *shown*, never trigger a
+ * fetch for data that was never stored. VIP-tier gating is untouched; an account
+ * without access still has nothing to reveal there, and still needs to re-upload to
+ * get it (see `reprocessHint`).
+ *
+ * Safe to write unconditionally: `detailLocked` for a free-tier card never depends on
+ * anything but VIP status and the daily allowance (see `gateCard`), so pretending every
+ * free id is unlocked here cannot leak a card that some other rule was supposed to keep
+ * closed.
+ */
+export function gateForStorage(
+  core: AnalysisCore,
+  hasVipAccess: boolean,
+  aiStates: AiCardStates = {},
+): AnalysisBundle {
+  const allFreeIds = new Set(core.rawFreeMetrics.map((card) => card.id))
+  return gateAnalysis(core, hasVipAccess, aiStates, allFreeIds)
+}
+
+/**
+ * Re-locks a replayed bundle's free-tier cards to only what the account's free
+ * unlocks actually bought *today*, undoing the always-unlocked storage above (see
+ * `gateForStorage`). VIP-tier cards are left exactly as saved — those were never
+ * stored ungated, so there is nothing here to re-lock.
+ */
+export function regateReplayedFreeMetrics(
+  bundle: AnalysisBundle,
+  freeUnlockedIds: ReadonlySet<string>,
+): AnalysisBundle {
+  return {
+    ...bundle,
+    freeMetrics: bundle.freeMetrics.map((card) =>
+      card.tier === 'free' && card.detail && !freeUnlockedIds.has(card.id) ? { ...card, detail: undefined } : card,
+    ),
+  }
+}
+
 export async function buildAnalysis(
   chatName: string,
   messages: ChatMessage[],
@@ -1126,8 +1167,8 @@ function metricJajaja(ctx: MetricContext): MetricResult {
     detail: {
       intro:
         language === 'es'
-          ? 'Cómo se ríe cada integrante, de la risa seca a la caótica.'
-          : 'How each participant laughs, from the dry "ja" to full keyboard chaos.',
+          ? 'Cómo se ríe cada integrante, de la risa más simple a la más caótica.'
+          : 'How each participant laughs, from a simple "ja" to full keyboard chaos.',
       series,
     },
   }
@@ -3113,19 +3154,18 @@ function looksLikeKeyboardChaos(token: string): boolean {
 /** Every laugh "family" the app can recognize — deliberately broader than a single
  * jaja/jeje pair, since real chats laugh in a lot more shapes than that. */
 const laughStyleLabels: Record<string, Record<Language, string>> = {
-  seca: { es: 'Risa seca ("ja")', en: 'Dry laugh ("ha")' },
-  jaja: { es: 'Jajaja clásica', en: 'Classic "hahaha"' },
-  jeje: { es: 'Jeje pícaro', en: 'Sly "hehe"' },
-  jiji: { es: 'Jiji tímida', en: 'Giggly "hihi"' },
+  jaja: { es: 'Jajaja', en: 'Jajaja' },
+  jeje: { es: 'Jejeje', en: 'Jejeje' },
+  jiji: { es: 'Jijijijiji', en: 'Jijijijiji' },
   jojo: { es: 'Jojo', en: 'Jojo' },
   jsjs: { es: 'Jsjsjs', en: 'Jsjsjs' },
   haha: { es: 'Haha en inglés', en: 'Haha' },
-  hehe: { es: 'Hehe en inglés', en: 'Hehe' },
+  hehe: { es: 'Hehehe', en: 'Hehehe' },
   xd: { es: 'XD', en: 'XD' },
   lol: { es: 'LOL', en: 'LOL' },
   lmao: { es: 'LMAO', en: 'LMAO' },
   rofl: { es: 'ROFL', en: 'ROFL' },
-  keysmash: { es: 'Perdió el teclado', en: 'Lost control of the keyboard' },
+  keysmash: { es: 'Risa Descontrolada "askjsdjksj"', en: 'Uncontrolled Laughter "askjsdjksj"' },
 }
 
 function laughStyleLabel(style: string, language: Language): string {
@@ -3138,16 +3178,15 @@ function classifyLaugh(rawToken: string): string | null {
   if (token.length < 2) {
     return null
   }
-  if (/^(?:ja|je|ji|jo|ha|he)$/.test(token)) {
-    return 'seca'
-  }
+  // Each family below matches its single instance ("ja", "je"...) as well as any
+  // repeated run ("jaja", "jajaja"...) — a lone "ja" is just the shortest jajaja.
   if (/^a*(?:ja)+j?a*$/.test(token)) return 'jaja'
   if (/^e*(?:je)+j?e*$/.test(token)) return 'jeje'
   if (/^i*(?:ji)+j?i*$/.test(token)) return 'jiji'
   if (/^o*(?:jo)+j?o*$/.test(token)) return 'jojo'
   if (/^(?:js)+j?$/.test(token)) return 'jsjs'
-  if (/^(?:ha){2,}h?$/.test(token)) return 'haha'
-  if (/^(?:he){2,}h?$/.test(token)) return 'hehe'
+  if (/^(?:ha)+h?$/.test(token)) return 'haha'
+  if (/^(?:he)+h?$/.test(token)) return 'hehe'
   if (/^x+d+$/.test(token)) return 'xd'
   if (/^lo+l+$/.test(token)) return 'lol'
   if (/^lm(?:f)?ao+$/.test(token)) return 'lmao'

@@ -211,35 +211,26 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
       accent: 'tier-yellow',
       hasData: true,
       basic: {
-        value: es ? 'Jajaja clásica' : 'Classic "hahaha"',
-        label: es ? 'es el estilo de risa dominante (52 veces)' : 'is the dominant laugh style (52 times)',
+        value: 'Jajaja',
+        label: es ? 'es el estilo de risa dominante (56 veces)' : 'is the dominant laugh style (56 times)',
         chart: {
           kind: 'bar',
-          items: es
-            ? [
-                { label: 'Jajaja clásica', value: 52, displayValue: '52' },
-                { label: 'Jsjsjs', value: 31, displayValue: '31' },
-                { label: 'XD', value: 18, displayValue: '18' },
-                { label: 'Perdió el teclado', value: 7, displayValue: '7' },
-                { label: 'Risa seca ("ja")', value: 4, displayValue: '4' },
-              ]
-            : [
-                { label: 'Classic "hahaha"', value: 52, displayValue: '52' },
-                { label: 'Jsjsjs', value: 31, displayValue: '31' },
-                { label: 'XD', value: 18, displayValue: '18' },
-                { label: 'Lost control of the keyboard', value: 7, displayValue: '7' },
-                { label: 'Dry laugh ("ha")', value: 4, displayValue: '4' },
-              ],
+          items: [
+            { label: 'Jajaja', value: 56, displayValue: '56' },
+            { label: 'Jsjsjs', value: 31, displayValue: '31' },
+            { label: 'XD', value: 18, displayValue: '18' },
+            { label: es ? 'Ataque de risa ("askjdh")' : 'Laughing fit ("askjdh")', value: 7, displayValue: '7' },
+          ],
         },
       },
       detail: {
         intro: es
-          ? 'De la risa seca a la caótica: así se rompe por integrante.'
-          : 'From the dry laugh to full keyboard chaos: broken down per participant.',
+          ? 'De la risa más simple a la más caótica: así se rompe por integrante.'
+          : 'From a simple laugh to full keyboard chaos: broken down per participant.',
         breakdown: [
-          { name: 'Fran', value: 33, displayValue: es ? 'Jajaja clásica' : 'Classic "hahaha"' },
+          { name: 'Fran', value: 33, displayValue: 'Jajaja' },
           { name: 'Vale', value: 21, displayValue: 'Jsjsjs' },
-          { name: 'Nico', value: 7, displayValue: es ? 'Perdió el teclado' : 'Lost control of the keyboard' },
+          { name: 'Nico', value: 7, displayValue: es ? 'Ataque de risa ("askjdh")' : 'Laughing fit ("askjdh")' },
         ],
       },
       preview: es ? 'Distribución de estilos de risa por integrante.' : "Each participant's laugh-style breakdown.",
