@@ -552,7 +552,17 @@ export function ExportTutorialArt({
   // Primer paso de Android: grabación real en vez de la ilustración SVG —
   // reemplazo gradual, paso a paso, de las demás escenas dibujadas abajo.
   if (step === 0 && platform === 'android') {
-    return <img src="/tutorial/export-android-step1.gif" alt={`Paso ${step + 1}`} className="tutorial-gif" />
+    return (
+      <video
+        src="/tutorial/export-android-step1.mp4"
+        className="tutorial-gif"
+        aria-label={`Paso ${step + 1}`}
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
+    )
   }
 
   if (chrome) {
