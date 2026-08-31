@@ -1498,10 +1498,17 @@
   padding: 14px;
 }
 
-.tutorial-art svg {
+.tutorial-art svg,
+.tutorial-art .tutorial-gif {
   width: 100%;
   height: auto;
   max-height: 560px;
+}
+
+.tutorial-art .tutorial-gif {
+  display: block;
+  border-radius: var(--vz-radius-md);
+  object-fit: contain;
 }
 
 .tutorial-install-panel {
