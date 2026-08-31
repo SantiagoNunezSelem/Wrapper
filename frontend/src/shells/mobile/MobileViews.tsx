@@ -2,7 +2,7 @@ import type { ShellCopy } from '../../copy/shellCopy'
 import { formatMoney } from '../../lib/format'
 import { formatNumber } from '../../lib/metrics'
 import type { Language, SavedAnalysis, SubscriptionOverview, UserProfile } from '../../types'
-import { ChatIcon, ChevronIcon, CrownIcon, UploadIcon } from './icons'
+import { ChatIcon, ChevronIcon, CrownIcon, PencilIcon, TrashIcon, UploadIcon } from './icons'
 
 /* Las cuatro vistas de las pestañas. Son composición pura: cualquier dato o
    acción llega por props desde `MobileShell`, que a su vez lo saca de
@@ -18,6 +18,8 @@ export function MobileHome({
   busyMessage,
   onUpload,
   onOpenSaved,
+  onDeleteSaved,
+  onRenameSaved,
   onSeeAll,
 }: {
   copy: ShellCopy
@@ -26,6 +28,8 @@ export function MobileHome({
   busyMessage: string
   onUpload: () => void
   onOpenSaved: (item: SavedAnalysis) => void
+  onDeleteSaved: (item: SavedAnalysis) => void
+  onRenameSaved: (item: SavedAnalysis) => void
   onSeeAll: () => void
 }) {
   const m = copy.mobile
@@ -42,12 +46,6 @@ export function MobileHome({
 
       <DropZone copy={copy} busyMessage={busyMessage} onUpload={onUpload} />
 
-      <ul className="m-trust">
-        {copy.trustBadges.map((badge) => (
-          <li key={badge}>{badge}</li>
-        ))}
-      </ul>
-
       {saved.length > 0 ? (
         <>
           <p className="m-section-label m-section-split">
@@ -57,7 +55,15 @@ export function MobileHome({
             </button>
           </p>
           {saved.slice(0, 3).map((item) => (
-            <SavedRow key={item.id} item={item} language={language} onOpen={onOpenSaved} />
+            <SavedRow
+              key={item.id}
+              item={item}
+              language={language}
+              copy={copy}
+              onOpen={onOpenSaved}
+              onDelete={onDeleteSaved}
+              onRename={onRenameSaved}
+            />
           ))}
         </>
       ) : null}
@@ -88,6 +94,8 @@ export function MobileHistory({
   language,
   user,
   onOpenSaved,
+  onDeleteSaved,
+  onRenameSaved,
   onSignIn,
   onUpload,
 }: {
@@ -96,6 +104,8 @@ export function MobileHistory({
   language: Language
   user: UserProfile | null
   onOpenSaved: (item: SavedAnalysis) => void
+  onDeleteSaved: (item: SavedAnalysis) => void
+  onRenameSaved: (item: SavedAnalysis) => void
   onSignIn: () => void
   onUpload: () => void
 }) {
@@ -137,7 +147,15 @@ export function MobileHistory({
         {saved.length} {copy.savedTitle}
       </p>
       {saved.map((item) => (
-        <SavedRow key={item.id} item={item} language={language} onOpen={onOpenSaved} />
+        <SavedRow
+          key={item.id}
+          item={item}
+          language={language}
+          copy={copy}
+          onOpen={onOpenSaved}
+          onDelete={onDeleteSaved}
+          onRename={onRenameSaved}
+        />
       ))}
     </>
   )
@@ -240,27 +258,60 @@ function DropZone({ copy, busyMessage, onUpload }: { copy: ShellCopy; busyMessag
 function SavedRow({
   item,
   language,
+  copy,
   onOpen,
+  onDelete,
+  onRename,
 }: {
   item: SavedAnalysis
   language: Language
+  copy: ShellCopy
   onOpen: (item: SavedAnalysis) => void
+  onDelete: (item: SavedAnalysis) => void
+  onRename: (item: SavedAnalysis) => void
 }) {
   return (
-    <button type="button" className="m-saved" onClick={() => onOpen(item)}>
-      <span className="m-saved-icon">
-        <ChatIcon size={16} />
-      </span>
-      <span className="m-saved-body">
-        <strong>{item.chatName}</strong>
-        <span>{item.dateRangeLabel}</span>
-        <span>
-          {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
+    /* La papelera y el lápiz son botones aparte, hermanos del que abre — no pueden
+       ir adentro, porque un botón dentro de otro botón no es HTML válido y en un
+       teléfono terminaría abriendo el análisis en vez de renombrarlo o borrarlo.
+       La fila entera comparte un solo borde (ver .m-saved-row en mobile.css), así
+       que a pesar de ser tres <button> se ve como una sola tarjeta. */
+    <div className="m-saved-row">
+      <button type="button" className="m-saved" onClick={() => onOpen(item)}>
+        <span className="m-saved-icon">
+          <ChatIcon size={16} />
         </span>
-      </span>
-      <span className="m-saved-chevron" aria-hidden="true">
-        <ChevronIcon size={15} />
-      </span>
-    </button>
+        <span className="m-saved-body">
+          <strong>{item.chatName}</strong>
+          <span>{item.dateRangeLabel}</span>
+          {/* Antes decía "1.234 · 4", sin aclarar de qué eran esos números. */}
+          <span>
+            {formatNumber(item.messageCount, language)} {copy.messages.toLowerCase()} ·{' '}
+            {formatNumber(item.participantCount, language)} {copy.participants.toLowerCase()}
+          </span>
+        </span>
+        <span className="m-saved-chevron" aria-hidden="true">
+          <ChevronIcon size={15} />
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="m-saved-action"
+        onClick={() => onRename(item)}
+        aria-label={`${copy.renameSaved}: ${item.chatName}`}
+      >
+        <PencilIcon size={15} />
+      </button>
+
+      <button
+        type="button"
+        className="m-saved-action is-danger"
+        onClick={() => onDelete(item)}
+        aria-label={`${copy.deleteSaved}: ${item.chatName}`}
+      >
+        <TrashIcon size={15} />
+      </button>
+    </div>
   )
 }

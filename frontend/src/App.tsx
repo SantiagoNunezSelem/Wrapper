@@ -2,6 +2,7 @@ import { useIsMobile } from './app/useIsMobile'
 import { useVistazo } from './app/useVistazo'
 import { DesktopShell } from './shells/desktop/DesktopShell'
 import { MobileShell } from './shells/mobile/MobileShell'
+import { SharedStoryView } from './shells/mobile/SharedStoryView'
 
 /**
  * La raíz: arma el estado una sola vez y elige quién lo dibuja.
@@ -17,6 +18,16 @@ import { MobileShell } from './shells/mobile/MobileShell'
 function App() {
   const vistazo = useVistazo()
   const isMobile = useIsMobile()
+
+  // `/s/{slug}` es un recorrido compartido: no es la app, es una página pública
+  // de lectura. Quien la abre puede no tener sesión ni chat cargado — sólo el
+  // link — así que se resuelve antes que la elección de shell.
+  //
+  // Se muestra igual en teléfono y en escritorio: un recorrido tipo historia es
+  // vertical por naturaleza, y el link se abre desde donde sea.
+  if (vistazo.shareSlug) {
+    return <SharedStoryView slug={vistazo.shareSlug} />
+  }
 
   return isMobile ? <MobileShell vistazo={vistazo} /> : <DesktopShell vistazo={vistazo} />
 }

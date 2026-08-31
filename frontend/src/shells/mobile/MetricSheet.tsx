@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
-import { ChartRenderer } from '../../components/charts/ChartRenderer'
+import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
 import { LockedPanel, type FreeUnlockPrompt } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
-// NUEVO: números que laten — para revertir, borrar este import y el uso de
-// useCountUp más abajo (volver a mostrar heroSplit?.rest directo).
 import { useCountUp } from '../../components/useCountUp'
+import type { WordCloudEditor } from '../../components/useEditableWordCloud'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
-import type { ChartData, MetricCard } from '../../types'
-import { ChevronIcon } from './icons'
+import { isParticipantBarChart } from '../../lib/metrics'
+import type { ChartData, ChatMessage, MetricCard } from '../../types'
+import { ChevronIcon, SearchIcon } from './icons'
 
 /** Estas familias de gráfico son anchas por naturaleza: el heatmap anual tiene
  * 53 columnas y pueden ser más según el rango del chat. En 320px encogerlos los
@@ -37,6 +38,10 @@ export function MetricSheet({
   ai,
   freeUnlock,
   isRevealingFreeUnlock = false,
+  overStory = false,
+  isSharedStory = false,
+  messages,
+  wordCloudEditor,
   onClose,
   onPrev,
   onNext,
@@ -52,6 +57,22 @@ export function MetricSheet({
   /** True for the few seconds right after this card's free unlock was confirmed —
    * see `revealingFreeUnlockId` in useVistazo. */
   isRevealingFreeUnlock?: boolean
+  /** Abierta desde el recorrido tipo historia, que queda montado y congelado por
+   * debajo. Sube la hoja por encima de esa capa y le saca el paso a la métrica
+   * siguiente: acá el detalle pertenece a LA pantalla que el usuario estaba
+   * mirando, y cerrarlo lo devuelve justo ahí. */
+  overStory?: boolean
+  /** True cuando se visualiza desde una historia compartida (usuario anónimo). */
+  isSharedStory?: boolean
+  /** El chat activo en esta pestaña, si lo hay — ver el mismo prop en
+   * MetricModal. Ausente en una historia compartida o en un análisis
+   * guardado: esos nunca traen los mensajes crudos, sólo las tarjetas ya
+   * calculadas. */
+  messages?: ChatMessage[]
+  /** Armado por quien llama (ver `wordCloudEditor` en useVistazo, o el propio de
+   * SharedStoryView) en vez de acá adentro, así lo buscado sobrevive a que esta
+   * hoja se cierre y se reabra — sólo quien llama queda montado toda la sesión. */
+  wordCloudEditor: WordCloudEditor
   onClose: () => void
   onPrev: () => void
   onNext: () => void
@@ -71,47 +92,63 @@ export function MetricSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id])
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+  /* Escape, el bloqueo del scroll de fondo y la trampa de foco los pone
+     `useModalDismiss`, compartido con los modales de desktop. Lo único propio de
+     esta hoja son las flechas. */
+  const panelRef = useModalDismiss<HTMLElement>(onClose, {
+    onKeyDown: (event) => {
+      // Sobre el recorrido no hay paso a la métrica siguiente (ver `overStory`),
+      // así que las flechas tampoco lo hacen: moverían la hoja a una métrica que
+      // no es la de la pantalla congelada abajo.
+      if (overStory) return
       if (event.key === 'ArrowRight') onNext()
       if (event.key === 'ArrowLeft') onPrev()
-    }
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.body.style.overflow = previous
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [onClose, onNext, onPrev])
+    },
+  })
 
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
 
-  const hasWordCloud =
-    card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud'))
+  // No search box without the raw chat to search — a replayed analysis from history
+  // only ever carries the precomputed cards (see the privacy note in the landing
+  // copy), so a search here could never do anything but fail.
+  const canSearchWords =
+    Boolean(messages) &&
+    (card.detail?.chart?.kind === 'wordCloud' || Boolean(card.detail?.series?.some((entry) => entry.chart.kind === 'wordCloud')))
 
-  const filteredDetailChart = useMemo(
-    () => (card.detail?.chart ? filterWordCloud(card.detail.chart, wordSearch) : undefined),
-    [card.detail?.chart, wordSearch],
-  )
+  // The hero bar chart and the "by participant" breakdown below are often the same
+  // per-sender ranking twice (see `isParticipantBarChart`) — skip the hero chart then.
+  const heroChartRepeatsBreakdown =
+    isParticipantBarChart(card.basic?.chart) && Boolean(card.detail?.breakdown && card.detail.breakdown.length > 0)
 
-  const filteredSeries = useMemo(
-    () => card.detail?.series?.map((entry) => ({ name: entry.name, chart: filterWordCloud(entry.chart, wordSearch) })) ?? [],
-    [card.detail?.series, wordSearch],
-  )
+  async function submitWordSearch() {
+    if (await wordCloudEditor.searchAndAdd(wordSearch)) {
+      setWordSearch('')
+    }
+  }
+
+  function handleWordSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+    void submitWordSearch()
+  }
 
   const m = copy.mobile
   const heroSplit = card.basic ? splitLeadingEmoji(card.basic.value) : null
-  const statValue = useCountUp(heroSplit?.rest ?? '') // NUEVO
+  const statValue = useCountUp(heroSplit?.rest ?? '')
 
   return (
-    <div className="m-layer" role="dialog" aria-modal="true" aria-label={card.title}>
+    <div
+      className={`m-layer ${overStory ? 'is-over-story' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={card.title}
+    >
       <button type="button" className="m-scrim" onClick={onClose} aria-label={copy.close} />
 
-      <section className="m-sheet">
+      <section className="m-sheet" ref={panelRef}>
         <span className="m-grabber" aria-hidden="true" />
 
         <header className="m-sheet-head">
@@ -133,12 +170,27 @@ export function MetricSheet({
             <div className="m-sheet-hero">
               <strong>
                 {heroSplit?.emoji ? <span className="stat-emoji">{heroSplit.emoji} </span> : null}
-                {/* ANTES: <span className="gradient-text">{heroSplit?.rest}</span> */}
                 <span className="gradient-text">{statValue}</span>
               </strong>
               <span>{card.basic.label}</span>
               {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
-              {card.basic.chart ? <Chart chart={card.basic.chart} /> : null}
+              {card.basic.chart && !heroChartRepeatsBreakdown ? (
+                <Chart
+                  chart={wordCloudEditor.displayChart ?? card.basic.chart}
+                  justAddedWord={wordCloudEditor.justAddedWord}
+                  wordCloudEditing={
+                    card.basic.chart.kind === 'wordCloud'
+                      ? {
+                          onRemoveWord: wordCloudEditor.onRemoveWord,
+                          removeLabel: copy.wordCloudSearch.removeLabel,
+                          removingWord: wordCloudEditor.removingWord,
+                          selectedWordForRemoval: wordCloudEditor.selectedWordForRemoval,
+                          onToggleSelection: wordCloudEditor.toggleWordSelection,
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -160,24 +212,48 @@ export function MetricSheet({
                 <>
                   {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
 
-                  {hasWordCloud ? (
-                    <input
-                      type="search"
-                      className="word-search-input"
-                      placeholder={copy.searchPlaceholder}
-                      value={wordSearch}
-                      onChange={(event) => setWordSearch(event.target.value.toLowerCase())}
-                    />
+                  {canSearchWords ? (
+                    <>
+                      <div className="word-search-row">
+                        <input
+                          type="search"
+                          className="word-search-input"
+                          placeholder={copy.searchPlaceholder}
+                          value={wordSearch}
+                          disabled={wordCloudEditor.isSearching}
+                          onChange={(event) => {
+                            setWordSearch(event.target.value.toLowerCase())
+                            wordCloudEditor.clearSearchError()
+                          }}
+                          onKeyDown={handleWordSearchKeyDown}
+                        />
+                        <button
+                          type="button"
+                          className="word-search-button"
+                          onClick={() => void submitWordSearch()}
+                          disabled={wordCloudEditor.isSearching}
+                          aria-label={copy.searchPlaceholder}
+                        >
+                          {wordCloudEditor.isSearching ? <span className="word-search-spinner" aria-hidden="true" /> : <SearchIcon />}
+                        </button>
+                      </div>
+                      {wordCloudEditor.searchError ? <p className="word-search-error">{wordCloudEditor.searchError}</p> : null}
+                    </>
                   ) : null}
 
-                  {filteredDetailChart ? <Chart chart={filteredDetailChart} /> : null}
+                  {card.detail.chart ? <Chart chart={card.detail.chart} /> : null}
 
-                  {filteredSeries.length > 0 ? (
+                  {wordCloudEditor.displaySeries && wordCloudEditor.displaySeries.length > 0 ? (
                     <div className="m-series">
-                      {filteredSeries.map((entry) => (
+                      {wordCloudEditor.displaySeries.map((entry) => (
                         <div className="m-series-item" key={entry.name}>
                           <h4>{entry.name}</h4>
-                          <Chart chart={entry.chart} compact />
+                          <Chart
+                            chart={entry.chart}
+                            compact
+                            justAddedWord={wordCloudEditor.justAddedWord}
+                            protectedWords={wordCloudEditor.searchedWords}
+                          />
                         </div>
                       ))}
                     </div>
@@ -210,6 +286,8 @@ export function MetricSheet({
                             key={group.id}
                             group={group}
                             isNew={groups.revealedFrom !== null && position >= groups.revealedFrom}
+                            isSharedStory={isSharedStory}
+                            privacyCopy={copy.sharedPrivacy}
                           />
                         ))}
                       </div>
@@ -247,32 +325,37 @@ export function MetricSheet({
           )}
         </div>
 
-        <footer className="m-sheet-foot">
-          <button
-            type="button"
-            className="m-sheet-step"
-            onClick={onPrev}
-            disabled={index === 0}
-            aria-label={m.sheet.prev}
-          >
-            <span className="m-flip">
-              <ChevronIcon size={16} />
+        {/* Sobre el recorrido el pie no va: las barras de la historia ya dicen en
+            qué pantalla está, y pasar a otra métrica desde acá dejaría la hoja
+            mostrando una cosa y el recorrido congelado en otra. */}
+        {overStory ? null : (
+          <footer className="m-sheet-foot">
+            <button
+              type="button"
+              className="m-sheet-step"
+              onClick={onPrev}
+              disabled={index === 0}
+              aria-label={m.sheet.prev}
+            >
+              <span className="m-flip">
+                <ChevronIcon size={16} />
+              </span>
+            </button>
+
+            <span className="m-sheet-count">
+              {index + 1} / {total}
             </span>
-          </button>
 
-          <span className="m-sheet-count">
-            {index + 1} / {total}
-          </span>
-
-          <button
-            type="button"
-            className="m-sheet-step"
-            onClick={onNext}
-            aria-label={index === total - 1 ? m.sheet.backToList : m.sheet.next}
-          >
-            <ChevronIcon size={16} />
-          </button>
-        </footer>
+            <button
+              type="button"
+              className="m-sheet-step"
+              onClick={onNext}
+              aria-label={index === total - 1 ? m.sheet.backToList : m.sheet.next}
+            >
+              <ChevronIcon size={16} />
+            </button>
+          </footer>
+        )}
       </section>
     </div>
   )
@@ -280,12 +363,30 @@ export function MetricSheet({
 
 /** Envuelve el gráfico en un contenedor deslizable cuando su familia es más
  * ancha que la pantalla, en vez de dejar que se comprima. */
-function Chart({ chart, compact = false }: { chart: ChartData; compact?: boolean }) {
+function Chart({
+  chart,
+  compact = false,
+  wordCloudEditing,
+  justAddedWord,
+  protectedWords,
+}: {
+  chart: ChartData
+  compact?: boolean
+  wordCloudEditing?: WordCloudEditing
+  justAddedWord?: string | null
+  protectedWords?: string[]
+}) {
   if (WIDE_CHARTS.has(chart.kind)) {
     return (
       <div className="m-chart m-scroll-x">
         <div className="m-chart-wide">
-          <ChartRenderer chart={chart} compact={compact} />
+          <ChartRenderer
+            chart={chart}
+            compact={compact}
+            wordCloudEditing={wordCloudEditing}
+            justAddedWord={justAddedWord}
+            protectedWords={protectedWords}
+          />
         </div>
       </div>
     )
@@ -293,14 +394,13 @@ function Chart({ chart, compact = false }: { chart: ChartData; compact?: boolean
 
   return (
     <div className="m-chart">
-      <ChartRenderer chart={chart} compact={compact} />
+      <ChartRenderer
+        chart={chart}
+        compact={compact}
+        wordCloudEditing={wordCloudEditing}
+        justAddedWord={justAddedWord}
+        protectedWords={protectedWords}
+      />
     </div>
   )
-}
-
-function filterWordCloud(chart: ChartData, search: string): ChartData {
-  if (chart.kind !== 'wordCloud' || !search) {
-    return chart
-  }
-  return { kind: 'wordCloud', words: chart.words.filter((word) => word.word.includes(search)) }
 }

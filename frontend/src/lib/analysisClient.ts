@@ -102,6 +102,28 @@ export async function analyzeInWorker(
 }
 
 /**
+ * Counts a manually-searched word across the whole chat and, separately, across each
+ * participant's own messages — for the wordcloud metric's search box (see
+ * useEditableWordCloud). Runs in the worker for the same reason every other chat-wide
+ * scan does: one pass per participant plus one for the total is real work on a chat
+ * with tens of thousands of messages, and it shouldn't stall typing or scrolling while
+ * it runs.
+ */
+export async function searchWordInWorker(
+  messages: ChatMessage[],
+  query: string,
+  participants: string[],
+): Promise<{ count: number; countsByParticipant: Record<string, number> }> {
+  const response = await send({ type: 'wordSearch', messages, query, participants })
+
+  if (response.type !== 'wordSearch') {
+    throw new Error('Unexpected worker response for wordSearch.')
+  }
+
+  return { count: response.count, countsByParticipant: response.countsByParticipant }
+}
+
+/**
  * Builds the filtered snippets for the AI-backed metrics. Runs in the worker for the
  * same reason the analysis does: it walks every message and normalizes each one, which
  * is seconds of work on a large chat.

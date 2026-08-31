@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
+import { ErrorBanner } from '../../components/ErrorBanner'
 import { ExportTutorialModal } from '../../components/ExportTutorialModal'
 import { FileUploadZone } from '../../components/FileUploadZone'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
@@ -10,22 +11,28 @@ import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricModal } from '../../components/MetricModal'
+import { ModalShell } from '../../components/ModalShell'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
 import { VipBadge } from '../../components/VipBadge'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
-import { landingMockupStats } from '../../copy/shellCopy'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { RenameDialog } from '../../components/RenameDialog'
+import { landingMockupStats, type ShellCopy } from '../../copy/shellCopy'
 import { formatNumber } from '../../lib/metrics'
 import { useInView } from '../../lib/useInView'
+import { usePwaInstall } from '../../lib/usePwaInstall'
+import type { Language, SavedAnalysis } from '../../types'
 import './desktop.css'
 
 /**
  * El Vistazo de siempre, para monitor. El JSX es exactamente el que vivía en
  * App.tsx: este archivo no rediseñó nada, sólo se lo llevó de lugar.
  *
- * Todo lo que se ve acá sale de , así que desktop y mobile
+ * Todo lo que se ve acá sale de `useVistazo()`, así que desktop y mobile
  * muestran la misma información calculada por el mismo código. Lo único
  * propio de este shell es el estado de presentación de abajo — animaciones y
  * un dropdown que en un teléfono no existen.
@@ -45,6 +52,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     landingPreviewCards,
     selectedMetric,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -91,19 +99,53 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     handleConsentAccept,
     handleLogout,
     handleCancelSubscription,
+    handlePauseSubscription,
+    handleResumeSubscription,
     handleRefreshSubscription,
     handleToggleDevAi,
     handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
     backToLanding,
   } = vistazo
+
+  // Called here rather than inside MetricModal so its state survives the modal
+  // closing and reopening — this shell stays mounted for the whole session, the
+  // modal doesn't. `resetKey` sticks to the last selected card's id instead of
+  // following `selectedMetric` straight through `null` while the modal is closed,
+  // so it only actually clears the editor when the *next* card opened is a
+  // different one, or `sourceHash` changes (a new upload replacing the chat).
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (selectedMetric) {
+    wordCloudCardIdRef.current = selectedMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: selectedMetric?.basic?.chart,
+    series: selectedMetric?.detail?.series,
+    messages: activeChat?.messages,
+    resetKey: `${analysis?.sourceHash ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+    onEdit: (chart, series) => {
+      if (wordCloudCardIdRef.current) {
+        void persistWordCloudEdit(wordCloudCardIdRef.current, chart, series)
+      }
+    },
+  })
 
   // Las secciones de la landing aparecen al entrar en viewport, cada una por
   // su cuenta para que la página se arme por etapas y no toda de golpe.
   const heroReveal = useInView<HTMLElement>()
-  const infoReveal = useInView<HTMLElement>()
   const stepsReveal = useInView<HTMLElement>()
   const examplesReveal = useInView<HTMLElement>()
   const uploadReveal = useInView<HTMLElement>()
@@ -126,6 +168,19 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
 
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+
+  /* Instalar la app sólo se ofrecía desde un paso del tutorial de exportación, que
+     quien ya sabe exportar nunca abre. Acá está donde vive el resto de lo que es
+     "de la cuenta", y sólo cuando el navegador tiene el prompt listo. */
+  const { canInstall: canInstallApp, install: installApp } = usePwaInstall()
+
+  /* Baja a las 25 tarjetas memoizadas: escrito inline sería un handler nuevo en
+     cada render y el memo no serviría de nada. setSelectedMetricId es un setter
+     de estado, así que su identidad ya es estable. */
+  const openMetricDetail = useCallback(
+    (selected: { id: string }) => setSelectedMetricId(selected.id),
+    [setSelectedMetricId],
+  )
 
   // El dropdown de cuenta no tiene backdrop propio (a diferencia de los
   // modales) — se cierra con cualquier click afuera de la píldora, escuchado
@@ -191,6 +246,12 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           onCancel={() => {
             void handleCancelSubscription()
           }}
+          onPause={() => {
+            void handlePauseSubscription()
+          }}
+          onResume={() => {
+            void handleResumeSubscription()
+          }}
           onRefresh={() => {
             void handleRefreshSubscription()
           }}
@@ -242,6 +303,18 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                   <button type="button" className="account-menu-action" onClick={goToSubscriptionPage}>
                     {copy.manageSubscription}
                   </button>
+
+                  {canInstallApp ? (
+                    <button
+                      type="button"
+                      className="account-menu-action"
+                      onClick={() => {
+                        void installApp()
+                      }}
+                    >
+                      {copy.installApp}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -255,7 +328,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       </header>
 
       {!hasGoogleClientId ? <p className="warning-banner">{copy.setupWarning}</p> : null}
-      {error ? <p className="error-banner">{error}</p> : null}
+      {error ? <ErrorBanner message={error} dismissLabel={copy.dismissError} onDismiss={() => setError('')} /> : null}
 
       {analysis && user ? (
         <main className="analytics-layout">
@@ -306,18 +379,14 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               <section className="panel history-panel">
                 <h2>{copy.savedTitle}</h2>
                 {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
-                <div className="history-list">
-                  {savedAnalyses.map((item) => (
-                    <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
-                      <strong>{item.chatName}</strong>
-                      <span>{item.dateRangeLabel}</span>
-                      <span>
-                        {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
-                      </span>
-                      <em>{copy.openSaved}</em>
-                    </button>
-                  ))}
-                </div>
+                <HistoryList
+                  items={savedAnalyses}
+                  language={language}
+                  copy={copy}
+                  onOpen={openSavedAnalysis}
+                  onDelete={requestDeleteAnalysis}
+                  onRename={requestRenameAnalysis}
+                />
               </section>
             </aside>
           </div>
@@ -330,7 +399,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                     <div
                       key={card.id}
                       className="metric-list-item"
-                      // ANTES: style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 45}ms` }}
                       style={{ animationDelay: `${(rowIndex * 3 + indexInRow) * 65}ms` }}
                     >
                       <MetricCard
@@ -338,7 +406,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                         seeMoreLabel={copy.seeMore}
                         unlockLabel={copy.unlock}
                         ai={aiPanel}
-                        onOpen={(selected) => setSelectedMetricId(selected.id)}
+                        onOpen={openMetricDetail}
                         onUnlock={requestUnlock}
                       />
                     </div>
@@ -376,6 +444,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           </section>
 
           <FileUploadZone
+            copy={copy.uploadZone}
             onFileSelect={processFile}
             isLoading={Boolean(busyMessage)}
             loadingMessage={busyMessage}
@@ -386,18 +455,14 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             {savedAnalyses.length === 0 ? (
               <p>{copy.noSaved}</p>
             ) : (
-              <div className="history-list">
-                {savedAnalyses.map((item) => (
-                  <button key={item.id} type="button" className="history-item" onClick={() => openSavedAnalysis(item)}>
-                    <strong>{item.chatName}</strong>
-                    <span>{item.dateRangeLabel}</span>
-                    <span>
-                      {formatNumber(item.messageCount, language)} · {formatNumber(item.participantCount, language)}
-                    </span>
-                    <em>{copy.openSaved}</em>
-                  </button>
-                ))}
-              </div>
+              <HistoryList
+                items={savedAnalyses}
+                language={language}
+                copy={copy}
+                onOpen={openSavedAnalysis}
+                onDelete={requestDeleteAnalysis}
+                onRename={requestRenameAnalysis}
+              />
             )}
           </section>
         </main>
@@ -466,43 +531,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             </div>
           </section>
 
-          <div className="marquee" aria-hidden="true">
-            <div className="marquee-track">
-              {[...copy.marqueeItems, ...copy.marqueeItems].map((item, index) => (
-                <span className="marquee-item" key={index}>
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <section className={`panel landing-info reveal ${infoReveal.inView ? 'is-visible' : ''}`} ref={infoReveal.ref}>
-            <div>
-              <h2>{copy.whatItDoesTitle}</h2>
-              <p className="panel-copy">{copy.whatItDoesBody}</p>
-            </div>
-
-            <h3 className="why-heading">{copy.whyTitle}</h3>
-
-            <div className="why-grid">
-              {copy.whyCards.map((item, index) => (
-                <article
-                  key={item.title}
-                  className={`why-card reveal-child ${infoReveal.inView ? 'is-visible' : ''}`}
-                  style={{ transitionDelay: `${index * 90}ms` }}
-                >
-                  <span className="why-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <div>
-                    <h4>{item.title}</h4>
-                    <p>{item.body}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
           <section className={`panel steps-section reveal ${stepsReveal.inView ? 'is-visible' : ''}`} ref={stepsReveal.ref}>
             <h2>{copy.howItWorksTitle}</h2>
             <div className="steps-grid">
@@ -556,6 +584,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             </div>
 
             <FileUploadZone
+              copy={copy.uploadZone}
               onFileSelect={processFile}
               isLoading={Boolean(busyMessage)}
               loadingMessage={busyMessage}
@@ -578,9 +607,12 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       )}
 
       {isAuthModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsAuthModalOpen(false)}>
-          <section className="modal-card auth-modal" onClick={(event) => event.stopPropagation()}>
-            <CrossButton label={copy.close} onClick={() => setIsAuthModalOpen(false)} className="close-button" />
+        <ModalShell
+          onDismiss={() => setIsAuthModalOpen(false)}
+          label={needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}
+          className="auth-modal"
+          closeLabel={copy.close}
+        >
             {needsRecaptchaChallenge ? (
               <RecaptchaChallenge
                 siteKey={recaptchaSiteKeyV2}
@@ -607,13 +639,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               </>
             )}
             {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
-          </section>
-        </div>
+        </ModalShell>
       ) : null}
 
       {isVipPopoverOpen ? (
         <VipUnlockPopover
           copy={{ ...copy.subscriptionPage, ...copy.vipPopover }}
+          language={language}
           user={user}
           token={token}
           plan={subscription?.plan ?? null}
@@ -637,10 +669,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             unlock: copy.unlock,
             searchPlaceholder: copy.searchPlaceholder,
             freeUnlockLoading: copy.freeUnlock.loading,
+            wordCloudSearch: copy.wordCloudSearch,
           }}
           ai={aiPanel}
           freeUnlock={freeUnlockFor(selectedMetric)}
           isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
+          messages={activeChat?.messages}
+          wordCloudEditor={wordCloudEditor}
           onClose={() => setSelectedMetricId(null)}
           onUnlock={requestUnlock}
         />
@@ -669,6 +704,44 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         />
       ) : null}
 
+      {pendingDeleteAnalysis ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.deleteSavedTitle,
+            body: copy.deleteSavedConfirm.replace('{chat}', pendingDeleteAnalysis.chatName),
+            confirm: copy.deleteSavedCta,
+            cancel: copy.deleteSavedCancel,
+            busy: copy.deleting,
+            close: copy.close,
+          }}
+          isBusy={isDeletingAnalysis}
+          onConfirm={() => {
+            void confirmDeleteAnalysis()
+          }}
+          onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
+      {pendingRenameAnalysis ? (
+        <RenameDialog
+          copy={{
+            title: copy.renameSavedTitle,
+            label: copy.renameSavedLabel,
+            placeholder: copy.renameSavedPlaceholder,
+            save: copy.renameSavedCta,
+            cancel: copy.renameSavedCancel,
+            busy: copy.renaming,
+            close: copy.close,
+          }}
+          initialValue={pendingRenameAnalysis.chatName}
+          isBusy={isRenamingAnalysis}
+          onSave={(chatName) => {
+            void confirmRenameAnalysis(chatName)
+          }}
+          onCancel={cancelRenameAnalysis}
+        />
+      ) : null}
+
       {isConsentModalOpen ? (
         <AiConsentModal
           copy={{ ...copy.consent, close: copy.close }}
@@ -694,6 +767,83 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
       {busyMessage ? (
         <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
       ) : null}
+    </div>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+/** El historial guardado. Vivía escrito dos veces —una en la barra lateral del
+ * análisis y otra en la pantalla de "todavía no subiste nada"— con el mismo JSX
+ * copiado; ahora es uno solo, que es lo que permitió agregarle el borrado en los
+ * dos lugares a la vez. */
+function HistoryList({
+  items,
+  language,
+  copy,
+  onOpen,
+  onDelete,
+  onRename,
+}: {
+  items: SavedAnalysis[]
+  language: Language
+  copy: ShellCopy
+  onOpen: (item: SavedAnalysis) => void
+  onDelete: (item: SavedAnalysis) => void
+  onRename: (item: SavedAnalysis) => void
+}) {
+  return (
+    <div className="history-list">
+      {items.map((item) => (
+        <div key={item.id} className="history-row">
+          <button type="button" className="history-item" onClick={() => onOpen(item)}>
+            <strong>{item.chatName}</strong>
+            <span>{item.dateRangeLabel}</span>
+            {/* Antes decía "1.234 · 4", sin aclarar de qué eran esos números. */}
+            <span>
+              {formatNumber(item.messageCount, language)} {copy.messages.toLowerCase()} ·{' '}
+              {formatNumber(item.participantCount, language)} {copy.participants.toLowerCase()}
+            </span>
+            <em>{copy.openSaved}</em>
+          </button>
+
+          {/* El nombre del chat va en la etiqueta: con diez filas iguales, diez
+              botones que digan sólo "Borrar" o "Renombrar" no le sirven a nadie
+              que navegue por lector de pantalla. */}
+          <button
+            type="button"
+            className="history-rename"
+            onClick={() => onRename(item)}
+            aria-label={`${copy.renameSaved}: ${item.chatName}`}
+          >
+            <PencilIcon />
+          </button>
+
+          <button
+            type="button"
+            className="history-delete"
+            onClick={() => onDelete(item)}
+            aria-label={`${copy.deleteSaved}: ${item.chatName}`}
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

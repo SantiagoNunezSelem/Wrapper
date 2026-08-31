@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<TrialClaim> TrialClaims => Set<TrialClaim>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<FreeMetricUnlock> FreeMetricUnlocks => Set<FreeMetricUnlock>();
+    public DbSet<SharedStory> SharedStories => Set<SharedStory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +40,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.ExternalPayerId).HasMaxLength(100);
             entity.Property(item => item.CurrencyId).HasMaxLength(10);
             entity.Property(item => item.PaymentMethodLabel).HasMaxLength(120);
+            entity.Property(item => item.LastPaymentStatusDetail).HasMaxLength(60);
+            // Mercado Pago's checkout URLs carry a signed preference id and run long.
+            entity.Property(item => item.CheckoutUrl).HasMaxLength(1000);
             // SQLite has no decimal type; EF maps it to TEXT by default, which sorts and
             // compares as a string. Money is small and fixed-scale here, so REAL is the
             // pragmatic choice — but it is stated explicitly rather than left to warn.
@@ -58,6 +62,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.ExternalTransactionId).HasMaxLength(100);
             entity.Property(item => item.Status).HasMaxLength(30);
             entity.Property(item => item.RawStatus).HasMaxLength(60);
+            entity.Property(item => item.StatusDetail).HasMaxLength(60);
             entity.Property(item => item.CurrencyId).HasMaxLength(10);
             entity.Property(item => item.PaymentMethodLabel).HasMaxLength(120);
             entity.Property(item => item.Amount).HasColumnType("REAL");
@@ -135,6 +140,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             // The chat is part of the key, so the same metric on two different exports is
             // two rows — two unlocks — by construction.
             entity.HasIndex(item => new { item.UserId, item.DayKeyUtc, item.SourceHash, item.MetricId }).IsUnique();
+            entity.HasOne(item => item.User)
+                .WithMany()
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SharedStory>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Slug).HasMaxLength(32);
+            entity.Property(item => item.SourceHash).HasMaxLength(64);
+            entity.Property(item => item.ChatName).HasMaxLength(250);
+            entity.Property(item => item.DateRangeLabel).HasMaxLength(120);
+            entity.Property(item => item.Language).HasMaxLength(10);
+            entity.Property(item => item.PayloadJson).HasColumnType("TEXT");
+            // Unique because the slug *is* the credential: every public read looks a row up
+            // by it, and two rows answering to one link would make which snapshot a visitor
+            // sees a matter of query order.
+            entity.HasIndex(item => item.Slug).IsUnique();
+            // One live share per chat per account — see the re-share path in ShareEndpoints.
+            entity.HasIndex(item => new { item.UserId, item.SourceHash }).IsUnique();
             entity.HasOne(item => item.User)
                 .WithMany()
                 .HasForeignKey(item => item.UserId)

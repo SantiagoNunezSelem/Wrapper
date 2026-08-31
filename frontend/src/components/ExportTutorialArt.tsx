@@ -373,14 +373,14 @@ function SceneDialog({ platform }: { platform: ExportTutorialPlatform }) {
       <text x={50} y={286} fontSize={10.5} fill={TEXT_MUTED} fontFamily={FONT}>
         del chat en el archivo?
       </text>
-      <text x={196} y={374} textAnchor="end" fontSize={10.5} fontWeight={700} fill={TEXT_FAINT} fontFamily={FONT}>
+      <text x={139} y={374} textAnchor="end" fontSize={10.5} fontWeight={700} fill={TEXT_FAINT} fontFamily={FONT}>
         ADJUNTAR
       </text>
-      <rect x={200} y={356} width={72} height={24} rx={5} fill={ROW_BG_ACTIVE} stroke={ACCENT} strokeWidth={1.6} filter={GLOW} />
-      <text x={264} y={374} textAnchor="end" fontSize={10.5} fontWeight={700} fill={ACCENT_TEXT} fontFamily={FONT}>
+      <rect x={153} y={356} width={103} height={24} rx={5} fill={ROW_BG_ACTIVE} stroke={ACCENT} strokeWidth={1.6} filter={GLOW} />
+      <text x={248} y={374} textAnchor="end" fontSize={10.5} fontWeight={700} fill={ACCENT_TEXT} fontFamily={FONT}>
         SIN MULTIMEDIA
       </text>
-      <Ring cx={236} cy={368} />
+      <Ring cx={205} cy={368} />
     </>
   )
 }
@@ -397,9 +397,9 @@ function SceneShareIOS() {
     <>
       <rect x={0} y={0} width={300} height={560} fill={CHAT_BG} />
       <rect x={0} y={22} width={300} height={538} fill={SCRIM} />
-      <rect x={0} y={280} width={300} height={280} rx={18} fill={DIALOG_BG} />
-      <rect x={132} y={292} width={36} height={4} rx={2} fill={DIALOG_BORDER} />
-      <text x={150} y={322} textAnchor="middle" fontSize={11} fill={TEXT_MUTED} fontFamily={FONT}>
+      <rect x={0} y={270} width={300} height={290} rx={18} fill={DIALOG_BG} />
+      <rect x={132} y={282} width={36} height={4} rx={2} fill={DIALOG_BORDER} />
+      <text x={150} y={308} textAnchor="middle" fontSize={11} fill={TEXT_MUTED} fontFamily={FONT}>
         Compartir “ChatExportado.txt”
       </text>
 
@@ -549,6 +549,22 @@ export function ExportTutorialArt({
   platform: ExportTutorialPlatform
   chrome: boolean
 }) {
+  // Primer paso de Android: grabación real en vez de la ilustración SVG —
+  // reemplazo gradual, paso a paso, de las demás escenas dibujadas abajo.
+  if (step === 0 && platform === 'android') {
+    return (
+      <video
+        src="/tutorial/export-android-step1.mp4"
+        className="tutorial-gif"
+        aria-label={`Paso ${step + 1}`}
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
+    )
+  }
+
   if (chrome) {
     const clipId = `export-tutorial-clip-${platform}-${step}`
     return (

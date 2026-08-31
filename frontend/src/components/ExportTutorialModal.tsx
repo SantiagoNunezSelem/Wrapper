@@ -1,20 +1,24 @@
 import { useState } from 'react'
+import { usePwaInstall } from '../lib/usePwaInstall'
 import { ExportTutorialArt, type ExportTutorialPlatform } from './ExportTutorialArt'
-import { CrossButton } from './IconButton'
+import { ModalShell } from './ModalShell'
 
 export interface ExportTutorialCopy {
   eyebrow: string
   title: string
   os: { ios: string; android: string }
   steps: {
-    ios: ReadonlyArray<{ title: string; body: string }>
-    android: ReadonlyArray<{ title: string; body: string }>
+    ios: ReadonlyArray<{ title: string; body: string; install?: boolean }>
+    android: ReadonlyArray<{ title: string; body: string; install?: boolean }>
   }
   skip: string
   pick: string
   next: string
   privacy: string
   close: string
+  installCta: string
+  installDone: string
+  installUnavailable: string
 }
 
 /**
@@ -35,19 +39,30 @@ export function ExportTutorialModal({
 }) {
   const [platform, setPlatform] = useState<ExportTutorialPlatform>('ios')
   const [step, setStep] = useState(0)
+  const { canInstall, isInstalled, install } = usePwaInstall()
 
   const steps = copy.steps[platform]
+  const activeStep = steps[step]
+  // Mientras el navegador tenga el prompt nativo listo, ese es el CTA principal;
+  // apenas se usa (aceptado o no — `install()` limpia `canInstall` en los dos
+  // casos), el botón vuelve solo a "Elegir archivo", sin salir de esta pantalla.
+  const showInstallCta = activeStep.install === true && canInstall
 
   function selectPlatform(next: ExportTutorialPlatform) {
     setPlatform(next)
     setStep(0)
   }
 
-  return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card export-tutorial-modal" onClick={(event) => event.stopPropagation()}>
-        <CrossButton label={copy.close} onClick={onClose} className="close-button" />
+  function handlePrimaryAction() {
+    if (showInstallCta) {
+      void install()
+      return
+    }
+    onPick()
+  }
 
+  return (
+    <ModalShell onDismiss={onClose} label={copy.title} className="export-tutorial-modal" closeLabel={copy.close}>
         <p className="eyebrow">{copy.eyebrow}</p>
         <h2>{copy.title}</h2>
 
@@ -79,7 +94,15 @@ export function ExportTutorialModal({
           </div>
 
           <div className="tutorial-art">
-            <ExportTutorialArt step={step} platform={platform} chrome />
+            {activeStep.install ? (
+              <div className="tutorial-install-panel">
+                <img src="/icon-192.png" alt="" className="tutorial-install-icon" width={64} height={64} />
+                {isInstalled ? <p className="install-app-note">{copy.installDone}</p> : null}
+                {!isInstalled && !canInstall ? <p className="install-app-note">{copy.installUnavailable}</p> : null}
+              </div>
+            ) : (
+              <ExportTutorialArt step={step} platform={platform} chrome />
+            )}
           </div>
         </div>
 
@@ -89,12 +112,11 @@ export function ExportTutorialModal({
             <button type="button" className="ghost-button" onClick={onPick}>
               {copy.skip}
             </button>
-            <button type="button" className="primary-button" onClick={onPick}>
-              {copy.pick}
+            <button type="button" className="primary-button" onClick={handlePrimaryAction}>
+              {showInstallCta ? copy.installCta : copy.pick}
             </button>
           </div>
         </div>
-      </section>
-    </div>
+    </ModalShell>
   )
 }

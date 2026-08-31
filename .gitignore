@@ -11,3 +11,9 @@ backend/*.db-wal
 .claude/settings.local.json
 .vercel
 .env*
+
+# Artefactos de los tests
+backend.Tests/bin/
+backend.Tests/obj/
+backend.Tests/TestResults/
+frontend/coverage/

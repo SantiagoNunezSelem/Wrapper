@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
 import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
+import { useModalDismiss } from '../../components/useModalDismiss'
+import { usePwaInstall } from '../../lib/usePwaInstall'
 
 /**
  * El tutorial de exportación, como hoja — se abre al tocar "Subir chat" sin
@@ -19,23 +21,18 @@ export function ExportTutorialSheet({
 }) {
   const [platform, setPlatform] = useState<ExportTutorialPlatform>('ios')
   const [step, setStep] = useState(0)
+  const { canInstall, isInstalled, install } = usePwaInstall()
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.body.style.overflow = previous
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [onClose])
+  // Escape, scroll de fondo y foco: los mismos que el resto de los diálogos.
+  const panelRef = useModalDismiss<HTMLElement>(onClose)
 
   const steps = copy.steps[platform]
   const active = steps[step]
   const isLast = step === steps.length - 1
+  // Mientras el navegador tenga el prompt nativo listo, ese es el CTA principal;
+  // apenas se usa (aceptado o no — `install()` limpia `canInstall` en los dos
+  // casos), el botón vuelve solo a "Elegir archivo", sin salir de esta pantalla.
+  const showInstallCta = active.install === true && canInstall
 
   function selectPlatform(next: ExportTutorialPlatform) {
     setPlatform(next)
@@ -43,6 +40,10 @@ export function ExportTutorialSheet({
   }
 
   function handlePrimary() {
+    if (showInstallCta) {
+      void install()
+      return
+    }
     if (isLast) {
       onPick()
     } else {
@@ -54,7 +55,7 @@ export function ExportTutorialSheet({
     <div className="m-layer" role="dialog" aria-modal="true" aria-label={copy.title}>
       <button type="button" className="m-scrim" onClick={onClose} aria-label={copy.close} />
 
-      <section className="m-sheet">
+      <section className="m-sheet" ref={panelRef}>
         <span className="m-grabber" aria-hidden="true" />
 
         <header className="m-sheet-head">
@@ -78,7 +79,15 @@ export function ExportTutorialSheet({
           </div>
 
           <div className="m-tutorial-art">
-            <ExportTutorialArt step={step} platform={platform} chrome={false} />
+            {active.install ? (
+              <div className="m-tutorial-install-panel">
+                <img src="/icon-192.png" alt="" className="tutorial-install-icon" width={64} height={64} />
+                {isInstalled ? <p className="install-app-note">{copy.installDone}</p> : null}
+                {!isInstalled && !canInstall ? <p className="install-app-note">{copy.installUnavailable}</p> : null}
+              </div>
+            ) : (
+              <ExportTutorialArt step={step} platform={platform} chrome={false} />
+            )}
           </div>
 
           <div className="m-tutorial-step-copy">
@@ -107,7 +116,7 @@ export function ExportTutorialSheet({
               ‹
             </button>
             <button type="button" className="primary-button" onClick={handlePrimary}>
-              {isLast ? copy.pick : copy.next}
+              {showInstallCta ? copy.installCta : isLast ? copy.pick : copy.next}
             </button>
           </div>
           <p className="m-privacy-note">{copy.privacy}</p>

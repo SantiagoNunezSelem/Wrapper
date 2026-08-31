@@ -87,6 +87,10 @@ builder.Services.AddSingleton<ClientFingerprint>();
 builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.AddScoped<SubscriptionService>();
+// The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
+// notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
+// there are no credentials.
+builder.Services.AddHostedService<SubscriptionReconciliationService>();
 builder.Services.AddOpenApi();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -165,6 +169,29 @@ builder.Services.AddRateLimiter(options =>
             ReplenishmentPeriod = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
             AutoReplenishment = true,
+        }));
+
+    // Creating a share writes a row holding a few hundred kilobytes of JSON, so this is the
+    // endpoint that grows the database on demand. A person shares a chat once and maybe
+    // re-shares it after unlocking another metric; nobody legitimately does it in a loop.
+    options.AddPolicy("share", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(10),
+            QueueLimit = 0,
+        }));
+
+    // Reading one is the only anonymous GET in the API, and a link that goes around a big
+    // group chat genuinely does get opened in bursts. Generous enough never to bother real
+    // traffic, tight enough that scraping the slug space stays pointless — which matters
+    // here more than elsewhere, since this route answers without a session at all.
+    options.AddPolicy("share-read", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
         }));
 });
 
@@ -438,6 +465,38 @@ app.MapPost("/api/analyses", [Authorize] async (
     return Results.Created($"/api/analyses/{analysis.Id}", SavedAnalysisResponse.FromEntity(analysis));
 });
 
+// Borrar un análisis guardado.
+//
+// Hasta acá el historial sólo crecía: no había forma de sacar una subida
+// equivocada, un chat que el usuario no quiere ver listado, ni de hacer lugar
+// cuando la cuenta llega al tope de SavedAnalysisLimits.MaxAnalysesPerUser.
+//
+// El filtro por UserId va en el WHERE, no en un chequeo posterior: así una cuenta
+// que adivine el id de otra recibe exactamente el mismo 404 que si el análisis no
+// existiera, sin que la respuesta le confirme que ese id existe.
+app.MapDelete("/api/analyses/{id:guid}", [Authorize] async (
+    Guid id,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var userId = principal.GetRequiredUserId();
+
+    var analysis = await db.Analyses.FirstOrDefaultAsync(
+        item => item.Id == id && item.UserId == userId,
+        cancellationToken);
+
+    if (analysis is null)
+    {
+        return Results.NotFound(new { message = "Analysis not found.", code = "analysis_not_found" });
+    }
+
+    db.Analyses.Remove(analysis);
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.NoContent();
+});
+
 // ---------------------------------------------------------------------------
 // AI-backed Pro metrics
 //
@@ -464,6 +523,39 @@ app.MapPost("/api/ai/consent", [Authorize] async (
     }
 
     user.AiConsentAtUtc ??= DateTime.UtcNow;
+    user.UpdatedAtUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
+});
+
+app.MapPost("/api/user/language", [Authorize] async (
+    UpdateLanguageRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    IOptions<GoogleAiOptions> googleAi,
+    IOptions<MercadoPagoOptions> mercadoPago,
+    CancellationToken cancellationToken) =>
+{
+    // Only "es"/"en" exist in the frontend's Language type — anything else is either a
+    // bug on the caller's side or a tampered request, and persisting it would silently
+    // break every future login for this user.
+    if (request.Language is not ("es" or "en"))
+    {
+        return Results.BadRequest(new { message = "Language must be 'es' or 'en'." });
+    }
+
+    var userId = principal.GetRequiredUserId();
+    var user = await db.Users
+        .Include(candidate => candidate.Subscriptions)
+        .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    user.PreferredLanguage = request.Language;
     user.UpdatedAtUtc = DateTime.UtcNow;
     await db.SaveChangesAsync(cancellationToken);
 
@@ -574,6 +666,7 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
 
 app.MapSubscriptionEndpoints();
 app.MapFreeUnlockEndpoints();
+app.MapShareEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);
@@ -611,8 +704,26 @@ static void LogPaymentsConfiguration(WebApplication app)
     {
         logger.LogWarning(
             "MercadoPago:WebhookSecret is empty — every incoming notification will be rejected, so " +
-            "subscriptions will never activate. Copy the secret shown when registering the webhook URL.");
+            "subscriptions will never activate. Copy the secret shown when registering the webhook URL. " +
+            "In the panel, tick all three of: payment, subscription_preapproval and " +
+            "subscription_authorized_payment. Leaving 'payment' off is the usual reason a paid " +
+            "subscription stays on 'pendiente'.");
     }
+
+    if (!mercadoPago.HasPublicBackUrl)
+    {
+        logger.LogWarning(
+            "MercadoPago:BackUrl is {BackUrl}, which Mercado Pago will not redirect back to — the payer " +
+            "lands on mercadopago.com instead of /suscripcion, so nothing re-syncs right after paying. " +
+            "Expected in development; in production set it to the site's own origin.",
+            mercadoPago.BackUrl);
+    }
+
+    logger.LogInformation(
+        mercadoPago.ReconcileIntervalMinutes > 0
+            ? "Subscription reconciliation runs every {Interval} min, so a lost webhook self-heals."
+            : "Subscription reconciliation is OFF (MercadoPago:ReconcileIntervalMinutes = {Interval}); a lost webhook will need a manual 'Actualizar estado'.",
+        mercadoPago.ReconcileIntervalMinutes);
 }
 
 /// <summary>
@@ -941,7 +1052,8 @@ record CurrentUserResponse(
     string SubscriptionState,
     bool HasAiConsent,
     bool AiEnabled,
-    bool PaymentsEnabled)
+    bool PaymentsEnabled,
+    string PreferredLanguage)
 {
     /// <param name="aiEnabled">
     /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
@@ -964,8 +1076,11 @@ record CurrentUserResponse(
             SubscriptionAccessEvaluator.GetVisibleState(user),
             user.AiConsentAtUtc is not null,
             aiEnabled,
-            paymentsEnabled);
+            paymentsEnabled,
+            user.PreferredLanguage);
 }
+
+record UpdateLanguageRequest(string Language);
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {
@@ -983,3 +1098,13 @@ static class ClaimsPrincipalExtensions
             : throw new UnauthorizedAccessException("Missing user identifier claim.");
     }
 }
+
+/// <summary>
+/// Hace público el <c>Program</c> que el compilador genera para los top-level statements.
+///
+/// Es lo que necesita <c>WebApplicationFactory&lt;Program&gt;</c> para levantar esta misma
+/// app en memoria desde el proyecto de tests, con su pipeline real —autenticación, rate
+/// limiting, serialización— en vez de llamar a los handlers por separado. No agrega
+/// ningún miembro ni cambia nada del arranque.
+/// </summary>
+public partial class Program;

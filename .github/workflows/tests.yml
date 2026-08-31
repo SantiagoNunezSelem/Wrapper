@@ -1,0 +1,135 @@
+name: Tests
+
+# Corre en cada PR (contra cualquier rama) y en cada push a main. Los PR contra ramas
+# que no son main también se verifican a propósito: una rama de trabajo larga se rompe
+# igual, y enterarse recién al abrir el PR final es enterarse tarde.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un push nuevo sobre el mismo PR cancela la corrida anterior: no tiene sentido pagar
+# minutos por verificar un commit que ya quedó atrás.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Misma zona horaria que fija vitest.config.ts. Media app formatea fechas con Intl
+  # sobre horas locales y varias métricas cortan el día a las 6am: sin fijarla, la misma
+  # aserción daría distinto acá que en la máquina de quien la escribió.
+  TZ: America/Argentina/Buenos_Aires
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint
+        # `--max-warnings` en vez de `--deny-warnings`: el repo ya tenía 5 advertencias
+        # antes de estos tests, y bloquear el PR por ellas sería empezar en rojo por algo
+        # ajeno. Con el tope fijo, no pueden aparecer más; bajarlo a 0 es el paso siguiente
+        # una vez que se limpien (ver "Hallazgos" en TESTING.md).
+        run: npx oxlint --max-warnings=5
+
+      - name: Typecheck y build
+        run: npm run build
+
+      - name: Tests con cobertura
+        run: npm run test:coverage
+
+      - name: Guardar informe de cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cobertura-frontend
+          path: frontend/coverage
+          retention-days: 7
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restaurar
+        run: dotnet restore Wrapper.sln
+
+      - name: Compilar en modo estricto
+        # Las advertencias del compilador son errores: es la forma de que una referencia
+        # nula posible o un `await` olvidado no lleguen a main.
+        run: dotnet build Wrapper.sln --no-restore -warnaserror
+
+      - name: Tests con cobertura
+        run: >
+          dotnet test Wrapper.sln
+          --no-build
+          --logger "trx;LogFileName=backend.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory backend.Tests/TestResults
+
+      - name: Guardar informe de cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cobertura-backend
+          path: backend.Tests/TestResults
+          retention-days: 7
+
+  # Job aparte: junta las dos coberturas, escribe la tabla en el resumen del PR y hace
+  # cumplir los umbrales por zona. Corre aunque alguno de los dos falle, para que el
+  # resumen se vea igual (`if: always()`), pero sólo aplica el portero si ambos pasaron.
+  cobertura:
+    name: Cobertura
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cobertura-frontend
+          path: frontend/coverage
+        continue-on-error: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cobertura-backend
+          path: backend.Tests/TestResults
+        continue-on-error: true
+
+      - name: Resumen y umbrales
+        run: >
+          node scripts/coverage-gate.mjs
+          ${{ (needs.frontend.result == 'success' && needs.backend.result == 'success') && '' || '--report-only' }}

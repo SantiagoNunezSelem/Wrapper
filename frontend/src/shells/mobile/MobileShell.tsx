@@ -1,13 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AiConsentModal } from '../../components/AiConsentModal'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { DevToolbar } from '../../components/DevToolbar'
+import { ErrorBanner } from '../../components/ErrorBanner'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { LoadingOverlay } from '../../components/LoadingOverlay'
 import { LockedPanel } from '../../components/LockedPanel'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
+import { RenameDialog } from '../../components/RenameDialog'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
+import { useModalDismiss } from '../../components/useModalDismiss'
 import { SubscriptionPage } from '../../components/SubscriptionPage'
+import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import type { Vistazo } from '../../app/useVistazo'
 import type { MetricCard } from '../../types'
@@ -39,6 +44,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     user,
     token,
     hasGoogleClientId,
+    activeChat,
     analysis,
     savedAnalyses,
     interleavedMetrics,
@@ -80,6 +86,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleToggleDevRecaptchaV3,
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
+    createStoryLink,
     navigateTo,
     goToSubscriptionPage,
     requestUnlock,
@@ -91,14 +98,31 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     handleLogout,
     handleConsentAccept,
     handleCancelSubscription,
+    handlePauseSubscription,
+    handleResumeSubscription,
     handleRefreshSubscription,
     openSavedAnalysis,
+    persistWordCloudEdit,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
   } = vistazo
 
   const [view, setView] = useState<MobileView>('home')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [openMetricId, setOpenMetricId] = useState<string | null>(null)
   const [isStoryOpen, setIsStoryOpen] = useState(false)
+  /* El detalle se abrió desde el recorrido, no desde la lista. Cambia dos cosas:
+     la hoja se monta por encima de la historia (que queda congelada abajo en su
+     misma pantalla) y pierde el paso a la métrica siguiente. */
+  const [isDetailOverStory, setIsDetailOverStory] = useState(false)
 
   /* Terminar de analizar un chat lleva sola a las métricas: el usuario acaba de
      subir el archivo justamente para verlas, hacerle tocar una pestaña sería
@@ -117,17 +141,54 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     }
   }, [analysis, view])
 
+  /* Baja a las 25 filas memoizadas — ver el memo de MetricRow. */
+  const openMetricFromList = useCallback((card: MetricCard) => {
+    setOpenMetricId(card.id)
+    setIsDetailOverStory(false)
+  }, [])
+
   const openMetricIndex = useMemo(
     () => (openMetricId === null ? -1 : interleavedMetrics.findIndex((card) => card.id === openMetricId)),
     [openMetricId, interleavedMetrics],
   )
   const openMetric = openMetricIndex >= 0 ? interleavedMetrics[openMetricIndex] : null
 
+  // Called here rather than inside MetricSheet so its state survives the sheet
+  // closing and reopening — this shell stays mounted for the whole session, the
+  // sheet doesn't. `resetKey` sticks to the last opened card's id instead of
+  // following `openMetric` straight through `null` while the sheet is closed, so
+  // it only actually clears the editor when the *next* card opened is a different
+  // one, or `sourceHash` changes (a new upload replacing the chat).
+  const wordCloudCardIdRef = useRef<string | null>(null)
+  if (openMetric) {
+    wordCloudCardIdRef.current = openMetric.id
+  }
+  const wordCloudEditor = useEditableWordCloud({
+    chart: openMetric?.basic?.chart,
+    series: openMetric?.detail?.series,
+    messages: activeChat?.messages,
+    resetKey: `${analysis?.sourceHash ?? ''}:${wordCloudCardIdRef.current ?? ''}`,
+    copy: copy.wordCloudSearch,
+    onEdit: (chart, series) => {
+      if (wordCloudCardIdRef.current) {
+        void persistWordCloudEdit(wordCloudCardIdRef.current, chart, series)
+      }
+    },
+  })
+
   function goTo(next: MobileView) {
     setIsDrawerOpen(false)
     setOpenMetricId(null)
+    setIsDetailOverStory(false)
     setIsStoryOpen(false)
     setView(next)
+  }
+
+  /** Cierra el detalle. Si se había abierto desde el recorrido, éste sigue
+   * montado abajo y vuelve a correr solo desde donde había quedado. */
+  function closeDetail() {
+    setOpenMetricId(null)
+    setIsDetailOverStory(false)
   }
 
   const subscriptionLabel =
@@ -184,6 +245,12 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           onCancel={() => {
             void handleCancelSubscription()
           }}
+          onPause={() => {
+            void handlePauseSubscription()
+          }}
+          onResume={() => {
+            void handleResumeSubscription()
+          }}
           onRefresh={() => {
             void handleRefreshSubscription()
           }}
@@ -221,7 +288,9 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           </header>
 
           {!hasGoogleClientId ? <p className="warning-banner m-banner">{copy.setupWarning}</p> : null}
-          {error ? <p className="error-banner m-banner">{error}</p> : null}
+          {error ? (
+            <ErrorBanner message={error} dismissLabel={copy.dismissError} onDismiss={() => setError('')} className="m-banner" />
+          ) : null}
 
           <main className="m-main">
             {view === 'home' ? (
@@ -232,6 +301,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 busyMessage={busyMessage}
                 onUpload={requestUpload}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSeeAll={() => goTo('history')}
               />
             ) : null}
@@ -246,7 +317,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                   generatedAt={generatedAt}
                   showReprocessHint={showReprocessHint}
                   ai={aiPanel}
-                  onOpenMetric={(card: MetricCard) => setOpenMetricId(card.id)}
+                  onOpenMetric={openMetricFromList}
                   onStartStory={() => setIsStoryOpen(true)}
                 />
               ) : (
@@ -270,6 +341,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 language={language}
                 user={user}
                 onOpenSaved={openSavedAnalysis}
+                onDeleteSaved={requestDeleteAnalysis}
+                onRenameSaved={requestRenameAnalysis}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onUpload={requestUpload}
               />
@@ -326,13 +399,14 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               metrics={interleavedMetrics}
               chatName={analysis.chatName}
               copy={copy}
+              // El detalle se abre ENCIMA del recorrido, que se queda quieto en
+              // su pantalla mientras tanto — cerrarlo devuelve al usuario ahí.
+              suspended={isDetailOverStory && openMetric !== null}
+              share={{ createLink: createStoryLink }}
               onClose={() => setIsStoryOpen(false)}
               onOpenDetail={(card) => {
-                // Salir del recorrido al abrir el detalle: volver después a la
-                // misma pantalla del recorrido sería una pila de dos capas sobre
-                // una pantalla de 6 pulgadas.
-                setIsStoryOpen(false)
                 setOpenMetricId(card.id)
+                setIsDetailOverStory(true)
               }}
               onUnlock={() => {
                 setIsStoryOpen(false)
@@ -350,7 +424,10 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               ai={aiPanel}
               freeUnlock={freeUnlockFor(openMetric)}
               isRevealingFreeUnlock={revealingFreeUnlockId === openMetric.id}
-              onClose={() => setOpenMetricId(null)}
+              overStory={isDetailOverStory}
+              messages={activeChat?.messages}
+              wordCloudEditor={wordCloudEditor}
+              onClose={closeDetail}
               onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {
                 const next = interleavedMetrics[openMetricIndex + 1]
@@ -363,44 +440,35 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       )}
 
       {isAuthModalOpen ? (
-        <div className="m-layer">
-          <button type="button" className="m-scrim" onClick={() => setIsAuthModalOpen(false)} aria-label={copy.close} />
-          <section className="m-sheet is-short">
-            <span className="m-grabber" aria-hidden="true" />
-            <header className="m-sheet-head">
-              <div className="m-sheet-title">
-                <h2>{needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}</h2>
-                <p>{needsRecaptchaChallenge ? copy.recaptchaChallengeBody : analysis ? copy.loginAfterUpload : copy.saveInfo}</p>
-              </div>
-              <button type="button" className="m-sheet-close" onClick={() => setIsAuthModalOpen(false)} aria-label={copy.close}>
-                ✕
-              </button>
-            </header>
-            <div className="m-sheet-body m-center">
-              {needsRecaptchaChallenge ? (
-                <RecaptchaChallenge
-                  siteKey={recaptchaSiteKeyV2}
-                  onSolved={(token) => {
-                    void handleRecaptchaChallengeSuccess(token)
-                  }}
-                />
-              ) : hasGoogleClientId ? (
-                <ResponsiveGoogleLogin
-                  onSuccess={(credentialResponse) => {
-                    void handleGoogleSuccess(credentialResponse)
-                  }}
-                  onError={() => setError(copy.loadError)}
-                />
-              ) : null}
-              {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
-            </div>
-          </section>
-        </div>
+        <AuthSheet
+          title={needsRecaptchaChallenge ? copy.recaptchaChallengeTitle : copy.loginHeadline}
+          body={needsRecaptchaChallenge ? copy.recaptchaChallengeBody : analysis ? copy.loginAfterUpload : copy.saveInfo}
+          closeLabel={copy.close}
+          onClose={() => setIsAuthModalOpen(false)}
+        >
+          {needsRecaptchaChallenge ? (
+            <RecaptchaChallenge
+              siteKey={recaptchaSiteKeyV2}
+              onSolved={(token) => {
+                void handleRecaptchaChallengeSuccess(token)
+              }}
+            />
+          ) : hasGoogleClientId ? (
+            <ResponsiveGoogleLogin
+              onSuccess={(credentialResponse) => {
+                void handleGoogleSuccess(credentialResponse)
+              }}
+              onError={() => setError(copy.loadError)}
+            />
+          ) : null}
+          {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
+        </AuthSheet>
       ) : null}
 
       {isVipPopoverOpen ? (
         <VipUnlockPopover
           copy={{ ...copy.subscriptionPage, ...copy.vipPopover }}
+          language={language}
           user={user}
           token={token}
           plan={subscription?.plan ?? null}
@@ -436,6 +504,44 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
         />
       ) : null}
 
+      {pendingDeleteAnalysis ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.deleteSavedTitle,
+            body: copy.deleteSavedConfirm.replace('{chat}', pendingDeleteAnalysis.chatName),
+            confirm: copy.deleteSavedCta,
+            cancel: copy.deleteSavedCancel,
+            busy: copy.deleting,
+            close: copy.close,
+          }}
+          isBusy={isDeletingAnalysis}
+          onConfirm={() => {
+            void confirmDeleteAnalysis()
+          }}
+          onCancel={cancelDeleteAnalysis}
+        />
+      ) : null}
+
+      {pendingRenameAnalysis ? (
+        <RenameDialog
+          copy={{
+            title: copy.renameSavedTitle,
+            label: copy.renameSavedLabel,
+            placeholder: copy.renameSavedPlaceholder,
+            save: copy.renameSavedCta,
+            cancel: copy.renameSavedCancel,
+            busy: copy.renaming,
+            close: copy.close,
+          }}
+          initialValue={pendingRenameAnalysis.chatName}
+          isBusy={isRenamingAnalysis}
+          onSave={(chatName) => {
+            void confirmRenameAnalysis(chatName)
+          }}
+          onCancel={cancelRenameAnalysis}
+        />
+      ) : null}
+
       {isConsentModalOpen ? (
         <AiConsentModal
           copy={{ ...copy.consent, close: copy.close }}
@@ -461,6 +567,45 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
       {busyMessage ? (
         <LoadingOverlay title={busyMessage} subtitle={copy.overlaySubtitle} progress={analysisProgress} />
       ) : null}
+    </div>
+  )
+}
+
+
+/* La hoja de login, separada del shell nada más que para que `useModalDismiss` se
+   monte y se desmonte con ella: un hook no puede vivir detrás del ternario que la
+   muestra, y es justo al abrirse cuando tiene que llevarse el foco adentro. */
+function AuthSheet({
+  title,
+  body,
+  closeLabel,
+  onClose,
+  children,
+}: {
+  title: string
+  body: string
+  closeLabel: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  const panelRef = useModalDismiss<HTMLElement>(onClose)
+
+  return (
+    <div className="m-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <button type="button" className="m-scrim" onClick={onClose} aria-label={closeLabel} />
+      <section className="m-sheet is-short" ref={panelRef}>
+        <span className="m-grabber" aria-hidden="true" />
+        <header className="m-sheet-head">
+          <div className="m-sheet-title">
+            <h2>{title}</h2>
+            <p>{body}</p>
+          </div>
+          <button type="button" className="m-sheet-close" onClick={onClose} aria-label={closeLabel}>
+            ✕
+          </button>
+        </header>
+        <div className="m-sheet-body m-center">{children}</div>
+      </section>
     </div>
   )
 }

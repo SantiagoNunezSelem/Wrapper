@@ -1,7 +1,8 @@
 import { type CredentialResponse } from '@react-oauth/google'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { AiPanelProps } from '../components/AiStatePanel'
 import type { FreeUnlockPrompt } from '../components/LockedPanel'
+import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
 import { toAcceptedMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
@@ -9,18 +10,23 @@ import {
   analyzeAiMetrics,
   ApiError,
   cancelSubscription,
+  createShare,
+  deleteAnalysis,
   getCurrentUser,
   getFreeUnlocks,
   getSubscription,
   grantAiConsent,
   listAnalyses,
   loginWithGoogle,
+  pauseSubscription,
   resetDevFreeUnlocks,
+  resumeSubscription,
   retryAiMetrics,
   saveAnalysis,
   spendFreeUnlock,
   syncSubscription,
   toggleDevSubscription,
+  updatePreferredLanguage,
 } from '../lib/api'
 import {
   isAiDisabled as readAiDisabled,
@@ -34,26 +40,36 @@ import { executeRecaptchaV3 } from '../lib/recaptcha'
 import {
   aiMetricIds,
   gateAnalysis,
+  gateForStorage,
   isAiMetricId,
+  regateReplayedFreeMetrics,
   type AiCardStates,
   type AiMetricId,
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { buildSharePayload, readShareSlug, shareUrlFor } from '../lib/shareStory'
+import { takeSharedFile } from '../lib/shareTargetFile'
 import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
   AiMetricStatus,
   AnalysisBundle,
+  ChartData,
   ChatMessage,
   FreeUnlockState,
   Language,
   MetricCard as MetricCardData,
+  MetricSeriesEntry,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
 } from '../types'
 
 const authTokenKey = 'wrapper-crm-auth-token'
+
+/** How many times the account screen re-checks a just-returned checkout before handing
+ * the job to the server-side reconciler. Five attempts spans about 90 seconds. */
+const checkoutPollAttempts = 5
 
 export interface ActiveChat {
   chatName: string
@@ -79,6 +95,16 @@ export function useVistazo() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [token, setToken] = useState<string | null>(localStorage.getItem(authTokenKey))
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
+  // El análisis para el que hay una confirmación de borrado abierta. Se guarda el id
+  // y la fila se busca por él, así una lista que se refresca no deja el diálogo
+  // hablando de algo que ya no está.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [isDeletingAnalysis, setIsDeletingAnalysis] = useState(false)
+  // Mismo criterio que pendingDeleteId: se guarda el id, no el objeto, así una fila
+  // que se actualiza (por ejemplo por este mismo renombre) no deja el diálogo
+  // mostrando un nombre viejo.
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+  const [isRenamingAnalysis, setIsRenamingAnalysis] = useState(false)
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
   // Two sources for what's on screen: a live upload (kept as an ungated core so VIP
   // and AI state can be re-applied for free) and a bundle replayed from history.
@@ -119,8 +145,13 @@ export function useVistazo() {
   const [revealingFreeUnlockId, setRevealingFreeUnlockId] = useState<string | null>(null)
 
   const [subscription, setSubscription] = useState<SubscriptionOverview | null>(null)
-  const [subscriptionAction, setSubscriptionAction] = useState<'cancel' | 'refresh' | null>(null)
+  const [subscriptionAction, setSubscriptionAction] = useState<SubscriptionBusyAction | null>(null)
   const [subscriptionError, setSubscriptionError] = useState('')
+  // Re-checks left after landing back from Mercado Pago. Counted down rather than run on
+  // an interval so the polling is bounded: a payment that has not settled in a minute is
+  // not going to settle while someone stares at it, and the background reconciler owns it
+  // from there.
+  const [checkoutPollsLeft, setCheckoutPollsLeft] = useState(0)
   // The "Desbloquear VIP" popover — plan info and the Card Payment Brick, inline, no
   // navigation. Separate from `route`, which only ever points at the full account page.
   const [isVipPopoverOpen, setIsVipPopoverOpen] = useState(false)
@@ -131,6 +162,12 @@ export function useVistazo() {
   const [route, setRoute] = useState<'app' | 'subscription'>(() =>
     window.location.pathname === '/suscripcion' ? 'subscription' : 'app',
   )
+
+  // A shared story (`/s/{slug}`) is read once, at load, and never changes for the life of
+  // the tab: it is a public page someone opened from a link, not somewhere the app
+  // navigates to. Kept out of `route` for that reason — that state is about which screen
+  // of the app is showing, and this is the case where the app is not showing at all.
+  const shareSlug = useMemo(() => readShareSlug(window.location.pathname), [])
 
   // Dev-only switches. `showDevTools` is resolved once from the hostname so a production
   // build never even renders the toolbar.
@@ -188,23 +225,38 @@ export function useVistazo() {
     return aiStates
   }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, aiStates])
 
-  // Only the unlocks bought for the chat currently on screen. The hash check is what
-  // keeps an answer that lands after the user has already switched chats from opening a
-  // detail on the new one that nobody paid for.
+  // Only the unlocks bought for the chat currently on screen — a live upload or a
+  // replay from history, whichever is showing. The hash check is what keeps an answer
+  // that lands after the user has already switched chats from opening a detail on the
+  // new one that nobody paid for.
+  const currentSourceHash = activeChat?.sourceHash ?? replayedAnalysis?.sourceHash
   const freeUnlockedIds = useMemo(() => {
-    if (!freeUnlocks || !activeChat || freeUnlocks.sourceHash !== activeChat.sourceHash) {
+    if (!freeUnlocks || !currentSourceHash || freeUnlocks.sourceHash !== currentSourceHash) {
       return new Set<string>()
     }
 
     return new Set(freeUnlocks.unlockedMetricIds)
-  }, [freeUnlocks, activeChat])
+  }, [freeUnlocks, currentSourceHash])
 
   // Either a live upload (gated on the fly, so VIP, an AI verdict or a free unlock
-  // landing mid-session costs nothing to reflect) or a bundle replayed from history
-  // exactly as it was saved.
-  const analysis = useMemo(
-    () => replayedAnalysis ?? (core ? gateAnalysis(core, hasVipAccess, aiCardStates, freeUnlockedIds) : null),
-    [replayedAnalysis, core, hasVipAccess, aiCardStates, freeUnlockedIds],
+  // landing mid-session costs nothing to reflect) or a bundle replayed from history.
+  // The replay isn't shown exactly as saved any more: free-tier detail is stored in
+  // full (see `gateForStorage`), so it still has to be re-locked to what today's
+  // allowance actually bought — VIP-tier cards pass through untouched, since those
+  // were never stored ungated to begin with.
+  const analysis = useMemo(() => {
+    if (replayedAnalysis) {
+      return regateReplayedFreeMetrics(replayedAnalysis, freeUnlockedIds)
+    }
+    return core ? gateAnalysis(core, hasVipAccess, aiCardStates, freeUnlockedIds) : null
+  }, [replayedAnalysis, core, hasVipAccess, aiCardStates, freeUnlockedIds])
+
+  // What actually gets written to the backend when this chat is saved — see
+  // `gateForStorage` for why it differs from `analysis`. Only meaningful for a live
+  // chat; a replay is never re-persisted from its own (already re-locked) display copy.
+  const storageAnalysis = useMemo(
+    () => (core ? gateForStorage(core, hasVipAccess, aiCardStates) : null),
+    [core, hasVipAccess, aiCardStates],
   )
 
   useEffect(() => {
@@ -215,6 +267,13 @@ export function useVistazo() {
     void hydrateSession(token)
   }, [token])
 
+  // El idioma del documento tiene que seguir al de la interfaz: con `lang="en"` fijo,
+  // un lector de pantalla leía todo el español con voz inglesa y el navegador ofrecía
+  // traducir una página que ya estaba en el idioma del usuario.
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
+
   // Keeps `route` in sync with the back/forward buttons — pushState alone only updates
   // the address bar, not this state.
   useEffect(() => {
@@ -224,6 +283,41 @@ export function useVistazo() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // El manifest declara `share_target`: cuando alguien comparte un archivo desde otra
+  // app (por ejemplo, "Exportar chat" en WhatsApp) con Vistazo ya instalada, `sw.js`
+  // intercepta esa navegación, guarda el archivo en IndexedDB y redirige acá con esta
+  // marca — así entra por el mismo camino que una carga manual, con toda la UI de
+  // progreso y errores ya resuelta.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('share-target') !== '1') {
+      return
+    }
+
+    params.delete('share-target')
+    const query = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+
+    void takeSharedFile().then(({ file, debug }) => {
+      // Sólo a consola: sirve para diagnosticar qué llegó realmente en el POST del
+      // share sin cable ni PC a mano, pero es información nuestra, no del usuario — no
+      // pertenece al mensaje de error que se muestra en pantalla.
+      const debugSuffix = debug ? ` [debug: ${JSON.stringify(debug)}]` : ''
+
+      if (debug) {
+        console.info('[share-target]', debug)
+      }
+
+      if (file) {
+        void processFile(file, debugSuffix)
+      } else {
+        setError(copy.shareTargetError)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function navigateTo(path: string) {
@@ -346,18 +440,18 @@ export function useVistazo() {
   }, [core, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   useEffect(() => {
-    if (!pendingPersist || !analysis) {
+    if (!pendingPersist || !storageAnalysis) {
       return
     }
 
     setPendingPersist(false)
 
     if (token) {
-      void persistAnalysis(token, analysis)
+      void persistAnalysis(token, storageAnalysis)
     } else {
       setIsAuthModalOpen(true)
     }
-  }, [pendingPersist, analysis, token])
+  }, [pendingPersist, storageAnalysis, token])
 
   // Localhost only: the VIP switch has to know which way it is currently pointing, and
   // that lives in the subscription overview. One extra call, never in production.
@@ -372,20 +466,20 @@ export function useVistazo() {
   // Read once the account is known and only while it lacks Pro: with Pro every detail is
   // already open, so the allowance is dead weight. It is re-read whenever `hasVipAccess`
   // flips, which is what makes a lapsed subscription fall back to the free unlocks
-  // without a reload — and whenever the chat changes, since which metrics are unlocked
-  // is a property of the chat, not of the account.
+  // without a reload — and whenever the chat on screen changes (live or replayed),
+  // since which metrics are unlocked is a property of the chat, not of the account.
   useEffect(() => {
     if (!token || !user || hasVipAccess) {
       setFreeUnlocks(null)
       return
     }
 
-    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    void loadFreeUnlocks(token, currentSourceHash)
     // Keyed on identity, entitlement and chat, not on the whole `user`/`activeChat`:
     // every unrelated refresh of those objects would otherwise re-fetch the same
     // allowance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, user?.id, hasVipAccess, activeChat?.sourceHash])
+  }, [token, user?.id, hasVipAccess, currentSourceHash])
 
   async function hydrateSession(authToken: string) {
     try {
@@ -398,11 +492,42 @@ export function useVistazo() {
       setSavedAnalyses(analyses)
     } catch (caught) {
       console.error(caught)
-      localStorage.removeItem(authTokenKey)
-      setToken(null)
-      setUser(null)
+
+      // Sólo un rechazo de identidad invalida la sesión. Un backend caído, un wifi que
+      // se cortó o un CORS mal configurado son transitorios: borrar el token ahí
+      // deslogueaba al usuario y le vaciaba el historial por un parpadeo de red, y al
+      // volver la conexión ya no había forma de recuperarlo sin volver a entrar.
+      if (caught instanceof ApiError && (caught.status === 401 || caught.status === 403)) {
+        localStorage.removeItem(authTokenKey)
+        setToken(null)
+        setUser(null)
+      }
     }
   }
+
+  // The account's saved language wins over whatever was showing before login (browser
+  // default, or a choice made while browsing anonymously): this is what makes a reload
+  // or a login on another device come back with the language the user last picked.
+  useEffect(() => {
+    if (user) {
+      setLanguage(user.preferredLanguage)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.preferredLanguage])
+
+  // The mirror direction: once logged in, toggling the language persists it to the
+  // account instead of only living in this tab. Guarded by the equality check so the
+  // sync above (server -> UI) never bounces back into a network call.
+  useEffect(() => {
+    if (!token || !user || language === user.preferredLanguage) {
+      return
+    }
+
+    updatePreferredLanguage(token, language)
+      .then(setUser)
+      .catch((caught) => console.error(caught))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language])
 
   // Midnight passed with the tab still open. Re-read rather than refill locally: the day
   // key is the server's, and guessing it here is how a UI ends up offering five unlocks
@@ -412,7 +537,7 @@ export function useVistazo() {
       return
     }
 
-    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    void loadFreeUnlocks(token, currentSourceHash)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, secondsUntilFreeUnlockReset, freeUnlocks?.resetsAtUtc])
 
@@ -446,15 +571,24 @@ export function useVistazo() {
   }
 
   /** "Desbloquear VIP" on a locked card: a quick popover, not a page — see
-   * VipUnlockPopover. Loads the plan/eligibility data it needs if signed in. */
-  function openVipPopover() {
-    setSubscriptionError('')
-    setIsVipPopoverOpen(true)
+   * VipUnlockPopover. Loads the plan/eligibility data it needs if signed in.
+   *
+   * Envuelto en useCallback porque baja como prop a las 25 tarjetas: si cambiara
+   * de identidad en cada render, el memo de MetricCard/MetricRow no serviría de
+   * nada y cualquier cambio de estado del shell volvería a dibujar los 25
+   * gráficos. */
+  const openVipPopover = useCallback(
+    () => {
+      setSubscriptionError('')
+      setIsVipPopoverOpen(true)
 
-    if (token) {
-      void loadSubscription(token)
-    }
-  }
+      if (token) {
+        void loadSubscription(token)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token],
+  )
 
   // Keeps the account screen's data fresh whenever it becomes the active route — a click
   // from inside the app (goToSubscriptionPage above never fetches itself), a page load
@@ -473,6 +607,9 @@ export function useVistazo() {
       params.delete('checkout')
       const query = params.toString()
       window.history.replaceState({}, '', `/suscripcion${query ? `?${query}` : ''}`)
+      // Arms the bounded re-check below, for the common case where Mercado Pago has not
+      // finished processing by the time the browser is back.
+      setCheckoutPollsLeft(checkoutPollAttempts)
       void handleRefreshSubscription()
     } else {
       void loadSubscription(token)
@@ -480,16 +617,26 @@ export function useVistazo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, route])
 
-  async function handleCancelSubscription() {
+  /**
+   * Cancel, pause, resume and refresh differ only in which call they make: each one
+   * answers with the whole refreshed overview, and each one can change whether this
+   * account still has Pro, so the user profile is re-read afterwards too. Written once so
+   * a new action cannot forget the profile refresh and leave the rest of the app showing
+   * VIP cards the server no longer unlocks.
+   */
+  async function runSubscriptionAction(
+    action: SubscriptionBusyAction,
+    call: (authToken: string) => Promise<SubscriptionOverview>,
+  ) {
     if (!token) {
       return
     }
 
     setSubscriptionError('')
-    setSubscriptionAction('cancel')
+    setSubscriptionAction(action)
 
     try {
-      setSubscription(await cancelSubscription(token))
+      setSubscription(await call(token))
       setUser(await getCurrentUser(token))
     } catch (caught) {
       console.error(caught)
@@ -499,24 +646,53 @@ export function useVistazo() {
     }
   }
 
-  async function handleRefreshSubscription() {
-    if (!token) {
+  function handleCancelSubscription() {
+    return runSubscriptionAction('cancel', cancelSubscription)
+  }
+
+  function handlePauseSubscription() {
+    return runSubscriptionAction('pause', pauseSubscription)
+  }
+
+  function handleResumeSubscription() {
+    return runSubscriptionAction('resume', resumeSubscription)
+  }
+
+  function handleRefreshSubscription() {
+    return runSubscriptionAction('refresh', syncSubscription)
+  }
+
+  // Coming back from Mercado Pago, the payment is often not settled yet: the browser
+  // beats the webhook, and their own processing can take another few seconds. Without
+  // this the customer lands on "pendiente" right after paying, which reads as "it did not
+  // work" — so the screen keeps asking, a few times, with growing gaps, and stops as soon
+  // as the answer changes. The background reconciler covers everything slower than this;
+  // this is only about the first minute, when someone is still watching.
+  useEffect(() => {
+    if (route !== 'subscription' || !token || checkoutPollsLeft <= 0) {
       return
     }
 
-    setSubscriptionError('')
-    setSubscriptionAction('refresh')
-
-    try {
-      setSubscription(await syncSubscription(token))
-      setUser(await getCurrentUser(token))
-    } catch (caught) {
-      console.error(caught)
-      setSubscriptionError(caught instanceof Error ? caught.message : copy.loadError)
-    } finally {
-      setSubscriptionAction(null)
+    if (subscription?.current?.status !== 'pendiente') {
+      // Settled (or there is nothing to settle) — stop asking.
+      setCheckoutPollsLeft(0)
+      return
     }
-  }
+
+    const attempt = checkoutPollAttempts - checkoutPollsLeft
+    const timer = window.setTimeout(
+      () => {
+        setCheckoutPollsLeft((left) => left - 1)
+        void handleRefreshSubscription()
+      },
+      // 3s, 6s, 12s, 24s, 48s: long enough to be worth a round trip, short enough that
+      // nobody watching decides it is broken.
+      3000 * 2 ** attempt,
+    )
+
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, token, checkoutPollsLeft, subscription?.current?.status])
 
   function handleToggleDevAi() {
     setDevAiDisabled((current) => {
@@ -666,10 +842,11 @@ export function useVistazo() {
     }
   }
 
-  /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover. */
-  function requestUnlock() {
+  /** "Desbloquear VIP" on a locked card: opens the quick popover — see openVipPopover.
+   * Estable por la misma razón que openVipPopover. */
+  const requestUnlock = useCallback(() => {
     openVipPopover()
-  }
+  }, [openVipPopover])
 
   /**
    * What a locked panel should offer for one card, or `undefined` for the plain VIP
@@ -678,18 +855,25 @@ export function useVistazo() {
    * - the viewer has no Pro access (with it, nothing is locked to begin with);
    * - the card is free-tier (the paid metrics are the product — never buyable this way);
    * - the account's allowance has been read (a signed-out visitor has none);
-   * - there is a live chat to spend it on, since an unlock belongs to one export;
-   * - the analysis is a live upload, not a replay. A bundle saved without access was
-   *   stored *already stripped* of its details, so spending an unlock on one would cost
-   *   a real unlock and reveal nothing. Those get the reprocess hint instead.
+   * - there is a chat to spend it on, live or replayed — an unlock belongs to one
+   *   export, but free-tier detail is always stored in full (see `gateForStorage`), so
+   *   a replay can spend one exactly like a live chat can;
+   * - for a replay, this card's detail actually made it into the saved bundle. A chat
+   *   saved before `gateForStorage` existed only ever wrote what was unlocked at the
+   *   time, so an unlock spent on it now would have nothing to reveal — burning a fifth
+   *   of the day's allowance for nothing. Re-uploading is the only way back for those.
    */
   function freeUnlockFor(card: MetricCardData): FreeUnlockPrompt | undefined {
-    if (hasVipAccess || card.tier !== 'free' || !freeUnlocks || !activeChat || isReplay) {
+    if (hasVipAccess || card.tier !== 'free' || !freeUnlocks || !currentSourceHash) {
       return undefined
     }
 
     // Already bought for this chat today: the detail is showing, so nothing to offer.
     if (freeUnlockedIds.has(card.id)) {
+      return undefined
+    }
+
+    if (replayedAnalysis && !replayedAnalysis.freeMetrics.find((raw) => raw.id === card.id)?.detail) {
       return undefined
     }
 
@@ -728,12 +912,11 @@ export function useVistazo() {
    */
   async function confirmFreeUnlock() {
     const metricId = pendingFreeUnlockId
+    const sourceHash = currentSourceHash
 
-    if (!token || !metricId || !activeChat) {
+    if (!token || !metricId || !sourceHash) {
       return
     }
-
-    const sourceHash = activeChat.sourceHash
 
     setPendingFreeUnlockId(null)
     setRevealingFreeUnlockId(metricId)
@@ -741,8 +924,10 @@ export function useVistazo() {
     try {
       await Promise.all([spendFreeUnlock(token, metricId, sourceHash), sleep(randomFreeUnlockDelayMs())])
       setFreeUnlocks(await getFreeUnlocks(token, sourceHash))
-      // The re-gate itself is free: `analysis` is derived from the core still in memory,
-      // so the real detail appears without recomputing a single metric.
+      // The re-gate itself is free either way: for a live chat `analysis` is derived
+      // from the core still in memory; for a replay, the detail was already stored in
+      // full (see `gateForStorage`) and just needed today's allowance to show it. No
+      // re-save needed in either case — nothing on disk changed, only what's displayed.
     } catch (caught) {
       console.error(caught)
       setError(copy.freeUnlock.error)
@@ -777,12 +962,31 @@ export function useVistazo() {
     }
   }
 
-  async function processFile(file: File) {
+  async function processFile(file: File, diagnosticSuffix = '') {
     setError('')
     setBusyMessage(copy.processing)
 
     try {
-      const { messages, sourceHash } = await parseChatFile(file)
+      const { messages, sourceHash, rawTextPreview } = await parseChatFile(file)
+
+      if (messages.length === 0) {
+        // Un archivo que "parsea" pero no matchea ni una línea es, en la práctica,
+        // indistinguible de uno vacío o corrupto — mejor un error accionable que una
+        // pantalla de 0 personas / 0 mensajes que parece haber funcionado.
+        //
+        // Los datos reales del File y el contenido que trajo van SOLO a la consola, no
+        // al mensaje que ve el usuario: ese archivo puede no ser un chat en absoluto (a
+        // alguien le puede tocar subir cualquier cosa por error) y su contenido no es
+        // nuestro para mostrar en pantalla.
+        console.warn(
+          '[processFile] empty parse result:',
+          `${file.name || 'sin nombre'} · ${file.type || 'sin tipo'} · ${file.size} bytes`,
+          rawTextPreview ? `· content: "${rawTextPreview}"` : '',
+          diagnosticSuffix,
+        )
+        throw new Error(copy.emptyChatError)
+      }
+
       setIsReplay(false)
       setReplayedAnalysis(null)
       // Per-chat state: cleared here, then rebuilt by the AI effect (which will read
@@ -843,8 +1047,12 @@ export function useVistazo() {
     const runKey = `${chat.sourceHash}:${language}`
     const isStale = () => aiAttemptedFor.current !== runKey
 
+    // Deliberately not routed through busyMessage/LoadingOverlay: the AI pass only
+    // affects the handful of AI-backed cards (each showing its own "pending" state via
+    // aiCardStates), so the rest of the dashboard should stay fully interactive while
+    // it runs in the background — whether it started automatically after upload or was
+    // triggered by hand from a card's consent/retry button.
     setIsAiBusy(true)
-    setBusyMessage(copy.analyzingAi)
 
     try {
       const candidateSets = await getAiCandidates(chat)
@@ -925,7 +1133,6 @@ export function useVistazo() {
       setError(copy.aiPartialError)
     } finally {
       setIsAiBusy(false)
-      setBusyMessage('')
     }
   }
 
@@ -974,8 +1181,176 @@ export function useVistazo() {
       })
 
       setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+    } catch (caught) {
+      // Sin este catch el rechazo quedaba sin manejar: el análisis seguía en pantalla,
+      // el historial no se actualizaba y nadie se enteraba de que el guardado falló.
+      // El caso más probable es el tope de análisis por cuenta, que tiene copy propio
+      // porque la salida es concreta (borrar uno del historial), no "probá de nuevo".
+      console.error(caught)
+      setError(
+        caught instanceof ApiError && caught.code === 'analysis_limit_reached'
+          ? copy.saveLimitError
+          : copy.saveError,
+      )
     } finally {
       setBusyMessage('')
+    }
+  }
+
+  /**
+   * Writes a word-cloud edit (a search-added word, or a removal) into the metric's
+   * saved snapshot, so reopening this chat from history later still has it — without
+   * this, an edit only ever lived in `useEditableWordCloud`'s in-memory state, which
+   * is gone the moment the chat itself is closed (the modal/sheet surviving a close
+   * only covers staying on the *same* chat — see `wordCloudEditor` in DesktopShell/
+   * MobileShell).
+   *
+   * Silent and best-effort on purpose: it runs after every add/remove while the
+   * viewer is mid-search, and a background history sync failing is not something
+   * worth interrupting them over — the edit is still right there on screen either way.
+   */
+  async function persistWordCloudEdit(
+    cardId: string,
+    chart: ChartData | undefined,
+    series: MetricSeriesEntry[] | undefined,
+  ) {
+    if (!token || !storageAnalysis || !chart) {
+      return
+    }
+
+    function patchCards(cards: MetricCardData[]): MetricCardData[] {
+      return cards.map((card) => {
+        if (card.id !== cardId) {
+          return card
+        }
+        return {
+          ...card,
+          basic: card.basic ? { ...card.basic, chart } : card.basic,
+          detail: card.detail ? { ...card.detail, series: series ?? card.detail.series } : card.detail,
+        }
+      })
+    }
+
+    // Patched onto `storageAnalysis`, not the on-screen `analysis`: the word cloud is
+    // always a VIP card, so this never touches a free-tier one, but building off the
+    // display copy would re-save free-tier metrics however they happened to be gated
+    // for this viewer right now — quietly undoing `gateForStorage`'s always-unlocked
+    // detail for every other card in the same write.
+    const updated: AnalysisBundle = {
+      ...storageAnalysis,
+      freeMetrics: patchCards(storageAnalysis.freeMetrics),
+      vipMetrics: patchCards(storageAnalysis.vipMetrics),
+    }
+
+    try {
+      const saved = await saveAnalysis(token, {
+        chatName: updated.chatName,
+        dateRangeLabel: updated.dateRangeLabel,
+        messageCount: updated.messageCount,
+        participantCount: updated.participantCount,
+        resultsJson: JSON.stringify(updated),
+        sourceHash: updated.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+    } catch {
+      // Best-effort — see the doc above.
+    }
+  }
+
+  function requestDeleteAnalysis(item: SavedAnalysis) {
+    setPendingDeleteId(item.id)
+  }
+
+  function cancelDeleteAnalysis() {
+    setPendingDeleteId(null)
+  }
+
+  /**
+   * Borra un análisis del historial.
+   *
+   * Si el que se borra es justo el que está en pantalla (un replay desde el
+   * historial), se vuelve al inicio: seguir mostrando un análisis que la cuenta ya
+   * no tiene es prometer un "Ver más" que la próxima recarga no va a cumplir.
+   */
+  async function confirmDeleteAnalysis() {
+    const id = pendingDeleteId
+
+    if (!token || !id) {
+      return
+    }
+
+    const target = savedAnalyses.find((item) => item.id === id) ?? null
+    setIsDeletingAnalysis(true)
+
+    try {
+      await deleteAnalysis(token, id)
+      setSavedAnalyses((current) => current.filter((item) => item.id !== id))
+
+      if (isReplay && target && replayedAnalysis?.sourceHash === target.sourceHash) {
+        backToLanding()
+      }
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.deleteSavedError)
+    } finally {
+      setIsDeletingAnalysis(false)
+      setPendingDeleteId(null)
+    }
+  }
+
+  function requestRenameAnalysis(item: SavedAnalysis) {
+    setPendingRenameId(item.id)
+  }
+
+  function cancelRenameAnalysis() {
+    setPendingRenameId(null)
+  }
+
+  /**
+   * Le pone nombre a un análisis guardado.
+   *
+   * No hay un endpoint propio para esto: reusa el mismo `POST /api/analyses` que ya
+   * hace upsert por `sourceHash` (ver persistAnalysis/persistWordCloudEdit más
+   * arriba), sólo que acá el que cambia es `chatName` en vez del contenido de una
+   * métrica. Se reescribe tanto la columna (lo que muestra la lista) como el
+   * `chatName` adentro del propio `resultsJson` (lo que se ve al reabrir el chat) —
+   * sin esto último, el nombre nuevo desaparecería en cuanto se reabriera desde el
+   * historial.
+   */
+  async function confirmRenameAnalysis(chatName: string) {
+    const id = pendingRenameId
+    const target = savedAnalyses.find((item) => item.id === id) ?? null
+
+    if (!token || !id || !target) {
+      return
+    }
+
+    setIsRenamingAnalysis(true)
+
+    try {
+      const bundle = { ...(JSON.parse(target.resultsJson) as AnalysisBundle), chatName }
+      const saved = await saveAnalysis(token, {
+        chatName,
+        dateRangeLabel: target.dateRangeLabel,
+        messageCount: target.messageCount,
+        participantCount: target.participantCount,
+        resultsJson: JSON.stringify(bundle),
+        sourceHash: target.sourceHash,
+      })
+      setSavedAnalyses((current) => [saved, ...current.filter((item) => item.sourceHash !== saved.sourceHash)])
+
+      // Si es justo el chat abierto ahora mismo (un replay desde el historial), el
+      // título en pantalla tiene que cambiar con él, no sólo la fila de la lista.
+      if (isReplay && replayedAnalysis?.sourceHash === target.sourceHash) {
+        setReplayedAnalysis(bundle)
+      }
+
+      setPendingRenameId(null)
+    } catch (caught) {
+      console.error(caught)
+      setError(copy.renameSavedError)
+    } finally {
+      setIsRenamingAnalysis(false)
     }
   }
 
@@ -1001,15 +1376,26 @@ export function useVistazo() {
 
   // Only Pro viewers get the AI panel; for everyone else an AI metric is just a locked
   // VIP card and the upsell is the right message.
-  const aiPanel: AiPanelProps | undefined = hasVipAccess
-    ? {
-        copy: copy.ai,
-        canRetry: Boolean(activeChat && core),
-        isBusy: isAiBusy,
-        onRetry: handleAiRetry,
-        onConsent: () => setIsConsentModalOpen(true),
-      }
-    : undefined
+  /* Memoizado por lo mismo que requestUnlock: es un objeto nuevo en cada render
+     y baja como prop a las 25 tarjetas, así que su identidad decide si el memo
+     de MetricCard/MetricRow sirve o no. */
+  const canRetryAi = Boolean(activeChat && core)
+  const aiPanel: AiPanelProps | undefined = useMemo(
+    () =>
+      hasVipAccess
+        ? {
+            copy: copy.ai,
+            canRetry: canRetryAi,
+            isBusy: isAiBusy,
+            onRetry: handleAiRetry,
+            onConsent: () => setIsConsentModalOpen(true),
+          }
+        : undefined,
+    // handleAiRetry se redeclara en cada render, pero lee todo de refs y de estado
+    // que ya están en esta lista; incluirlo anularía el memo sin agregar frescura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasVipAccess, copy.ai, canRetryAi, isAiBusy],
+  )
 
   const generatedAt = useMemo(() => {
     if (!analysis) {
@@ -1046,6 +1432,48 @@ export function useVistazo() {
     [interleavedMetrics, pendingFreeUnlockId],
   )
 
+  /** Igual que arriba: buscado, no guardado, así el diálogo nunca nombra un análisis
+   * que ya salió de la lista. */
+  const pendingDeleteAnalysis = useMemo(
+    () => savedAnalyses.find((item) => item.id === pendingDeleteId) ?? null,
+    [savedAnalyses, pendingDeleteId],
+  )
+
+  const pendingRenameAnalysis = useMemo(
+    () => savedAnalyses.find((item) => item.id === pendingRenameId) ?? null,
+    [savedAnalyses, pendingRenameId],
+  )
+
+  /**
+   * Publishes the current run as a public link and returns its URL.
+   *
+   * Shares what the viewer can *see right now* — `interleavedMetrics` is the already-gated
+   * list, so a Pro subscriber shares everything and a free account shares the free cards
+   * plus whatever today's unlocks opened. That is the whole contract of the link: it is a
+   * snapshot of this viewer's access at this moment, and it stops changing the instant it
+   * is created.
+   *
+   * Literal message text is dropped by `buildSharePayload` before the request is built, so
+   * it never leaves the browser (the server strips it again — see SharePayloadSanitizer).
+   */
+  async function createStoryLink(): Promise<string> {
+    if (!token || !analysis) {
+      throw new Error('A signed-in session and a loaded chat are required to share.')
+    }
+
+    const { slug } = await createShare(token, {
+      chatName: analysis.chatName,
+      dateRangeLabel: analysis.dateRangeLabel,
+      sourceHash: analysis.sourceHash,
+      language,
+      messageCount: analysis.messageCount,
+      participantCount: analysis.participantCount,
+      cardsJson: JSON.stringify(buildSharePayload(interleavedMetrics)),
+    })
+
+    return shareUrlFor(slug)
+  }
+
   return {
     // --- sesión e idioma ---
     language,
@@ -1059,11 +1487,16 @@ export function useVistazo() {
     activeChat,
     analysis,
     savedAnalyses,
+    pendingDeleteAnalysis,
+    isDeletingAnalysis,
+    pendingRenameAnalysis,
+    isRenamingAnalysis,
     interleavedMetrics,
     landingPreviewCards,
     selectedMetric,
     selectedMetricId,
     setSelectedMetricId,
+    persistWordCloudEdit,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -1110,6 +1543,10 @@ export function useVistazo() {
     isDevBusy,
 
     // --- acciones ---
+    // --- recorrido compartido ---
+    shareSlug,
+    createStoryLink,
+
     navigateTo,
     goToSubscriptionPage,
     openVipPopover,
@@ -1122,6 +1559,8 @@ export function useVistazo() {
     handleRecaptchaChallengeSuccess,
     handleLogout,
     handleCancelSubscription,
+    handlePauseSubscription,
+    handleResumeSubscription,
     handleRefreshSubscription,
     handleAiRetry,
     handleConsentAccept,
@@ -1130,6 +1569,12 @@ export function useVistazo() {
     handleToggleDevSubscription,
     handleResetDevFreeUnlocks,
     openSavedAnalysis,
+    requestDeleteAnalysis,
+    cancelDeleteAnalysis,
+    confirmDeleteAnalysis,
+    requestRenameAnalysis,
+    cancelRenameAnalysis,
+    confirmRenameAnalysis,
     backToLanding,
   }
 }

@@ -50,7 +50,7 @@ export function MetricList({
           <strong>{formatNumber(analysis.participantCount, language)}</strong>
           <span>{copy.participants}</span>
         </div>
-        <div>
+        <div className="m-summary-date">
           <strong>{analysis.dateRangeLabel}</strong>
           <span>{copy.generatedAt}</span>
         </div>
@@ -89,13 +89,6 @@ export function MetricList({
         </span>
       </p>
 
-      {/* ANTES:
-      <div className="m-rows">
-        {metrics.map((card) => (
-          <MetricRow key={card.id} card={card} copy={copy} ai={ai} onOpen={onOpenMetric} />
-        ))}
-      </div>
-      */}
       <div className="m-rows">
         {metrics.map((card, index) => (
           <MetricRow
@@ -104,8 +97,8 @@ export function MetricList({
             copy={copy}
             ai={ai}
             onOpen={onOpenMetric}
-            // NUEVO: escalonado sólo en las primeras filas — de ahí para abajo
-            // esperar a que le toque el turno se siente lento, no elegante.
+            // Escalonado sólo en las primeras filas — de ahí para abajo esperar
+            // a que le toque el turno se siente lento, no elegante.
             revealDelayMs={Math.min(index, 10) * 35}
           />
         ))}

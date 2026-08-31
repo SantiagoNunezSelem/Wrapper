@@ -1,6 +1,7 @@
-import { CrossButton } from './IconButton'
+import { formatMoney } from '../lib/format'
+import { ModalShell } from './ModalShell'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
-import type { SubscriptionOverview, SubscriptionPlan, UserProfile } from '../types'
+import type { Language, SubscriptionOverview, SubscriptionPlan, UserProfile } from '../types'
 
 export interface VipUnlockPopoverCopy extends PlanPurchaseFlowCopy {
   eyebrow: string
@@ -22,6 +23,7 @@ export interface VipUnlockPopoverCopy extends PlanPurchaseFlowCopy {
  */
 export function VipUnlockPopover({
   copy,
+  language,
   user,
   token,
   plan,
@@ -30,6 +32,10 @@ export function VipUnlockPopover({
   onSignIn,
 }: {
   copy: VipUnlockPopoverCopy
+  /** El precio se formatea con el idioma de la interfaz. Antes estaba clavado en
+   * `es-AR` acá adentro, así que un usuario en inglés veía el importe con el
+   * formato argentino mientras el resto de la pantalla iba en el suyo. */
+  language: Language
   user: UserProfile | null
   token: string | null
   plan: SubscriptionPlan | null
@@ -38,17 +44,14 @@ export function VipUnlockPopover({
   onSignIn: () => void
 }) {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card vip-popover" onClick={(event) => event.stopPropagation()}>
-        <CrossButton label={copy.close} onClick={onClose} className="close-button" />
-
+    <ModalShell onDismiss={onClose} label={copy.title} className="vip-popover" closeLabel={copy.close}>
         <p className="eyebrow">{copy.eyebrow}</p>
         <h2>{copy.title}</h2>
 
         <div className="vip-popover-plan-head">
           <span className="plan-card-name">{copy.planName}</span>
           <span className="plan-card-price">
-            {plan ? formatMoney(plan.amount, plan.currencyId, 'es-AR') : '—'}
+            {plan ? formatMoney(plan.amount, plan.currencyId, language === 'es' ? 'es-AR' : 'en-US') : '—'}
             <small> {copy.perMonth}</small>
           </span>
         </div>
@@ -70,15 +73,6 @@ export function VipUnlockPopover({
             trialDeniedReason={overview?.trialDeniedReason ?? null}
           />
         )}
-      </section>
-    </div>
+    </ModalShell>
   )
-}
-
-function formatMoney(amount: number, currency: string, locale: string): string {
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
-  } catch {
-    return `${amount} ${currency}`
-  }
 }

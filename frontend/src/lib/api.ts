@@ -3,11 +3,13 @@ import type {
   AuthResponse,
   CheckoutStart,
   FreeUnlockState,
+  Language,
   SavedAnalysis,
   SubscriptionOverview,
   UserProfile,
 } from '../types'
 import { getDeviceId } from './deviceId'
+import type { SharedStoryPayload } from './shareStory'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5175'
 
@@ -25,6 +27,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turns a failed response's body into `{ message, code }`.
+ *
+ * Every endpoint that means to talk to the user answers with `{ message, code }` — that
+ * `message` is written for display and safe to show as-is. A body that *isn't* that shape
+ * (an HTML proxy page, a bare 502, anything a load balancer or CDN generated before the
+ * request even reached the API) is not: showing it verbatim is how a stack trace or a
+ * third-party error page ends up rendered in the UI. The raw text still goes to the
+ * console, for whoever is debugging with devtools open.
+ */
+function readErrorBody(text: string, status: number): { message: string; code?: string } {
+  try {
+    // Valid JSON means this came from our own API, which always writes `message` for
+    // display — `code` is safe to trust even on the rare response that left it out,
+    // since it is always one of our own short, structured labels, never arbitrary text.
+    const parsed = JSON.parse(text) as { message?: string; code?: string }
+    return { message: parsed.message || `Request failed with status ${status}`, code: parsed.code }
+  } catch {
+    // Not JSON at all means this never went through our API's error handling — a proxy's
+    // HTML page, a bare 502 from something in front of it. Nothing in that body was
+    // written to be shown to anyone, so nothing in it gets shown here either.
+    if (text) {
+      console.error(`[api] non-JSON error body for status ${status}:`, text)
+    }
+    return { message: `Request failed with status ${status}` }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -36,19 +66,8 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
   })
 
   if (!response.ok) {
-    const text = await response.text()
-    let message = text
-    let code: string | undefined
-
-    try {
-      const parsed = JSON.parse(text) as { message?: string; code?: string }
-      message = parsed.message ?? text
-      code = parsed.code
-    } catch {
-      // Not every failure comes back as JSON (proxies, 502s) — keep the raw text.
-    }
-
-    throw new ApiError(message || `Request failed with status ${response.status}`, response.status, code)
+    const { message, code } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code)
   }
 
   return (await response.json()) as T
@@ -144,6 +163,14 @@ export async function grantAiConsent(token: string): Promise<UserProfile> {
   return request<UserProfile>('/api/ai/consent', { method: 'POST' }, token)
 }
 
+export async function updatePreferredLanguage(token: string, language: Language): Promise<UserProfile> {
+  return request<UserProfile>(
+    '/api/user/language',
+    { method: 'POST', body: JSON.stringify({ language }) },
+    token,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Subscriptions
 // ---------------------------------------------------------------------------
@@ -171,7 +198,7 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
  * is sent back (see `syncSubscription`) or the webhook lands.
  */
 export async function startCheckout(token: string): Promise<CheckoutStart> {
-  const response = await request<{ initPoint: string; subscriptionId: string }>(
+  return request<CheckoutStart>(
     '/api/subscription/checkout',
     {
       method: 'POST',
@@ -179,13 +206,25 @@ export async function startCheckout(token: string): Promise<CheckoutStart> {
     },
     token,
   )
-
-  return { initPoint: response.initPoint, subscriptionId: response.subscriptionId }
 }
 
-/** Stops automatic renewal. Access continues until the end of the paid period. */
+/**
+ * Stops automatic renewal. Access continues until the end of the paid period, and the
+ * reply's `cancellation` says whether any money is going to move at all — cancelling
+ * inside the free week means the first debit is never attempted.
+ */
 export async function cancelSubscription(token: string): Promise<SubscriptionOverview> {
   return request<SubscriptionOverview>('/api/subscription/cancel', { method: 'POST' }, token)
+}
+
+/** Suspends debits without giving up the subscription: same card, same price, resumable. */
+export async function pauseSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/pause', { method: 'POST' }, token)
+}
+
+/** Puts a paused subscription back on its schedule. */
+export async function resumeSubscription(token: string): Promise<SubscriptionOverview> {
+  return request<SubscriptionOverview>('/api/subscription/resume', { method: 'POST' }, token)
 }
 
 /** Re-reads the subscription from Mercado Pago. Used on return from checkout, where the
@@ -246,6 +285,57 @@ export async function toggleDevSubscription(token: string): Promise<{ simulatedS
 export async function resetDevFreeUnlocks(token: string, sourceHash?: string): Promise<FreeUnlockState> {
   const query = sourceHash ? `?sourceHash=${encodeURIComponent(sourceHash)}` : ''
   return request<FreeUnlockState>(`/api/dev/free-unlocks/reset${query}`, { method: 'POST' }, token)
+}
+
+/**
+ * Publica el recorrido y devuelve el slug del link.
+ *
+ * `cardsJson` viaja ya recortado por `buildSharePayload` — el texto literal de
+ * los mensajes nunca sale del navegador. El backend igual lo vuelve a recortar
+ * por su cuenta antes de guardar nada.
+ */
+export async function createShare(
+  token: string,
+  payload: {
+    chatName: string
+    dateRangeLabel: string
+    sourceHash: string
+    language: string
+    messageCount: number
+    participantCount: number
+    cardsJson: string
+  },
+): Promise<{ slug: string; expiresAtUtc: string }> {
+  return request<{ slug: string; expiresAtUtc: string }>(
+    '/api/shares',
+    { method: 'POST', body: JSON.stringify(payload) },
+    token,
+  )
+}
+
+/** Lee un recorrido compartido. Deliberadamente sin token: es la única ruta de
+ * la API que responde sin sesión, que es justamente el punto del link. */
+export async function getSharedStory(slug: string): Promise<SharedStoryPayload> {
+  return request<SharedStoryPayload>(`/api/shares/${encodeURIComponent(slug)}`)
+}
+
+/**
+ * Borra un análisis guardado. Responde 204 sin cuerpo, así que no pasa por
+ * `request` —que siempre intenta parsear JSON— y se resuelve acá.
+ *
+ * Un id de otra cuenta da 404, igual que uno inexistente: el backend no confirma
+ * que exista algo ajeno.
+ */
+export async function deleteAnalysis(token: string, id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/analyses/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!response.ok) {
+    const { message, code } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code)
+  }
 }
 
 export async function saveAnalysis(

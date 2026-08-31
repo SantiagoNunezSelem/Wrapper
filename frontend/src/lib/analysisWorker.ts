@@ -1,6 +1,13 @@
 import type { ChatMessage, Language } from '../types'
 import { buildAllAiCandidates, type AiCandidateSet } from './aiCandidates'
-import { applyAiVerdicts, computeAnalysisCore, type AiMetricId, type AiVerdicts, type AnalysisCore } from './metrics'
+import {
+  applyAiVerdicts,
+  computeAnalysisCore,
+  countWordOccurrences,
+  type AiMetricId,
+  type AiVerdicts,
+  type AnalysisCore,
+} from './metrics'
 
 export type WorkerRequest =
   | {
@@ -21,11 +28,22 @@ export type WorkerRequest =
       verdicts: Partial<Record<AiMetricId, string[]>>
       messages?: ChatMessage[]
     }
+  | {
+      requestId: number
+      type: 'wordSearch'
+      messages: ChatMessage[]
+      query: string
+      /** Counted alongside the chat-wide total, one scan per name — the word
+       * cloud's search is "how much did each person say this", not just
+       * "does this exist anywhere". */
+      participants: string[]
+    }
 
 export type WorkerResponse =
   | { requestId: number; type: 'analyze'; core: AnalysisCore }
   | { requestId: number; type: 'aiCandidates'; candidateSets: AiCandidateSet[] }
   | { requestId: number; type: 'applyAi'; core: AnalysisCore }
+  | { requestId: number; type: 'wordSearch'; count: number; countsByParticipant: Record<string, number> }
   /** The worker no longer holds this chat's messages — the client should resend them. */
   | { requestId: number; type: 'cacheMiss' }
   | { requestId: number; type: 'error'; message: string }
@@ -88,6 +106,16 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
     )
 
     return { requestId, type: 'analyze', core }
+  }
+
+  if (request.type === 'wordSearch') {
+    const count = countWordOccurrences(request.messages, request.query)
+    const countsByParticipant: Record<string, number> = {}
+    for (const name of request.participants) {
+      const personMessages = request.messages.filter((message) => message.sender === name)
+      countsByParticipant[name] = countWordOccurrences(personMessages, request.query)
+    }
+    return { requestId, type: 'wordSearch', count, countsByParticipant }
   }
 
   if (request.type === 'aiCandidates') {

@@ -161,3 +161,39 @@ export function SpinnerIcon({ size = 15 }: IconProps) {
     </svg>
   )
 }
+
+export function SearchIcon({ size = 16 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Svg>
+  )
+}
+
+export function TrashIcon({ size = 16 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
+  )
+}
+
+export function PencilIcon({ size = 16 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+export function InstallIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3v11" />
+      <polyline points="8 10 12 14 16 10" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </Svg>
+  )
+}

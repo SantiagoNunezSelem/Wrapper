@@ -44,6 +44,7 @@ public static class SchemaUpgrades
             cancellationToken);
 
         await AddColumnIfMissingAsync(db, "Users", "AiConsentAtUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "PreferredLanguage", "TEXT NULL DEFAULT 'es'", cancellationToken);
 
         // ---------------------------------------------------------------------
         // Subscriptions / Mercado Pago
@@ -61,6 +62,9 @@ public static class SchemaUpgrades
                      ("TrialWasApplied", "INTEGER NOT NULL DEFAULT 0"),
                      ("LastSyncedAtUtc", "TEXT NULL"),
                      ("IsDevSimulated", "INTEGER NOT NULL DEFAULT 0"),
+                     ("CheckoutUrl", "TEXT NULL"),
+                     ("LastPaymentStatusDetail", "TEXT NULL"),
+                     ("PausedAtUtc", "TEXT NULL"),
                  })
         {
             await AddColumnIfMissingAsync(db, "Subscriptions", column, definition, cancellationToken);
@@ -85,6 +89,7 @@ public static class SchemaUpgrades
                 "CurrencyId" TEXT NULL,
                 "Status" TEXT NULL,
                 "RawStatus" TEXT NULL,
+                "StatusDetail" TEXT NULL,
                 "PaymentMethodLabel" TEXT NULL,
                 "PeriodStartUtc" TEXT NULL,
                 "PeriodEndUtc" TEXT NULL,
@@ -98,6 +103,10 @@ public static class SchemaUpgrades
             );
             """,
             cancellationToken);
+
+        // Only reached by databases created before StatusDetail existed; the CREATE TABLE
+        // above already carries it for new ones.
+        await AddColumnIfMissingAsync(db, "SubscriptionInvoices", "StatusDetail", "TEXT NULL", cancellationToken);
 
         await db.Database.ExecuteSqlRawAsync(
             """
@@ -232,6 +241,56 @@ public static class SchemaUpgrades
             """
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_FreeMetricUnlocks_UserId_DayKeyUtc_SourceHash_MetricId"
                 ON "FreeMetricUnlocks" ("UserId", "DayKeyUtc", "SourceHash", "MetricId");
+            """,
+            cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // Public share links
+        // ---------------------------------------------------------------------
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SharedStories" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SharedStories" PRIMARY KEY,
+                "Slug" TEXT NULL,
+                "UserId" TEXT NOT NULL,
+                "SourceHash" TEXT NULL,
+                "ChatName" TEXT NULL,
+                "DateRangeLabel" TEXT NULL,
+                "MessageCount" INTEGER NOT NULL DEFAULT 0,
+                "ParticipantCount" INTEGER NOT NULL DEFAULT 0,
+                "Language" TEXT NULL,
+                "PayloadJson" TEXT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "ExpiresAtUtc" TEXT NOT NULL,
+                "ViewCount" INTEGER NOT NULL DEFAULT 0,
+                CONSTRAINT "FK_SharedStories_Users_UserId" FOREIGN KEY ("UserId")
+                    REFERENCES "Users" ("Id") ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SharedStories_Slug" ON "SharedStories" ("Slug");
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SharedStories_UserId_SourceHash"
+                ON "SharedStories" ("UserId", "SourceHash");
+            """,
+            cancellationToken);
+
+        // Expired rows are dead weight — nothing can read them again (see the read
+        // endpoint, which treats expired as missing), so they are cleared on startup
+        // rather than left to grow the file forever. No background job: a restart is
+        // frequent enough for a table this small, and it keeps the cleanup somewhere
+        // obvious instead of in a timer nobody remembers.
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DELETE FROM "SharedStories" WHERE "ExpiresAtUtc" <= datetime('now');
             """,
             cancellationToken);
     }
