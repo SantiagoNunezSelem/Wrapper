@@ -279,19 +279,25 @@ describe('métrica jajaja', () => {
   }
 
   it.each([
-    ['ja', 'Risa seca ("ja")'],
-    ['je', 'Risa seca ("ja")'],
-    ['jaja', 'Jajaja clásica'],
-    ['jajaja', 'Jajaja clásica'],
-    ['ajajaja', 'Jajaja clásica'],
-    ['jajajaj', 'Jajaja clásica'],
-    ['JAJAJA', 'Jajaja clásica'],
-    ['jeje', 'Jeje pícaro'],
-    ['jiji', 'Jiji tímida'],
+    ['ja', 'Jajaja'],
+    ['jaja', 'Jajaja'],
+    ['jajaja', 'Jajaja'],
+    ['ajajaja', 'Jajaja'],
+    ['jajajaj', 'Jajaja'],
+    ['JAJAJA', 'Jajaja'],
+    ['je', 'Jejeje'],
+    ['jeje', 'Jejeje'],
+    ['jejeje', 'Jejeje'],
+    ['ji', 'Jijijijiji'],
+    ['jiji', 'Jijijijiji'],
+    ['jijijijiji', 'Jijijijiji'],
+    ['jo', 'Jojo'],
     ['jojo', 'Jojo'],
     ['jsjs', 'Jsjsjs'],
+    ['ha', 'Haha en inglés'],
     ['hahaha', 'Haha en inglés'],
-    ['hehehe', 'Hehe en inglés'],
+    ['he', 'Hehehe'],
+    ['hehehe', 'Hehehe'],
     ['xd', 'XD'],
     ['xddd', 'XD'],
     ['lol', 'LOL'],
@@ -300,7 +306,7 @@ describe('métrica jajaja', () => {
     ['lmfao', 'LMAO'],
     ['rofl', 'ROFL'],
     ['rotfl', 'ROFL'],
-    ['ajskdhasjd', 'Perdió el teclado'],
+    ['ajskdhasjd', 'Risa Descontrolada "askjsdjksj"'],
   ])('clasifica "%s" como %s', async (token, expected) => {
     expect(await laughStyle(token)).toBe(expected)
   })
@@ -326,7 +332,7 @@ describe('métrica jajaja', () => {
       { at: '2025-03-10T10:01:00', from: 'Beto', text: 'jaja jaja' },
     ])
 
-    expect(card.basic?.value).toBe('Jajaja clásica')
+    expect(card.basic?.value).toBe('Jajaja')
   })
 
   it('sólo arma serie para quien realmente se rió', async () => {
