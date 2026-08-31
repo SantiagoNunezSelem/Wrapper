@@ -40,7 +40,9 @@ import { executeRecaptchaV3 } from '../lib/recaptcha'
 import {
   aiMetricIds,
   gateAnalysis,
+  gateForStorage,
   isAiMetricId,
+  regateReplayedFreeMetrics,
   type AiCardStates,
   type AiMetricId,
   type AnalysisCore,
@@ -223,23 +225,38 @@ export function useVistazo() {
     return aiStates
   }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, aiStates])
 
-  // Only the unlocks bought for the chat currently on screen. The hash check is what
-  // keeps an answer that lands after the user has already switched chats from opening a
-  // detail on the new one that nobody paid for.
+  // Only the unlocks bought for the chat currently on screen — a live upload or a
+  // replay from history, whichever is showing. The hash check is what keeps an answer
+  // that lands after the user has already switched chats from opening a detail on the
+  // new one that nobody paid for.
+  const currentSourceHash = activeChat?.sourceHash ?? replayedAnalysis?.sourceHash
   const freeUnlockedIds = useMemo(() => {
-    if (!freeUnlocks || !activeChat || freeUnlocks.sourceHash !== activeChat.sourceHash) {
+    if (!freeUnlocks || !currentSourceHash || freeUnlocks.sourceHash !== currentSourceHash) {
       return new Set<string>()
     }
 
     return new Set(freeUnlocks.unlockedMetricIds)
-  }, [freeUnlocks, activeChat])
+  }, [freeUnlocks, currentSourceHash])
 
   // Either a live upload (gated on the fly, so VIP, an AI verdict or a free unlock
-  // landing mid-session costs nothing to reflect) or a bundle replayed from history
-  // exactly as it was saved.
-  const analysis = useMemo(
-    () => replayedAnalysis ?? (core ? gateAnalysis(core, hasVipAccess, aiCardStates, freeUnlockedIds) : null),
-    [replayedAnalysis, core, hasVipAccess, aiCardStates, freeUnlockedIds],
+  // landing mid-session costs nothing to reflect) or a bundle replayed from history.
+  // The replay isn't shown exactly as saved any more: free-tier detail is stored in
+  // full (see `gateForStorage`), so it still has to be re-locked to what today's
+  // allowance actually bought — VIP-tier cards pass through untouched, since those
+  // were never stored ungated to begin with.
+  const analysis = useMemo(() => {
+    if (replayedAnalysis) {
+      return regateReplayedFreeMetrics(replayedAnalysis, freeUnlockedIds)
+    }
+    return core ? gateAnalysis(core, hasVipAccess, aiCardStates, freeUnlockedIds) : null
+  }, [replayedAnalysis, core, hasVipAccess, aiCardStates, freeUnlockedIds])
+
+  // What actually gets written to the backend when this chat is saved — see
+  // `gateForStorage` for why it differs from `analysis`. Only meaningful for a live
+  // chat; a replay is never re-persisted from its own (already re-locked) display copy.
+  const storageAnalysis = useMemo(
+    () => (core ? gateForStorage(core, hasVipAccess, aiCardStates) : null),
+    [core, hasVipAccess, aiCardStates],
   )
 
   useEffect(() => {
@@ -423,18 +440,18 @@ export function useVistazo() {
   }, [core, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   useEffect(() => {
-    if (!pendingPersist || !analysis) {
+    if (!pendingPersist || !storageAnalysis) {
       return
     }
 
     setPendingPersist(false)
 
     if (token) {
-      void persistAnalysis(token, analysis)
+      void persistAnalysis(token, storageAnalysis)
     } else {
       setIsAuthModalOpen(true)
     }
-  }, [pendingPersist, analysis, token])
+  }, [pendingPersist, storageAnalysis, token])
 
   // Localhost only: the VIP switch has to know which way it is currently pointing, and
   // that lives in the subscription overview. One extra call, never in production.
@@ -449,20 +466,20 @@ export function useVistazo() {
   // Read once the account is known and only while it lacks Pro: with Pro every detail is
   // already open, so the allowance is dead weight. It is re-read whenever `hasVipAccess`
   // flips, which is what makes a lapsed subscription fall back to the free unlocks
-  // without a reload — and whenever the chat changes, since which metrics are unlocked
-  // is a property of the chat, not of the account.
+  // without a reload — and whenever the chat on screen changes (live or replayed),
+  // since which metrics are unlocked is a property of the chat, not of the account.
   useEffect(() => {
     if (!token || !user || hasVipAccess) {
       setFreeUnlocks(null)
       return
     }
 
-    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    void loadFreeUnlocks(token, currentSourceHash)
     // Keyed on identity, entitlement and chat, not on the whole `user`/`activeChat`:
     // every unrelated refresh of those objects would otherwise re-fetch the same
     // allowance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, user?.id, hasVipAccess, activeChat?.sourceHash])
+  }, [token, user?.id, hasVipAccess, currentSourceHash])
 
   async function hydrateSession(authToken: string) {
     try {
@@ -520,7 +537,7 @@ export function useVistazo() {
       return
     }
 
-    void loadFreeUnlocks(token, activeChat?.sourceHash)
+    void loadFreeUnlocks(token, currentSourceHash)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, secondsUntilFreeUnlockReset, freeUnlocks?.resetsAtUtc])
 
@@ -838,18 +855,25 @@ export function useVistazo() {
    * - the viewer has no Pro access (with it, nothing is locked to begin with);
    * - the card is free-tier (the paid metrics are the product — never buyable this way);
    * - the account's allowance has been read (a signed-out visitor has none);
-   * - there is a live chat to spend it on, since an unlock belongs to one export;
-   * - the analysis is a live upload, not a replay. A bundle saved without access was
-   *   stored *already stripped* of its details, so spending an unlock on one would cost
-   *   a real unlock and reveal nothing. Those get the reprocess hint instead.
+   * - there is a chat to spend it on, live or replayed — an unlock belongs to one
+   *   export, but free-tier detail is always stored in full (see `gateForStorage`), so
+   *   a replay can spend one exactly like a live chat can;
+   * - for a replay, this card's detail actually made it into the saved bundle. A chat
+   *   saved before `gateForStorage` existed only ever wrote what was unlocked at the
+   *   time, so an unlock spent on it now would have nothing to reveal — burning a fifth
+   *   of the day's allowance for nothing. Re-uploading is the only way back for those.
    */
   function freeUnlockFor(card: MetricCardData): FreeUnlockPrompt | undefined {
-    if (hasVipAccess || card.tier !== 'free' || !freeUnlocks || !activeChat || isReplay) {
+    if (hasVipAccess || card.tier !== 'free' || !freeUnlocks || !currentSourceHash) {
       return undefined
     }
 
     // Already bought for this chat today: the detail is showing, so nothing to offer.
     if (freeUnlockedIds.has(card.id)) {
+      return undefined
+    }
+
+    if (replayedAnalysis && !replayedAnalysis.freeMetrics.find((raw) => raw.id === card.id)?.detail) {
       return undefined
     }
 
@@ -888,12 +912,11 @@ export function useVistazo() {
    */
   async function confirmFreeUnlock() {
     const metricId = pendingFreeUnlockId
+    const sourceHash = currentSourceHash
 
-    if (!token || !metricId || !activeChat) {
+    if (!token || !metricId || !sourceHash) {
       return
     }
-
-    const sourceHash = activeChat.sourceHash
 
     setPendingFreeUnlockId(null)
     setRevealingFreeUnlockId(metricId)
@@ -901,8 +924,10 @@ export function useVistazo() {
     try {
       await Promise.all([spendFreeUnlock(token, metricId, sourceHash), sleep(randomFreeUnlockDelayMs())])
       setFreeUnlocks(await getFreeUnlocks(token, sourceHash))
-      // The re-gate itself is free: `analysis` is derived from the core still in memory,
-      // so the real detail appears without recomputing a single metric.
+      // The re-gate itself is free either way: for a live chat `analysis` is derived
+      // from the core still in memory; for a replay, the detail was already stored in
+      // full (see `gateForStorage`) and just needed today's allowance to show it. No
+      // re-save needed in either case — nothing on disk changed, only what's displayed.
     } catch (caught) {
       console.error(caught)
       setError(copy.freeUnlock.error)
@@ -1189,7 +1214,7 @@ export function useVistazo() {
     chart: ChartData | undefined,
     series: MetricSeriesEntry[] | undefined,
   ) {
-    if (!token || !analysis || !chart) {
+    if (!token || !storageAnalysis || !chart) {
       return
     }
 
@@ -1206,10 +1231,15 @@ export function useVistazo() {
       })
     }
 
+    // Patched onto `storageAnalysis`, not the on-screen `analysis`: the word cloud is
+    // always a VIP card, so this never touches a free-tier one, but building off the
+    // display copy would re-save free-tier metrics however they happened to be gated
+    // for this viewer right now — quietly undoing `gateForStorage`'s always-unlocked
+    // detail for every other card in the same write.
     const updated: AnalysisBundle = {
-      ...analysis,
-      freeMetrics: patchCards(analysis.freeMetrics),
-      vipMetrics: patchCards(analysis.vipMetrics),
+      ...storageAnalysis,
+      freeMetrics: patchCards(storageAnalysis.freeMetrics),
+      vipMetrics: patchCards(storageAnalysis.vipMetrics),
     }
 
     try {

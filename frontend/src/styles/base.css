@@ -1080,7 +1080,7 @@ h3 {
 }
 
 /* Clamped to 2 lines instead of a single truncated one — category labels like
-   "Lost control of the keyboard" or "Amenazas de ruptura" need the room a
+   "Laughing fit ('askjdh')" or "Amenazas de ruptura" need the room a
    single-line ellipsis in a ~90px column would just cut down to nothing. */
 .chart-bar-label {
   color: var(--vz-text-muted);
