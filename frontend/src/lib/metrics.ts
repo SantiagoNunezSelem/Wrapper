@@ -3160,12 +3160,12 @@ const laughStyleLabels: Record<string, Record<Language, string>> = {
   jojo: { es: 'Jojo', en: 'Jojo' },
   jsjs: { es: 'Jsjsjs', en: 'Jsjsjs' },
   haha: { es: 'Haha en inglés', en: 'Haha' },
-  hehe: { es: 'Hehe en inglés', en: 'Hehe' },
+  hehe: { es: 'Hehehe', en: 'Hehehe' },
   xd: { es: 'XD', en: 'XD' },
   lol: { es: 'LOL', en: 'LOL' },
   lmao: { es: 'LMAO', en: 'LMAO' },
   rofl: { es: 'ROFL', en: 'ROFL' },
-  keysmash: { es: 'Ataque de risa ("askjdh")', en: 'Laughing fit ("askjdh")' },
+  keysmash: { es: 'Risa Descontrolada "askjsdjksj"', en: 'Uncontrolled Laughter "askjsdjksj"' },
 }
 
 function laughStyleLabel(style: string, language: Language): string {
