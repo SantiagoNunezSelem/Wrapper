@@ -549,6 +549,12 @@ export function ExportTutorialArt({
   platform: ExportTutorialPlatform
   chrome: boolean
 }) {
+  // Primer paso de Android: grabación real en vez de la ilustración SVG —
+  // reemplazo gradual, paso a paso, de las demás escenas dibujadas abajo.
+  if (step === 0 && platform === 'android') {
+    return <img src="/tutorial/export-android-step1.gif" alt={`Paso ${step + 1}`} className="tutorial-gif" />
+  }
+
   if (chrome) {
     const clipId = `export-tutorial-clip-${platform}-${step}`
     return (
