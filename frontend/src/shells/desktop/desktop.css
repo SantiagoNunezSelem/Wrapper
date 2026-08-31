@@ -864,7 +864,8 @@
 
 .chart-word-cloud.is-compact {
   max-height: 130px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .group-triangle.is-expanded {
