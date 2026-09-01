@@ -302,6 +302,33 @@ public class AiMetricServiceTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
+    public async Task Suaviza_el_vocabulario_de_tonopicante_antes_de_llamar_a_Gemini()
+    {
+        // El cuerpo que sale al cliente HTTP no debe llevar la palabra cruda: es
+        // justamente esa densidad la que puede disparar el piso de seguridad no
+        // ajustable de Gemini.
+        GeminiAccepts();
+        var request = new AiMetricRequestItem("tonopicante", [new AiSnippetInput("1", "verga", "*A: mostrame la verga ahora")]);
+
+        await Service().AnalyzeAsync(_userId, "abc", [request], default);
+
+        var body = _http.LastRequest.Body!;
+        Assert.DoesNotContain("verga", body);
+        Assert.Contains("miembro", body);
+    }
+
+    [Fact]
+    public async Task No_suaviza_el_vocabulario_para_redflags()
+    {
+        GeminiAccepts();
+        var request = new AiMetricRequestItem("redflags", [new AiSnippetInput("1", "celos", "*A: sos un celoso de mierda")]);
+
+        await Service().AnalyzeAsync(_userId, "abc", [request], default);
+
+        Assert.Contains("celoso", _http.LastRequest.Body!);
+    }
+
+    [Fact]
     public async Task Parte_los_fragmentos_en_lotes_del_tamano_configurado()
     {
         GeminiAccepts();
@@ -346,13 +373,34 @@ public class AiMetricServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Un_unico_fragmento_bloqueado_no_se_parte_mas_y_falla()
+    public async Task Un_unico_fragmento_bloqueado_de_redflags_se_excluye_sin_fallar()
     {
+        // Para redflags el rechazo del piso de seguridad es evidencia débil de un
+        // conflicto real dirigido a la otra persona — puede tratarse de odio o una
+        // amenaza sobre algo ajeno a la relación — así que sigue rigiendo "ante la
+        // duda, excluí": no cuenta, pero tampoco tumba la métrica entera.
         _http.Always(HttpStatusCode.OK, JsonSerializer.Serialize(new { promptFeedback = new { blockReason = "SAFETY" } }));
 
-        var result = (await Service().AnalyzeAsync(_userId, "abc", OneMetric(snippets: 1), default))[0];
+        var result = (await Service().AnalyzeAsync(_userId, "abc", OneMetric(metricId: "redflags", snippets: 1), default))[0];
 
-        Assert.Equal(AiErrorCode.Blocked, result.ErrorCode);
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Empty(result.AcceptedIds);
+        Assert.Single(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Un_unico_fragmento_bloqueado_de_tonopicante_se_cuenta_como_positivo()
+    {
+        // Este candidato ya pasó el filtro de palabras clave, y el piso de seguridad de
+        // Gemini se niega a mirarlo incluso solo, con los 4 safetySettings en BLOCK_NONE.
+        // Eso es más evidencia de +18 real que cualquier veredicto que el modelo pudiera
+        // devolver, así que ahora cuenta en vez de desaparecer del conteo.
+        _http.Always(HttpStatusCode.OK, JsonSerializer.Serialize(new { promptFeedback = new { blockReason = "PROHIBITED_CONTENT" } }));
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", OneMetric(metricId: "tonopicante", snippets: 1), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Equal(["1"], result.AcceptedIds);
         Assert.Single(_http.Requests);
     }
 

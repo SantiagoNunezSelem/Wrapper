@@ -26,7 +26,13 @@ public sealed class GoogleAiOptions
     /// </summary>
     public string Model { get; set; } = "gemini-3.1-flash-lite";
 
-    public int TimeoutSeconds { get; set; } = 30;
+    /// <summary>
+    /// Verified empirically (2026-08-18): a healthy 200 response from gemini-3.1-flash-lite
+    /// can already take 15-23s under normal load. 30s left almost no margin and turned
+    /// ordinary slowness into a false "unavailable" — see <see cref="GoogleAiClient"/>'s
+    /// retry loop for how a genuine timeout is now handled once this margin is used up.
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 45;
 
     /// <summary>Snippets per Gemini call. Keeps one prompt small and the JSON answer parseable.</summary>
     public int BatchSize { get; set; } = 40;
@@ -34,7 +40,11 @@ public sealed class GoogleAiOptions
     /// <summary>
     /// Hard ceiling on how many filtered snippets one chat+metric may ever send.
     /// This is the main spend guard: a 85k-message chat can produce a lot of keyword
-    /// hits, and without a cap a single upload could burn an entire quota.
+    /// hits, and without a cap a single upload could burn an entire quota. Above
+    /// <see cref="BatchSize"/>, so a dense chat still spans multiple Gemini calls — the
+    /// tiered candidate selection (see <c>buildAiCandidates</c> on the frontend) is what
+    /// keeps that spend worth it: crude/explicit hits fill the slots before milder ones
+    /// ever get a chance.
     /// </summary>
     public int MaxSnippetsPerMetric { get; set; } = 300;
 

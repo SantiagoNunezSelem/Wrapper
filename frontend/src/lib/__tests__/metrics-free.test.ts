@@ -176,6 +176,27 @@ describe('métrica monologuista', () => {
     expect(texts).not.toContain('Archivo multimedia')
   })
 
+  it('el bloque de racha también permite revelar más contexto real en sus bordes', async () => {
+    const card = await requireFreeMetric('monologuista', [
+      ...burst({ at: '2025-03-10T09:00:00', from: 'Beto', count: 20, stepMinutes: 1, text: (index) => `charla previa ${index}` }),
+      ...burst({ at: '2025-03-10T09:20:00', from: 'Ana', count: 3 }),
+      ...burst({ at: '2025-03-10T09:30:00', from: 'Beto', count: 20, stepMinutes: 1, text: (index) => `charla despues ${index}` }),
+    ])
+
+    // Los dos bloques de 20 de Beto son más largos que el de Ana, así que van
+    // primero en el ranking — el bloque de Ana (el que tiene chat real de sobra a
+    // ambos lados) hay que buscarlo, no asumir que es groups[0].
+    const anaBlock = card.detail?.groups?.find((group) => group.heading.includes('Ana'))
+    const bubbles = anaBlock?.bubbles ?? []
+    const leading = bubbles[0]
+    const trailing = bubbles[bubbles.length - 1]
+
+    expect(leading.isDivider).toBe(true)
+    expect(leading.expand?.bubbles).toHaveLength(15)
+    expect(trailing.isDivider).toBe(true)
+    expect(trailing.expand?.bubbles).toHaveLength(15)
+  })
+
   it('corta la lista de bloques en 40', async () => {
     const specs: MessageSpec[] = []
     for (let index = 0; index < 60; index += 1) {

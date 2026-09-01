@@ -243,10 +243,17 @@ public sealed class AiMetricService(
         var batchSize = Math.Max(1, _options.BatchSize);
         var accepted = new List<string>();
 
-        for (var offset = 0; offset < snippets.Count; offset += batchSize)
+        // Only tonopicante's candidates carry the raw anatomical/crude vocabulary that
+        // trips Gemini's safety floor — softened fresh on every call, never persisted,
+        // so the stored input hash still reflects exactly what the browser sent.
+        var preparedSnippets = metricId == AiMetricPrompts.TonoPicante
+            ? snippets.Select(TonoPicanteVocabulary.Soften).ToList()
+            : snippets;
+
+        for (var offset = 0; offset < preparedSnippets.Count; offset += batchSize)
         {
-            var batch = snippets.Skip(offset).Take(batchSize).ToList();
-            var (batchAccepted, failure) = await ClassifyBatchAsync(instruction, batch, cancellationToken);
+            var batch = preparedSnippets.Skip(offset).Take(batchSize).ToList();
+            var (batchAccepted, failure) = await ClassifyBatchAsync(metricId, instruction, batch, cancellationToken);
 
             // One bad batch fails the whole metric on purpose: keeping a partial answer
             // would silently undercount the metric with no way for the user to tell.
@@ -268,13 +275,16 @@ public sealed class AiMetricService(
     /// "PROHIBITED_CONTENT"</c> — even with every <c>safetySettings</c> category set to
     /// <c>BLOCK_NONE</c>, apparently from the sheer density of genuinely explicit messages
     /// landing in the same call (exactly the content "tonopicante" exists to find). Halving
-    /// and retrying resolved it every time in testing — even the single most explicit
-    /// message in that batch classified fine completely alone — so this recurses down
-    /// instead of failing the whole metric over one dense stretch of real hits.
+    /// and retrying resolved it that time — but verified again empirically (2026-08-18)
+    /// against a different real chat: a single message, sent completely alone, can still
+    /// trip the same floor. There is no smaller batch to fall back to at that point, so
+    /// the base case below decides per metric what a message Gemini refuses to even look
+    /// at should count as.
     /// Quota/unavailable/config/invalid failures are not retried here: a smaller batch
     /// wouldn't fix an exhausted quota or a bad key, only waste calls before failing anyway.
     /// </summary>
     private async Task<(List<string> Accepted, AiCallOutcome? Failure)> ClassifyBatchAsync(
+        string metricId,
         string instruction,
         IReadOnlyList<AiSnippetInput> batch,
         CancellationToken cancellationToken)
@@ -289,19 +299,51 @@ public sealed class AiMetricService(
             return (outcome.AcceptedIds.Where(batchIds.Contains).ToList(), null);
         }
 
-        if (outcome.ErrorCode != AiErrorCode.Blocked || batch.Count <= 1)
+        if (outcome.ErrorCode == AiErrorCode.Blocked && batch.Count <= 1)
+        {
+            var id = batch[0].Id;
+
+            if (metricId == AiMetricPrompts.TonoPicante)
+            {
+                // This candidate already passed the keyword filter, and Gemini's safety
+                // floor still refuses to even look at it alone — with every configurable
+                // safetySettings category at BLOCK_NONE, that refusal is itself stronger
+                // evidence of real +18 content than any verdict the model could return.
+                // Counting it beats excluding it: excluding would silently undercount
+                // exactly the spiciest messages in the chat, the ones this metric exists
+                // to find.
+                logger.LogInformation(
+                    "Gemini's safety floor would not classify message {Id} even alone; counting it as a hit for {MetricId} instead of excluding it.",
+                    id,
+                    metricId);
+                return ([id], null);
+            }
+
+            // For redflags the same refusal is much weaker evidence — it can just as
+            // easily be a threat or hate-speech floor tripping on something unrelated to
+            // a directed conflict — so "ante la duda, excluí" (see AiMetricPrompts) still
+            // applies: left out, not counted, and not allowed to sink every other
+            // candidate in this metric that Gemini did manage to classify.
+            logger.LogInformation(
+                "Gemini's safety floor would not classify message {Id} even alone; excluding it from {MetricId}.",
+                id,
+                metricId);
+            return ([], null);
+        }
+
+        if (outcome.ErrorCode != AiErrorCode.Blocked)
         {
             return ([], outcome);
         }
 
         var half = batch.Count / 2;
-        var (firstAccepted, firstFailure) = await ClassifyBatchAsync(instruction, batch.Take(half).ToList(), cancellationToken);
+        var (firstAccepted, firstFailure) = await ClassifyBatchAsync(metricId, instruction, batch.Take(half).ToList(), cancellationToken);
         if (firstFailure is not null)
         {
             return ([], firstFailure);
         }
 
-        var (secondAccepted, secondFailure) = await ClassifyBatchAsync(instruction, batch.Skip(half).ToList(), cancellationToken);
+        var (secondAccepted, secondFailure) = await ClassifyBatchAsync(metricId, instruction, batch.Skip(half).ToList(), cancellationToken);
         if (secondFailure is not null)
         {
             return ([], secondFailure);

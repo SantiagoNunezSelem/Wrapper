@@ -91,7 +91,19 @@ public sealed class GoogleAiClient(
         // surfacing an error for something that resolves itself a few seconds later —
         // without touching the outer 2-minute manual-retry cooldown, which still owns
         // every failure this doesn't recover from.
-        for (var attempt = 0; ; attempt += 1)
+        var quotaAttempt = 0;
+
+        // Verified empirically (2026-08-18) against the real API: gemini-3.1-flash-lite's
+        // latency on a healthy 200 response can already run 15-23s, and it occasionally
+        // answers with a flat 503 "high demand" a few seconds later on an identical retry.
+        // A chat with a lot of keyword hits needs several of these calls in a row (up to 8
+        // per metric, 16 when tonopicante and redflags run together), so without a retry
+        // here a single slow/overloaded call was enough to fail the whole metric even
+        // though every other batch classified fine. One bounded retry — same shape as the
+        // quota one above — absorbs that without ever entering the outer cooldown.
+        var unavailableAttempt = 0;
+
+        while (true)
         {
             HttpResponseMessage response;
             string body;
@@ -115,11 +127,33 @@ public sealed class GoogleAiClient(
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
+                if (unavailableAttempt < MaxUnavailableRetries)
+                {
+                    unavailableAttempt += 1;
+                    logger.LogInformation(
+                        "Gemini call timed out after {Seconds}s (retry {Attempt}); trying once more.",
+                        _options.TimeoutSeconds,
+                        unavailableAttempt);
+                    await Task.Delay(UnavailableRetryDelay, cancellationToken);
+                    continue;
+                }
+
                 logger.LogWarning("Gemini call timed out after {Seconds}s.", _options.TimeoutSeconds);
                 return AiCallOutcome.Failure(AiErrorCode.Unavailable);
             }
             catch (HttpRequestException exception)
             {
+                if (unavailableAttempt < MaxUnavailableRetries)
+                {
+                    unavailableAttempt += 1;
+                    logger.LogInformation(
+                        exception,
+                        "Gemini call failed at the transport level (retry {Attempt}); trying once more.",
+                        unavailableAttempt);
+                    await Task.Delay(UnavailableRetryDelay, cancellationToken);
+                    continue;
+                }
+
                 logger.LogWarning(exception, "Gemini call failed at the transport level.");
                 return AiCallOutcome.Failure(AiErrorCode.Unavailable);
             }
@@ -130,14 +164,27 @@ public sealed class GoogleAiClient(
                 {
                     var code = MapStatusCode(response.StatusCode);
 
-                    if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < MaxQuotaRetries)
+                    if (response.StatusCode == HttpStatusCode.TooManyRequests && quotaAttempt < MaxQuotaRetries)
                     {
+                        quotaAttempt += 1;
                         var wait = ParseRetryDelay(body);
                         logger.LogInformation(
                             "Gemini rate-limited us (attempt {Attempt}); waiting {Seconds}s before one retry.",
-                            attempt + 1,
+                            quotaAttempt,
                             wait.TotalSeconds);
                         await Task.Delay(wait, cancellationToken);
+                        continue;
+                    }
+
+                    if (code == AiErrorCode.Unavailable && unavailableAttempt < MaxUnavailableRetries)
+                    {
+                        unavailableAttempt += 1;
+                        logger.LogInformation(
+                            "Gemini returned {Status} (retry {Attempt}); waiting {Seconds}s before one retry.",
+                            (int)response.StatusCode,
+                            unavailableAttempt,
+                            UnavailableRetryDelay.TotalSeconds);
+                        await Task.Delay(UnavailableRetryDelay, cancellationToken);
                         continue;
                     }
 
@@ -157,6 +204,16 @@ public sealed class GoogleAiClient(
     /// <summary>One bounded retry: enough to ride out a rolling per-minute window without
     /// turning a transient cap into a long or unbounded wait inside one request.</summary>
     private const int MaxQuotaRetries = 1;
+
+    /// <summary>One bounded retry for a timed-out call, a dropped connection, or a Gemini-side
+    /// 503 — see the comment above the retry loop for the empirical basis.</summary>
+    private const int MaxUnavailableRetries = 1;
+
+    /// <summary>Short and fixed rather than parsed from a header: unlike quota, Gemini never
+    /// tells us how long "high demand" will last, and a timeout already burned up to
+    /// <see cref="GoogleAiOptions.TimeoutSeconds"/> waiting — a long extra pause here would
+    /// make one bad batch dominate the whole analysis's wall-clock time.</summary>
+    private static readonly TimeSpan UnavailableRetryDelay = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Reads the structured wait time Google actually returns — <c>details[].retryDelay</c>

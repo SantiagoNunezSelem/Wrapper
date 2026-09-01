@@ -20,12 +20,24 @@ import type {
 } from '../types'
 import { colorForIndex } from '../components/charts/palette'
 
-const DETAIL_LIST_CAP = 100
 const GROUP_CAP = 40
 const PER_PARTICIPANT_TOP_LIMIT = 15
+/**
+ * How many AI-confirmed examples "El Tono Picante" shows in total, and per
+ * participant — kept separate from GROUP_CAP because that shared cap is tuned for
+ * metrics with far denser hit lists; here every example already passed both the
+ * dictionary filter and the AI verdict, so there's no reason to throw away
+ * confirmed hits just to fit a smaller shared ceiling.
+ */
+const TONOPICANTE_EXAMPLE_LIMIT = 50
+const TONOPICANTE_PER_PARTICIPANT_LIMIT = 25
 // How many real messages of context to show before/after a highlighted moment,
 // so the user can actually recall the exchange instead of reading it in isolation.
 const CONTEXT_WINDOW = 3
+// How many further real messages a "ver más" click reveals on top of CONTEXT_WINDOW,
+// on either edge of a section. One click, one fixed batch — not open-ended paging —
+// so a saved/shared analysis still carries a bounded, predictable payload.
+const CONTEXT_REVEAL_EDGE = 15
 // Every "which day is this" bucket (streaks, heatmaps, icebreaker, top days, weekday
 // radar) treats the day as starting at 6am, not midnight — a 2am message still
 // belongs to the night before, which matches how people actually talk about "today."
@@ -311,19 +323,27 @@ function categoryLabel(category: RedFlagCategory, language: Language): string {
 
 // Heuristic dictionary for "El Tono Picante" — not a claim of accuracy, just candidate
 // bait; the AI pass (see applyAiVerdicts) is what actually decides which candidates get
-// shown as detailed examples. Split into the same two tiers as the red-flag categories
-// above: the explicit tier is what `buildAiCandidates` reaches for first, and the
-// general tier is a much wider net that always counts toward the score/chart/word
-// list, and only becomes an AI-candidate source when the explicit tier alone doesn't
-// fill the batch.
-const flirtyExplicitWords = [
-  'pene', 'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong', 'shaft',
-  'culo', 'orto', 'nalgas', 'pompis', 'ass', 'butt', 'botty', 'teta', 'tetas', 'pecho', 'pechos',
-  'boob', 'boobs', 'tit', 'tits', 'breast', 'breasts', 'knockers', 'jugs', 'vagina', 'concha',
-  'coño', 'sexo', 'pussy', 'cunt', 'snatch', 'twat', 'beaver', 'muff', 'puta', 'slut', 'gemir',
-  'gemidos', 'erotico', 'erotica', 'desnudo', 'desnuda', 'desnudarte', 'desnudarme', 'sumisa', 'sumiso',
-  'dominante', 'follar', 'coger', 'penetrar', 'penetracion',
+// shown as detailed examples. Three priority tiers, from strongest to mildest — not the
+// same two tiers the red-flag categories use, because "how likely is this to actually be
+// +18" isn't binary: "teta" isn't "pecho", even though both are anatomical. `buildAiCandidates`
+// reaches for `flirtyCrudeWords` first to fill the (capped) AI batch, only falls back to
+// `flirtyModerateWords` if that alone doesn't fill it, and only reaches `flirtyEverydayWords`
+// after that — while all three still count toward the raw keyword score/chart regardless of
+// which tier actually made it into an AI call.
+const flirtyCrudeWords = [
+  'pija', 'verga', 'polla', 'chota', 'dick', 'cock', 'sprick', 'schlong',
+  'culo', 'orto', 'teta', 'tetas', 'ass', 'butt', 'botty', 'boob', 'boobs', 'tit', 'tits',
+  'knockers', 'jugs', 'concha', 'coño', 'pussy', 'cunt', 'snatch', 'twat', 'beaver', 'muff',
+  'puta', 'slut', 'gemir', 'gemidos', 'desnudarte', 'desnudarme', 'follar', 'coger',
+  'penetrar', 'penetracion',
 ]
+const flirtyModerateWords = [
+  'pene', 'shaft', 'nalgas', 'pompis', 'pecho', 'pechos', 'breast', 'breasts', 'vagina', 'sexo',
+  'erotico', 'erotica', 'desnudo', 'desnuda', 'sumisa', 'sumiso', 'dominante',
+]
+const flirtyExplicitWords = [...flirtyCrudeWords, ...flirtyModerateWords]
+const flirtyCrudeWordSet = new Set(flirtyCrudeWords)
+const flirtyModerateWordSet = new Set(flirtyModerateWords)
 const flirtyEverydayWords = [
   'caliente', 'calentura', 'sexy', 'sexi', 'seductor', 'seductora', 'tentador',
   'tentadora', 'provocador', 'provocadora', 'provocando', 'ardiente', 'sensual', 'morbo', 'pasion',
@@ -341,9 +361,26 @@ const flirtyEverydayWords = [
 ]
 // Explicit tier first: when a message matches more than one word, `flirtyDict.matchAny`
 // tags it with the explicit one — the more attention-grabbing label — rather than an
-// incidental vaguer word alongside it.
-const flirtyExplicitWordSet = new Set(flirtyExplicitWords)
+// incidental vaguer word alongside it. `flirtyDict` itself only knows "explicit vs
+// everyday" (crude and moderate merged), which is enough for the score/chart, but not
+// for ranking examples — `flirtySuggestivenessTier` below re-splits `match.word` back
+// into its real tier for that.
 const flirtyDict = buildTieredDictionary(flirtyExplicitWords, flirtyEverydayWords)
+
+/**
+ * Where a matched word actually sits: 0 = crude, 1 = moderate, 2 = everyday. Used to
+ * rank which messages become shown examples — a group only draws from a milder tier
+ * once the stronger one is exhausted, never as a substitute for it (a lone "pecho"
+ * doesn't get shown ahead of an available "teta").
+ */
+function flirtySuggestivenessTier(word: string): number {
+  if (flirtyCrudeWordSet.has(word)) return 0
+  if (flirtyModerateWordSet.has(word)) return 1
+  return 2
+}
+
+const flirtyCrudePattern = toBoundaryPattern(flirtyCrudeWords)
+const flirtyModeratePattern = toBoundaryPattern(flirtyModerateWords)
 
 // ---------------------------------------------------------------------------
 // AI-assisted metrics
@@ -366,15 +403,17 @@ export function isAiMetricId(metricId: string): metricId is AiMetricId {
 
 /**
  * The exact dictionary phrase that made this message a candidate for an AI-backed
- * metric, restricted to the explicit tier — the words most tightly tied to the topic.
- * `buildAiCandidates` calls this first, since the explicit tier is what should fill the
- * AI batch whenever there are enough hits for it. The phrase travels with the snippet
+ * metric, restricted to the strongest tier — for tonopicante, the crude/vulgar words
+ * (see `flirtyCrudeWords`): a lone "teta" is far more likely to be genuinely +18 than a
+ * lone "pecho", so with only `MAX_CANDIDATES_PER_METRIC` AI slots available, these are
+ * the hits that deserve them first. `buildAiCandidates` calls this before
+ * `matchAiKeywordModerate`/`matchAiKeywordGeneral`. The phrase travels with the snippet
  * so the model knows which word to weigh, and so a long message can be cropped around
  * it instead of blindly from the start.
  */
 export function matchAiKeywordExplicit(metricId: AiMetricId, text: string): string | null {
   if (metricId === 'tonopicante') {
-    return flirtyDict.matchExplicit(text)
+    return flirtyCrudePattern.exec(normalizeForMatch(text))?.[0] ?? null
   }
 
   for (const category of redFlagCategories) {
@@ -388,9 +427,22 @@ export function matchAiKeywordExplicit(metricId: AiMetricId, text: string): stri
 }
 
 /**
+ * The middle tier, between crude and everyday — for tonopicante only (see
+ * `flirtyModerateWords`: clinical/anatomical words like "pecho" or "sexo", plainer than
+ * `flirtyCrudeWords` but still more topic-relevant than the everyday tier). redflags has
+ * no middle tier, so this always returns null for it and `buildAiCandidates` falls
+ * straight through to the general tier. `buildAiCandidates` only reaches for this one to
+ * top up the AI batch when the crude tier alone didn't fill it.
+ */
+export function matchAiKeywordModerate(metricId: AiMetricId, text: string): string | null {
+  return metricId === 'tonopicante' ? (flirtyModeratePattern.exec(normalizeForMatch(text))?.[0] ?? null) : null
+}
+
+/**
  * Same as `matchAiKeywordExplicit`, but restricted to the general tier — the much
  * wider, everyday-phrasing dictionary. `buildAiCandidates` only reaches for this one to
- * top up the AI batch when the explicit tier alone didn't produce enough candidates.
+ * top up the AI batch when the crude and moderate tiers together didn't produce enough
+ * candidates.
  */
 export function matchAiKeywordGeneral(metricId: AiMetricId, text: string): string | null {
   if (metricId === 'tonopicante') {
@@ -2074,10 +2126,10 @@ function metricDramatico(ctx: MetricContext): MetricResult {
 
 function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
   const { textMessages, participants, language } = ctx
-  // Every keyword hit — explicit or general tier — counts toward the score, chart,
-  // hour heatmap, and word list below, regardless of whether the AI ever got to look
-  // at it: the AI verdict only decides which hits get shown as a detailed, real-message
-  // example (see eligibleForExamples further down), it never shrinks the overall tally.
+  // Every keyword hit — explicit or general tier — counts toward the score, chart, and
+  // hour heatmap, regardless of whether the AI ever got to look at it: the AI verdict
+  // only decides which hits get shown as a detailed, real-message example (see
+  // eligibleForExamples further down), it never shrinks the overall tally.
   const flagged = textMessages.filter((message) => flirtyDict.hasAny(message.contentText))
 
   if (flagged.length === 0) {
@@ -2088,16 +2140,6 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
   const top = topEntry(bySender)!
   const total = flagged.length
   const hours = hourBuckets(flagged)
-  const termCounts = new Map<string, number>()
-
-  for (const message of flagged) {
-    const normalized = normalizeForMatch(message.contentText)
-    for (const { word, pattern } of flirtyDict.entries) {
-      if (pattern.test(normalized)) {
-        termCounts.set(word, (termCounts.get(word) ?? 0) + 1)
-      }
-    }
-  }
 
   // An example is only shown once the AI has actually confirmed it — accepted undefined
   // means the verdict hasn't run yet, so nothing is filtered out (this pass isn't shown
@@ -2105,9 +2147,10 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
   const eligibleForExamples = flagged.filter((message) => !accepted || accepted.has(message.id))
   const eligibleBySender = groupBySender(eligibleForExamples)
 
-  // Explicit-tier hits lead, both here and in the word list below — Santiago wants the
-  // attention-grabbing matches surfaced, not buried under five milder ones a participant
-  // happened to send earlier in the chat. Frequency/chronology only break ties within a tier.
+  // Strongest tier leads — a milder match only gets shown once the stronger tier for
+  // that participant is exhausted, never alongside it just because it's more recent or
+  // more frequent ("teta" isn't "pecho"; see flirtySuggestivenessTier). Frequency/
+  // chronology only break ties within the same tier.
   const groupsList: MessageGroup[] = []
   for (const name of participants) {
     const ownMatches = (eligibleBySender.get(name) ?? [])
@@ -2115,8 +2158,8 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
         const match = flirtyDict.matchAny(message.contentText)
         return match ? [{ message, match }] : []
       })
-      .sort((left, right) => Number(right.match.isExplicit) - Number(left.match.isExplicit))
-      .slice(0, 5)
+      .sort((left, right) => flirtySuggestivenessTier(left.match.word) - flirtySuggestivenessTier(right.match.word))
+      .slice(0, TONOPICANTE_PER_PARTICIPANT_LIMIT)
 
     for (const { message, match } of ownMatches) {
       groupsList.push(
@@ -2124,14 +2167,6 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
       )
     }
   }
-
-  // Same tiering for the word list: explicit terms rank above everyday ones regardless
-  // of how often each was used, with count only breaking ties inside a tier.
-  const rankedTerms = [...termCounts.entries()].sort(
-    (left, right) =>
-      Number(flirtyExplicitWordSet.has(right[0])) - Number(flirtyExplicitWordSet.has(left[0])) ||
-      right[1] - left[1],
-  )
 
   return {
     hasData: true,
@@ -2143,8 +2178,8 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
     detail: {
       intro:
         language === 'es'
-          ? 'Horarios preferidos del grupo, los mensajes exactos de cada integrante y las palabras más usadas.'
-          : "The group's preferred hours, each participant's exact messages, and the words used most.",
+          ? 'Horarios preferidos del grupo y los mensajes exactos de cada integrante.'
+          : "The group's preferred hours and each participant's exact messages.",
       chart: {
         kind: 'hourHeatmap',
         hours,
@@ -2152,14 +2187,8 @@ function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): 
         unit: language === 'es' ? 'mensajes' : 'messages',
       },
       breakdown: breakdownPercent(bySender, total),
-      groups: capGroups(groupsList),
+      groups: groupsList.slice(0, TONOPICANTE_EXAMPLE_LIMIT),
       groupsLabel: language === 'es' ? 'Los mensajes más picantes de cada uno' : "Each participant's spiciest messages",
-      paginatedItems: capList(
-        rankedTerms.map(([word, count]) =>
-          language === 'es' ? `"${word}" se usó ${count} veces` : `"${word}" used ${count} times`,
-        ),
-      ),
-      paginatedItemsLabel: language === 'es' ? 'Palabras más usadas' : 'Most used words',
     },
   }
 }
@@ -2346,15 +2375,38 @@ function followingContext(ctx: MetricContext, index: number, count: number): Cha
   return bubbles
 }
 
+/**
+ * `precedingContext`, plus a leading "ver más" divider carrying up to
+ * `CONTEXT_REVEAL_EDGE` further real messages, when the chat actually has more to
+ * offer beyond `count`. Every section's edge gets this — not just a highlighted
+ * range's internal gap (see `revealedGapBubbles`) — so a user reading any example can
+ * pull in more of the surrounding conversation on demand instead of only ever seeing
+ * the fixed `CONTEXT_WINDOW`.
+ */
+function expandablePrecedingContext(ctx: MetricContext, index: number, count: number): ChatBubble[] {
+  const all = precedingContext(ctx, index, count + CONTEXT_REVEAL_EDGE)
+  const extra = all.slice(0, all.length - count)
+
+  return extra.length > 0 ? [dividerBubble(extra.length, ctx.language, extra), ...all.slice(extra.length)] : all
+}
+
+/** Same as `expandablePrecedingContext`, looking forward from `index` instead. */
+function expandableFollowingContext(ctx: MetricContext, index: number, count: number): ChatBubble[] {
+  const all = followingContext(ctx, index, count + CONTEXT_REVEAL_EDGE)
+  const extra = all.slice(count)
+
+  return extra.length > 0 ? [...all.slice(0, count), dividerBubble(extra.length, ctx.language, extra)] : all
+}
+
 /** One highlighted message plus the real message right before and after it, so the
  * user can recall the exchange instead of reading an isolated quote. */
 function momentGroup(ctx: MetricContext, message: ChatMessage, heading: string): MessageGroup {
   const { language, messageIndex } = ctx
   const index = messageIndex.get(message.id) ?? -1
   const bubbles: ChatBubble[] = [
-    ...precedingContext(ctx, index, CONTEXT_WINDOW),
+    ...expandablePrecedingContext(ctx, index, CONTEXT_WINDOW),
     bubbleFor(message, language, true),
-    ...followingContext(ctx, index, CONTEXT_WINDOW),
+    ...expandableFollowingContext(ctx, index, CONTEXT_WINDOW),
   ]
 
   return { id: message.id, heading, bubbles }
@@ -2384,7 +2436,9 @@ function rangeGroup(
   const { language, messageIndex } = ctx
   const startIndex = sourceIndex.get(startMessage.id) ?? -1
   const endIndex = sourceIndex.get(endMessage.id) ?? startIndex
-  const bubbles: ChatBubble[] = [...precedingContext(ctx, messageIndex.get(startMessage.id) ?? -1, CONTEXT_WINDOW)]
+  const bubbles: ChatBubble[] = [
+    ...expandablePrecedingContext(ctx, messageIndex.get(startMessage.id) ?? -1, CONTEXT_WINDOW),
+  ]
 
   const highlightEnd = Math.min(endIndex, startIndex + maxHighlighted - 1)
   for (let index = startIndex; index >= 0 && index <= highlightEnd; index += 1) {
@@ -2404,7 +2458,7 @@ function rangeGroup(
     bubbles.push(bubbleFor(sourceMessages[endIndex], language, true))
   }
 
-  bubbles.push(...followingContext(ctx, messageIndex.get(endMessage.id) ?? -1, CONTEXT_WINDOW))
+  bubbles.push(...expandableFollowingContext(ctx, messageIndex.get(endMessage.id) ?? -1, CONTEXT_WINDOW))
 
   return { id: startMessage.id, heading, bubbles }
 }
@@ -2528,10 +2582,6 @@ function formatMonthLabel(yearMonth: string, language: Language): string {
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`
-}
-
-function capList(items: string[]): string[] {
-  return items.slice(0, DETAIL_LIST_CAP)
 }
 
 /** The timestamp shifted back by DAY_START_HOUR, so it can be bucketed by

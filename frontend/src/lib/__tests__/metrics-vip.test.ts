@@ -785,17 +785,14 @@ describe('métrica tonopicante', () => {
     expect(card.detail.chart.peakPeriodLabel).toBe('Más actividad por la noche')
   })
 
-  it('las palabras explícitas van arriba de las cotidianas, sin importar la frecuencia', async () => {
+  it('ya no expone el desglose de palabras más usadas', async () => {
     const card = await requireVipMetric('tonopicante', [
       { at: '2025-03-10T22:00:00', from: 'Ana', text: 'que calor' },
-      { at: '2025-03-10T22:01:00', from: 'Ana', text: 'caliente' },
-      { at: '2025-03-10T22:02:00', from: 'Ana', text: 'caliente otra vez' },
-      { at: '2025-03-10T22:03:00', from: 'Beto', text: 'que culo' },
+      { at: '2025-03-10T22:01:00', from: 'Beto', text: 'que culo' },
     ])
 
-    // "culo" es tier explícito y apareció una vez; "caliente" es cotidiano y apareció dos.
-    expect(card.detail?.paginatedItems?.[0]).toBe('"culo" se usó 1 veces')
-    expect(card.detail?.paginatedItemsLabel).toBe('Palabras más usadas')
+    expect(card.detail?.paginatedItems).toBeUndefined()
+    expect(card.detail?.paginatedItemsLabel).toBeUndefined()
   })
 
   it('el ejemplo de cada persona prioriza el acierto explícito', async () => {
@@ -808,12 +805,67 @@ describe('métrica tonopicante', () => {
     expect(card.detail?.groupsLabel).toBe('Los mensajes más picantes de cada uno')
   })
 
-  it('muestra a lo sumo 5 ejemplos por persona', async () => {
+  it('cada mensaje permite revelar más contexto real arriba y abajo, no sólo los 3 fijos', async () => {
     const card = await requireVipMetric('tonopicante', [
-      ...burst({ at: '2025-03-10T22:00:00', from: 'Ana', count: 8, text: () => 'que sexy' }),
+      ...burst({ at: '2025-03-10T09:00:00', from: 'Ana', count: 20, stepMinutes: 1, text: (index) => `mensaje antes ${index}` }),
+      { at: '2025-03-10T09:20:00', from: 'Ana', text: 'mostrame el culo' },
+      ...burst({ at: '2025-03-10T09:21:00', from: 'Ana', count: 20, stepMinutes: 1, text: (index) => `mensaje despues ${index}` }),
     ])
 
-    expect(card.detail?.groups).toHaveLength(5)
+    const bubbles = card.detail?.groups?.[0].bubbles ?? []
+    const leading = bubbles[0]
+    const trailing = bubbles[bubbles.length - 1]
+
+    expect(leading.isDivider).toBe(true)
+    expect(leading.expand?.bubbles).toHaveLength(15)
+    expect(trailing.isDivider).toBe(true)
+    expect(trailing.expand?.bubbles).toHaveLength(15)
+    // Entre los dos divisores: 3 mensajes visibles antes, el resaltado, y 3 después.
+    expect(bubbles).toHaveLength(1 + 3 + 1 + 3 + 1)
+    expect(bubbles[4].isHighlight).toBe(true)
+  })
+
+  it('no ofrece revelar más si el chat no tiene mensajes reales de sobra', async () => {
+    const card = await requireVipMetric('tonopicante', [
+      { at: '2025-03-10T09:00:00', from: 'Ana', text: 'hola' },
+      { at: '2025-03-10T09:01:00', from: 'Ana', text: 'mostrame el culo' },
+      { at: '2025-03-10T09:02:00', from: 'Ana', text: 'chau' },
+    ])
+
+    const bubbles = card.detail?.groups?.[0].bubbles ?? []
+
+    expect(bubbles.some((bubble) => bubble.isDivider)).toBe(false)
+    expect(bubbles).toHaveLength(3)
+  })
+
+  it('el ejemplo de cada persona prioriza lo crudo por sobre lo moderado, no sólo lo explícito', async () => {
+    // "teta" (crudo) no es lo mismo que "pecho" (moderado) — aunque las dos entran en
+    // el mismo nivel "explícito" del diccionario de puntaje, el ejemplo mostrado tiene
+    // que preferir la más fuerte aunque haya llegado después en el chat.
+    const card = await requireVipMetric('tonopicante', [
+      { at: '2025-03-10T22:00:00', from: 'Ana', text: 'que lindo pecho' },
+      { at: '2025-03-10T22:01:00', from: 'Ana', text: 'mostrame la teta' },
+    ])
+
+    expect(card.detail?.groups?.[0].heading).toContain('"teta"')
+    expect(card.detail?.groups?.[1].heading).toContain('"pecho"')
+  })
+
+  it('muestra a lo sumo 25 ejemplos por persona', async () => {
+    const card = await requireVipMetric('tonopicante', [
+      ...burst({ at: '2025-03-10T22:00:00', from: 'Ana', count: 30, text: () => 'que sexy' }),
+    ])
+
+    expect(card.detail?.groups).toHaveLength(25)
+  })
+
+  it('muestra a lo sumo 50 ejemplos en total entre todos', async () => {
+    const card = await requireVipMetric('tonopicante', [
+      ...burst({ at: '2025-03-10T22:00:00', from: 'Ana', count: 30, text: () => 'que sexy' }),
+      ...burst({ at: '2025-03-11T22:00:00', from: 'Beto', count: 30, text: () => 'que sexy' }),
+    ])
+
+    expect(card.detail?.groups).toHaveLength(50)
   })
 
   it('no marca una palabra que es parte de otra', async () => {

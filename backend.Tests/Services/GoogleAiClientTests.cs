@@ -322,12 +322,22 @@ public class GoogleAiClientTests
         HttpStatusCode status,
         string expected)
     {
-        var (client, _) = Build(stub => stub.Enqueue(status, "{\"error\":{}}"));
+        // "unavailable" ahora se reintenta una vez (ver MaxUnavailableRetries) antes de
+        // rendirse, así que hay que dejar dos respuestas encoladas para ese caso.
+        var (client, http) = Build(stub =>
+        {
+            stub.Enqueue(status, "{\"error\":{}}");
+            if (expected == AiErrorCode.Unavailable)
+            {
+                stub.Enqueue(status, "{\"error\":{}}");
+            }
+        });
 
         var outcome = await Classify(client);
 
         Assert.False(outcome.IsSuccess);
         Assert.Equal(expected, outcome.ErrorCode);
+        Assert.Equal(expected == AiErrorCode.Unavailable ? 2 : 1, http.Requests.Count);
     }
 
     [Fact]
@@ -370,7 +380,8 @@ public class GoogleAiClientTests
     [Fact]
     public async Task Un_fallo_de_red_es_unavailable_y_no_una_excepción()
     {
-        var (client, _) = Build(stub => stub.EnqueueTransportFailure());
+        // Se reintenta una vez (MaxUnavailableRetries) antes de rendirse.
+        var (client, _) = Build(stub => stub.EnqueueTransportFailure().EnqueueTransportFailure());
 
         var outcome = await Classify(client);
 
@@ -381,7 +392,7 @@ public class GoogleAiClientTests
     [Fact]
     public async Task Un_timeout_propio_es_unavailable()
     {
-        var (client, _) = Build(stub => stub.EnqueueTimeout());
+        var (client, _) = Build(stub => stub.EnqueueTimeout().EnqueueTimeout());
 
         Assert.Equal(AiErrorCode.Unavailable, (await Classify(client)).ErrorCode);
     }
