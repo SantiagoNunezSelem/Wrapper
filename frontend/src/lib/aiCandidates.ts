@@ -1,5 +1,12 @@
 import type { ChatMessage } from '../types'
-import { aiMetricIds, matchAiKeywordExplicit, matchAiKeywordGeneral, normalizeForMatch, type AiMetricId } from './metrics'
+import {
+  aiMetricIds,
+  matchAiKeywordExplicit,
+  matchAiKeywordGeneral,
+  matchAiKeywordModerate,
+  normalizeForMatch,
+  type AiMetricId,
+} from './metrics'
 
 // ---------------------------------------------------------------------------
 // Turning keyword hits into the smallest prompt that can still be judged well.
@@ -30,6 +37,10 @@ const MAX_CONTEXT_WORDS = 25
  * messages can produce thousands of keyword hits and there is no version of this
  * feature where paying to classify all of them is worth it. Mirrors
  * `GoogleAi:MaxSnippetsPerMetric` on the backend, which enforces the same limit.
+ * `buildAiCandidates` fills these slots tier by tier (crude words before mild ones,
+ * see `matchAiKeywordExplicit`/`matchAiKeywordModerate`/`matchAiKeywordGeneral` in
+ * metrics.ts), so even a chat with more hits than this cap spends the AI budget on
+ * the hits most likely to actually matter instead of just the first ones found.
  */
 const MAX_CANDIDATES_PER_METRIC = 300
 
@@ -66,12 +77,18 @@ export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId)
   const byRendering = new Map<string, AiCandidate>()
   const usedIndices = new Set<number>()
 
-  // Explicit-tier hits first — the words most tightly tied to the metric are the best
-  // use of the AI budget. Only if that tier alone doesn't fill the batch do we widen the
-  // net to the general/everyday dictionary, so a chat that's light on the most explicit
-  // phrasing still gets a full batch of candidates for the AI to judge (see metrics.ts's
-  // matchAiKeywordExplicit/matchAiKeywordGeneral for the two-tier dictionaries).
+  // Strongest tier first — the words most tightly tied to the metric (and, for
+  // tonopicante, the crudest ones — a lone "teta" is worth more of the AI budget than a
+  // lone "pecho") are the best use of the limited AI slots. Only widen to the next tier
+  // once the previous one didn't fill the batch on its own, so a chat that's light on
+  // the strongest phrasing still gets a full batch of candidates for the AI to judge
+  // (see metrics.ts's matchAiKeywordExplicit/matchAiKeywordModerate/matchAiKeywordGeneral
+  // for the tiered dictionaries — redflags has no moderate tier, so that pass is a no-op
+  // for it).
   collectCandidates(pool, metricId, matchAiKeywordExplicit, candidates, byRendering, usedIndices)
+  if (candidates.length < MAX_CANDIDATES_PER_METRIC) {
+    collectCandidates(pool, metricId, matchAiKeywordModerate, candidates, byRendering, usedIndices)
+  }
   if (candidates.length < MAX_CANDIDATES_PER_METRIC) {
     collectCandidates(pool, metricId, matchAiKeywordGeneral, candidates, byRendering, usedIndices)
   }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
 import { buildAiCandidates, buildAllAiCandidates, toAcceptedMessageIds } from '../aiCandidates'
-import { matchAiKeywordExplicit, matchAiKeywordGeneral } from '../metrics'
+import { matchAiKeywordExplicit, matchAiKeywordGeneral, matchAiKeywordModerate } from '../metrics'
 
 beforeEach(resetMessageIds)
 
@@ -33,6 +33,16 @@ describe('matchAiKeyword — los dos niveles del diccionario', () => {
   it('respeta los límites de palabra', () => {
     expect(matchAiKeywordExplicit('tonopicante', 'me duele el hombro')).toBeNull()
     expect(matchAiKeywordGeneral('tonopicante', 'reserve un hotel')).toBeNull()
+  })
+
+  it('el nivel moderado sólo existe para tonopicante, entre el crudo y el cotidiano', () => {
+    // "teta" (crudo) no es lo mismo que "pecho" (moderado): cada uno vive en su propio
+    // nivel para que el crudo se priorice primero al armar el lote para la IA.
+    expect(matchAiKeywordExplicit('tonopicante', 'que rica teta')).toBe('teta')
+    expect(matchAiKeywordModerate('tonopicante', 'que rica teta')).toBeNull()
+    expect(matchAiKeywordExplicit('tonopicante', 'que lindo pecho')).toBeNull()
+    expect(matchAiKeywordModerate('tonopicante', 'que lindo pecho')).toBe('pecho')
+    expect(matchAiKeywordModerate('redflags', 'sos posesivo')).toBeNull()
   })
 })
 
@@ -167,6 +177,16 @@ describe('buildAiCandidates', () => {
 
     expect(built[0].keyword).toBe('culo')
     expect(built[1].keyword).toBe('caliente')
+  })
+
+  it('el nivel moderado llena el lote sólo después del crudo, antes que el cotidiano', () => {
+    const built = candidates([
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'que dia tan caliente hoy' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'que lindo pecho' },
+      { at: '2025-03-10T10:02:00', from: 'Ana', text: 'mostrame la teta dale' },
+    ])
+
+    expect(built.map((item) => item.keyword)).toEqual(['teta', 'pecho', 'caliente'])
   })
 
   it('no procesa dos veces el mismo mensaje entre los dos niveles', () => {

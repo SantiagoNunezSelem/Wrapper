@@ -40,7 +40,11 @@ public sealed class GoogleAiOptions
     /// <summary>
     /// Hard ceiling on how many filtered snippets one chat+metric may ever send.
     /// This is the main spend guard: a 85k-message chat can produce a lot of keyword
-    /// hits, and without a cap a single upload could burn an entire quota.
+    /// hits, and without a cap a single upload could burn an entire quota. Above
+    /// <see cref="BatchSize"/>, so a dense chat still spans multiple Gemini calls — the
+    /// tiered candidate selection (see <c>buildAiCandidates</c> on the frontend) is what
+    /// keeps that spend worth it: crude/explicit hits fill the slots before milder ones
+    /// ever get a chance.
     /// </summary>
     public int MaxSnippetsPerMetric { get; set; } = 300;
 
