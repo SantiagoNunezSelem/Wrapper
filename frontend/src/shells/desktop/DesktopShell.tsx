@@ -505,12 +505,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                   </button>
                 ) : null}
               </div>
-
-              <ul className="trust-strip">
-                {copy.trustBadges.map((badge) => (
-                  <li key={badge}>{badge}</li>
-                ))}
-              </ul>
             </div>
 
             <div
