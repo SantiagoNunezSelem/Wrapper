@@ -1630,8 +1630,8 @@ function stripExtension(fileName: string): string {
 // Long enough to read as "fetching something real," short enough not to feel broken;
 // randomized within the range so it never looks like a canned constant. See
 // confirmFreeUnlock, the only caller.
-const FREE_UNLOCK_MIN_DELAY_MS = 3000
-const FREE_UNLOCK_MAX_DELAY_MS = 6000
+const FREE_UNLOCK_MIN_DELAY_MS = 1000
+const FREE_UNLOCK_MAX_DELAY_MS = 3000
 
 function randomFreeUnlockDelayMs(): number {
   return FREE_UNLOCK_MIN_DELAY_MS + Math.random() * (FREE_UNLOCK_MAX_DELAY_MS - FREE_UNLOCK_MIN_DELAY_MS)
