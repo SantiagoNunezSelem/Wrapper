@@ -66,14 +66,19 @@ beforeEach(() => {
 })
 
 describe('MetricCard — tarjeta abierta', () => {
-  it('muestra título, apodo, número y etiqueta', () => {
+  it('muestra título, número y etiqueta', () => {
     renderCard(card())
 
     expect(screen.getByRole('heading', { name: 'Quién manda más mensajes' })).toBeInTheDocument()
-    expect(screen.getByText('El Spammer vs El Silencioso')).toBeInTheDocument()
     // Acotado al stat: el mismo "70.0%" también aparece como etiqueta de la barra.
     expect(document.querySelector('.metric-stat strong')).toHaveTextContent('70.0%')
     expect(screen.getByText('de los mensajes son de Ana')).toBeInTheDocument()
+  })
+
+  it('no muestra el apodo de la métrica: sólo queda el título en limpio', () => {
+    renderCard(card())
+
+    expect(screen.queryByText('El Spammer vs El Silencioso')).not.toBeInTheDocument()
   })
 
   it('muestra la nota literal sólo si la tarjeta la trae', () => {

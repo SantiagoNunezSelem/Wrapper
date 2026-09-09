@@ -150,7 +150,7 @@ export async function applyAiVerdictsInWorker(
   sourceHash: string,
   language: Language,
   messages: ChatMessage[],
-  verdicts: Partial<Record<AiMetricId, string[]>>,
+  verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>>,
 ): Promise<AnalysisCore> {
   const response = await withMessageRetry((withMessages) =>
     send({

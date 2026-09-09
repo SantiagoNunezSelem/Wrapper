@@ -302,9 +302,9 @@ h3 {
 }
 
 .vip-badge-circle {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -314,9 +314,11 @@ h3 {
 }
 
 .vip-badge-circle.is-active {
-  background: linear-gradient(135deg, #34d399, var(--vz-brand-cyan));
-  color: #022c22;
-  box-shadow: 0 10px 26px rgba(52, 211, 153, 0.32);
+  /* Mismo ámbar que la corona VIP del shell mobile (`.m-row-crown`, #fbbf24):
+     un solo color para "esto es VIP" en toda la app, en vez de un verde que
+     no aparece en ningún otro lado. */
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
 }
 
 .vip-badge-circle.is-locked {
@@ -668,10 +670,6 @@ h3 {
   position: absolute;
   top: 16px;
   right: 16px;
-}
-
-.modal-description {
-  margin-top: -6px;
 }
 
 .modal-basic {

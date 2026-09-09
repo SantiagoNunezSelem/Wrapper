@@ -23,13 +23,14 @@ export function LoadingOverlay({ title, subtitle, progress }: LoadingOverlayProp
       )}
 
       <p className="loading-overlay-title">{title}</p>
-      <p className="loading-overlay-subtitle">{subtitle}</p>
 
       {isAnalyzing ? (
         <div className="loading-progress-track" aria-hidden="true">
           <div className="loading-progress-fill" style={{ width: `${progressPercent}%` }} />
         </div>
       ) : null}
+
+      <p className="loading-overlay-subtitle">{subtitle}</p>
     </div>
   )
 }

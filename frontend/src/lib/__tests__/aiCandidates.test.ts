@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
-import { buildAiCandidates, buildAllAiCandidates, toAcceptedMessageIds } from '../aiCandidates'
-import { matchAiKeywordExplicit, matchAiKeywordGeneral, matchAiKeywordModerate } from '../metrics'
+import { buildAiCandidates, buildAllAiCandidates, toMessageIds } from '../aiCandidates'
+import {
+  matchAiKeywordExplicit,
+  matchAiKeywordGeneral,
+  matchAiKeywordModerate,
+  matchAiKeywordWide,
+} from '../metrics'
 
 beforeEach(resetMessageIds)
 
@@ -22,12 +27,28 @@ describe('matchAiKeyword — los dos niveles del diccionario', () => {
   it('recorre todas las categorías de red flags', () => {
     expect(matchAiKeywordExplicit('redflags', 'me dejaste en visto')).toBe('me dejaste en visto')
     expect(matchAiKeywordExplicit('redflags', 'hoy comimos pizza')).toBeNull()
-    expect(matchAiKeywordGeneral('redflags', 'sos posesivo')).toBe('sos posesivo')
+    expect(matchAiKeywordExplicit('redflags', 'sos posesivo')).toBe('sos posesivo')
+    expect(matchAiKeywordGeneral('redflags', 'no me dejas respirar')).toBe('no me dejas respirar')
+  })
+
+  it('un insulto suelto no llega a la IA; el dirigido sí', () => {
+    // Medido sobre el grupo de amigos real: 146 de sus 413 "insultos" eran un "boludo"
+    // suelto de trato ("dale boludo", "boludo ayer me la vi"). Cuentan para el número
+    // (ver metrics-vip), pero gastar un lugar del lote de la IA en eso no sirve.
+    expect(matchAiKeywordExplicit('redflags', 'dale boludo, vamos')).toBeNull()
+    expect(matchAiKeywordGeneral('redflags', 'dale boludo, vamos')).toBeNull()
+    expect(matchAiKeywordGeneral('redflags', 'sos un boludo')).toBe('sos un boludo')
+    expect(matchAiKeywordGeneral('redflags', 'pelotudo de mierda')).toBe('pelotudo de mierda')
+    // El nivel ancho sí lo reconoce — es el que entra sólo como último recurso.
+    expect(matchAiKeywordWide('redflags', 'dale boludo, vamos')).toBe('boludo')
+    expect(matchAiKeywordWide('tonopicante', 'que culo')).toBeNull()
   })
 
   it('normaliza tildes y mayúsculas antes de comparar', () => {
     expect(matchAiKeywordExplicit('tonopicante', 'CULO')).toBe('culo')
-    expect(matchAiKeywordExplicit('redflags', 'sos un MANIPULADOR')).toBe('manipulador')
+    // La palabra clave que viaja a la IA es la frase dirigida entera, no el sustantivo
+    // suelto: es lo que le permite distinguir un insulto real de una muletilla.
+    expect(matchAiKeywordExplicit('redflags', 'sos un MANIPULADOR')).toBe('sos un manipulador')
   })
 
   it('respeta los límites de palabra', () => {
@@ -208,6 +229,121 @@ describe('buildAiCandidates', () => {
     expect(candidates(many)).toHaveLength(300)
   })
 
+  it('redflags necesita un mensaje más largo para mandarse solo, sin vecinos', () => {
+    const midLength = Array.from({ length: 30 }, (_, index) => `palabra${index}`).join(' ')
+
+    // 31 palabras: para tonopicante (umbral 20) ya se manda solo…
+    const [tonopicanteCandidate] = candidates(
+      [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'contexto previo' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: `${midLength} sexy` },
+        { at: '2025-03-10T10:02:00', from: 'Ana', text: 'contexto posterior' },
+      ],
+      'tonopicante',
+    )
+    // …pero 33 palabras todavía no alcanzan el umbral de redflags (50): necesita a
+    // sus vecinos para que la IA entienda si el reproche va en serio o no.
+    const [redflagsCandidate] = candidates(
+      [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'contexto previo' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: `${midLength} sos un pelotudo` },
+        { at: '2025-03-10T10:02:00', from: 'Ana', text: 'contexto posterior' },
+      ],
+      'redflags',
+    )
+
+    expect(tonopicanteCandidate.text.split('\n')).toHaveLength(1)
+    expect(redflagsCandidate.text.split('\n')).toHaveLength(3)
+  })
+
+  it('redflags amplía hasta 3 vecinos de cada lado cuando el intercambio es corto', () => {
+    // Mensajes cortos van y vienen: con 1 vecino de cada lado el total no llega a
+    // las 50 palabras, así que se amplía a 3 de cada lado (7 líneas), no solo 1.
+    const shortExchange: MessageSpec[] = [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'che donde estabas' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'en lo de un amigo' },
+      { at: '2025-03-10T10:02:00', from: 'Ana', text: 'otra vez mentira tuya' },
+      { at: '2025-03-10T10:03:00', from: 'Beto', text: 'sos un pelotudo' },
+      { at: '2025-03-10T10:04:00', from: 'Ana', text: 'no me hables asi' },
+      { at: '2025-03-10T10:05:00', from: 'Beto', text: 'dejame en paz' },
+      { at: '2025-03-10T10:06:00', from: 'Ana', text: 'no te banco mas' },
+    ]
+
+    const [redflagsCandidate] = candidates(shortExchange, 'redflags')
+
+    expect(redflagsCandidate.text.split('\n')).toHaveLength(7)
+  })
+
+  it('tonopicante no amplía tanto: sólo cuando el total no llega a 5 palabras', () => {
+    // El mismo tipo de intercambio corto, pero para tonopicante: 1 vecino de cada
+    // lado ya suma bastante más de 5 palabras, así que no hace falta ampliar.
+    const [tonopicanteCandidate] = candidates(
+      [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'que tal el dia' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: 'que calor tremendo' },
+        { at: '2025-03-10T10:02:00', from: 'Ana', text: 'si esta re caliente' },
+        { at: '2025-03-10T10:03:00', from: 'Beto', text: 'ni que lo digas' },
+      ],
+      'tonopicante',
+    )
+
+    expect(tonopicanteCandidate.text.split('\n')).toHaveLength(3)
+  })
+
+  it('el tope de fragmentos de redflags es 75, un cuarto del resto', () => {
+    // El contexto extra que ahora se suma (ver tests anteriores) puede cuadruplicar
+    // el tamaño de un fragmento en el peor caso — el tope baja a un cuarto para que
+    // el gasto total de tokens de la métrica no aumente.
+    const many = Array.from({ length: 100 }, (_, index) => ({
+      at: `2025-03-10T${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00`,
+      from: index % 2 === 0 ? 'Ana' : 'Beto',
+      text: `sos un pelotudo numero ${index}`,
+    }))
+
+    expect(candidates(many, 'redflags')).toHaveLength(75)
+  })
+
+  it('si lo específico casi no encontró nada, completa con palabras sueltas', () => {
+    // 2 aciertos dirigidos y un montón de "boludo" suelto: con sólo 2 candidatos no vale
+    // la pena seguir siendo exigente, así que entran los sueltos a completar el lote.
+    const built = candidates(
+      [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'sos un pelotudo' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: 'pelotudo de mierda' },
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T11:${String(index).padStart(2, '0')}:00`,
+          from: 'Ana',
+          text: `dale boludo numero ${index}`,
+        })),
+      ],
+      'redflags',
+    )
+
+    expect(built.length).toBeGreaterThan(2)
+    expect(built.map((item) => item.keyword)).toContain('boludo')
+  })
+
+  it('con suficientes aciertos específicos, las palabras sueltas no entran nunca', () => {
+    const built = candidates(
+      [
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T10:${String(index).padStart(2, '0')}:00`,
+          from: 'Beto',
+          text: `sos un pelotudo numero ${index}`,
+        })),
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T11:${String(index).padStart(2, '0')}:00`,
+          from: 'Ana',
+          text: `dale boludo numero ${index}`,
+        })),
+      ],
+      'redflags',
+    )
+
+    expect(built).toHaveLength(20)
+    expect(built.map((item) => item.keyword)).not.toContain('boludo')
+  })
+
   it('excluye del pool los mensajes de sistema y los placeholders', () => {
     const [candidate] = candidates([
       { at: '2025-03-10T10:00:00', from: null, text: 'Los mensajes están cifrados' },
@@ -257,29 +393,29 @@ describe('buildAllAiCandidates', () => {
   })
 })
 
-describe('toAcceptedMessageIds', () => {
+describe('toMessageIds', () => {
   const built = [
     { id: '1', messageIds: ['m1', 'm2'], keyword: 'sexy', text: 'x' },
     { id: '2', messageIds: ['m3'], keyword: 'hot', text: 'y' },
   ]
 
   it('expande un id corto a todos los mensajes que representaba', () => {
-    expect(toAcceptedMessageIds(built, ['1'])).toEqual(new Set(['m1', 'm2']))
+    expect(toMessageIds(built, ['1'])).toEqual(new Set(['m1', 'm2']))
   })
 
   it('acumula varios ids aceptados', () => {
-    expect(toAcceptedMessageIds(built, ['1', '2'])).toEqual(new Set(['m1', 'm2', 'm3']))
+    expect(toMessageIds(built, ['1', '2'])).toEqual(new Set(['m1', 'm2', 'm3']))
   })
 
   it('ignora un id que el modelo inventó', () => {
-    expect(toAcceptedMessageIds(built, ['99'])).toEqual(new Set())
+    expect(toMessageIds(built, ['99'])).toEqual(new Set())
   })
 
   it('devuelve un set vacío cuando la IA no aceptó nada', () => {
-    expect(toAcceptedMessageIds(built, [])).toEqual(new Set())
+    expect(toMessageIds(built, [])).toEqual(new Set())
   })
 
   it('no duplica un mensaje aunque venga repetido', () => {
-    expect(toAcceptedMessageIds(built, ['1', '1'])).toEqual(new Set(['m1', 'm2']))
+    expect(toMessageIds(built, ['1', '1'])).toEqual(new Set(['m1', 'm2']))
   })
 })

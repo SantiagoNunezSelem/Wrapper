@@ -4,7 +4,7 @@ import type { AiPanelProps } from '../components/AiStatePanel'
 import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
-import { toAcceptedMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
+import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
 import {
   analyzeAiMetrics,
@@ -393,6 +393,10 @@ export function useVistazo() {
         setAnalysisProgress(null)
       }
     }
+    // `copy` is `shellCopy[language]`, and `language` is already here — so listing the
+    // two strings this effect reads off it (`copy.analyzing`, `copy.loadError`) could
+    // only ever re-run the analysis for a reason the array already covers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat, language])
 
   // The AI pass is kept out of the analysis above on purpose: it is the only part of
@@ -422,6 +426,11 @@ export function useVistazo() {
 
     aiAttemptedFor.current = runKey
     void runAiPhase(token, activeChat, core, { retry: false })
+    // `runAiPhase` is a plain function declaration in the hook body, so it is a new
+    // value on every render: in the array it would re-run this effect on every render,
+    // and every run sets state. What actually makes the pass run once per chat+language
+    // is the `aiAttemptedFor` guard above, which is what the array is trying to express.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat, core, token, language, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
 
   // Asked once per session, and only where it's actionable: a Pro viewer looking at a
@@ -451,6 +460,9 @@ export function useVistazo() {
     } else {
       setIsAuthModalOpen(true)
     }
+    // Same as above: `persistAnalysis` is declared in the hook body, new identity every
+    // render. The one-shot flag here is `pendingPersist`, cleared at the top.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPersist, storageAnalysis, token])
 
   // Localhost only: the VIP switch has to know which way it is currently pointing, and
@@ -461,6 +473,8 @@ export function useVistazo() {
     }
 
     void loadSubscription(token)
+    // Same as above: `loadSubscription` is declared in the hook body.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDevTools, token])
 
   // Read once the account is known and only while it lacks Pro: with Pro every detail is
@@ -1070,7 +1084,7 @@ export function useVistazo() {
           })
 
       const nextStates: AiCardStates = {}
-      const verdicts: Partial<Record<AiMetricId, string[]>> = {}
+      const verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>> = {}
 
       for (const result of results) {
         if (!isAiMetricId(result.metricId)) {
@@ -1085,7 +1099,10 @@ export function useVistazo() {
 
         if (result.status === 'ready') {
           const set = candidateSets.find((candidate) => candidate.metricId === result.metricId)
-          verdicts[result.metricId] = [...toAcceptedMessageIds(set?.candidates ?? [], result.acceptedIds)]
+          verdicts[result.metricId] = {
+            accepted: [...toMessageIds(set?.candidates ?? [], result.acceptedIds)],
+            rejected: [...toMessageIds(set?.candidates ?? [], result.rejectedIds)],
+          }
         }
       }
 

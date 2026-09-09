@@ -43,7 +43,10 @@ public static class AiMetricPrompts
             "terminar el vínculo. " +
             "Excluí cuando sea broma o sarcasmo entre amigos, cariño exagerado, cita de una canción, " +
             "película o de un tercero, o cuando la frase se refiera a algo que no es la relación " +
-            "(\"odio este trabajo\", \"terminamos el proyecto\").",
+            "(\"odio este trabajo\", \"terminamos el proyecto\"). " +
+            "En el chat, terminar una frase con \"(?\" es un recurso para marcar ironía o sarcasmo " +
+            "(por ejemplo, \"sos un capo (?\" es sarcástico, no un halago real) — tenelo en cuenta al " +
+            "interpretar el mensaje.",
 
         _ => throw new ArgumentOutOfRangeException(nameof(metricId), metricId, "Unsupported AI metric."),
     };

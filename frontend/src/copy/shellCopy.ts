@@ -24,9 +24,8 @@ export const landingMockupStats = {
 export const shellCopy = {
   es: {
     title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' },
-    landingSubtitle:
-      'Subí un export de WhatsApp y descubrí quién monologuea, quién clava el visto, qué horarios dominan y dónde explota la conversación.',
-    heroCaption: 'Privado, visual y un poquito picante.',
+    landingSubtitle: 'La verdad de tu grupo, en gráficos.',
+    heroCaption: 'El resumen que tu grupo no pidió.',
     whatItDoesTitle: '¿Para qué sirve?',
     whatItDoesBody:
       'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión. Las dos métricas Pro con IA son la única excepción, y te pedimos permiso antes.',
@@ -447,7 +446,6 @@ export const shellCopy = {
       removeLabel: 'Quitar "{word}" de la nube',
     },
     metricsTitle: 'Tu Wrapped completo',
-    metricsSubtitle: 'Cada tarjeta tiene un resultado directo. Las bloqueadas se destapan con VIP.',
     savePromptTitle: 'Guardá este Wrapped',
     savePromptBody: 'Iniciá sesión con Google para no perderlo y volver a verlo cuando quieras.',
     reprocessHint: 'Este análisis se guardó sin acceso VIP. Volvé a subir el chat para ver el detalle completo desbloqueado.',
@@ -470,8 +468,8 @@ export const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Tus mensajes se procesan en tu navegador y el chat nunca se sube entero. Solo guardamos métricas agregadas cuando iniciás sesión. Con Pro, y únicamente si lo autorizás, dos métricas envían los mensajes ya marcados por el filtro —recortados y sin nombres— para que una IA los revise.',
-    footerRights: 'Hecho con demasiado jajaja.',
+      'Tu chat se procesa en tu dispositivo y nunca se sube entero. No compartimos nada sin tu permiso.',
+    footerRights: 'Hecho sin nada mejor que hacer un domingo.',
     /* Textos que sólo existen en el shell de mobile: pestañas, hoja de subida,
        modo historia. Viven acá y no adentro de los componentes, para que sigan
        la misma regla que el resto — un solo lugar, los dos idiomas. */
@@ -517,9 +515,8 @@ export const shellCopy = {
   },
   en: {
     title: { prefix: 'Your chat deserves its own', highlight: 'Wrapped' },
-    landingSubtitle:
-      'Upload a WhatsApp export and uncover who monologues, who leaves you on seen, which hours dominate, and when the conversation explodes.',
-    heroCaption: 'Private, visual, and a little spicy.',
+    landingSubtitle: "Your group chat's truth, in charts.",
+    heroCaption: "The recap your group didn't ask for.",
     whatItDoesTitle: 'What is it for?',
     whatItDoesBody:
       'The app processes the chat in your browser, computes playful metrics, and only stores aggregated results once you decide to sign in. The two AI-powered Pro metrics are the single exception, and we ask first.',
@@ -931,7 +928,6 @@ export const shellCopy = {
       removeLabel: 'Remove "{word}" from the cloud',
     },
     metricsTitle: 'Your full Wrapped',
-    metricsSubtitle: 'Every card shows a straight-to-the-point result. Locked ones unlock with VIP.',
     savePromptTitle: 'Save this Wrapped',
     savePromptBody: "Sign in with Google so you don't lose it — come back to it whenever you want.",
     reprocessHint: 'This analysis was saved without VIP access. Re-upload the chat to see the full unlocked detail.',
@@ -954,8 +950,8 @@ export const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Your messages are processed in your browser and the chat is never uploaded in full. We only store aggregated metrics once you sign in. With Pro, and only if you authorize it, two metrics send the messages already flagged by the keyword filter — trimmed and without names — for an AI to review.',
-    footerRights: 'Made with way too much "hahaha".',
+      'Your chat is processed on your device and never fully uploaded. Nothing is shared without your permission.',
+    footerRights: 'Made with nothing better to do on a Sunday.',
     mobile: {
       tabs: { home: 'Home', metrics: 'Metrics', history: 'History', account: 'Account' },
       openMenu: 'Open menu',

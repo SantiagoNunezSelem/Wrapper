@@ -1249,13 +1249,6 @@
   letter-spacing: -0.015em;
 }
 
-.m-sheet-title p {
-  margin-top: 3px;
-  font-size: 0.78rem;
-  color: var(--vz-text-dim);
-  line-height: 1.45;
-}
-
 .m-sheet-close {
   display: grid;
   place-items: center;

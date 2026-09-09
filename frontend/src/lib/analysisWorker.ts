@@ -25,7 +25,7 @@ export type WorkerRequest =
       sourceHash: string
       language: Language
       core: AnalysisCore
-      verdicts: Partial<Record<AiMetricId, string[]>>
+      verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>>
       messages?: ChatMessage[]
     }
   | {
@@ -135,8 +135,8 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
   }
 
   const verdicts: AiVerdicts = {}
-  for (const [metricId, acceptedIds] of Object.entries(request.verdicts)) {
-    verdicts[metricId as AiMetricId] = new Set(acceptedIds)
+  for (const [metricId, verdict] of Object.entries(request.verdicts)) {
+    verdicts[metricId as AiMetricId] = { accepted: new Set(verdict.accepted), rejected: new Set(verdict.rejected) }
   }
 
   const core = await applyAiVerdicts(request.core, messages, request.language, verdicts)

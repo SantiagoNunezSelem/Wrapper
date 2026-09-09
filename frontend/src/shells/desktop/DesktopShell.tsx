@@ -3,7 +3,6 @@ import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
 import { ErrorBanner } from '../../components/ErrorBanner'
-import { ExportTutorialModal } from '../../components/ExportTutorialModal'
 import { FileUploadZone } from '../../components/FileUploadZone'
 import { FreeUnlockConfirm } from '../../components/FreeUnlockConfirm'
 import { CrossButton } from '../../components/IconButton'
@@ -16,7 +15,7 @@ import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { RecaptchaChallenge } from '../../components/RecaptchaChallenge'
 import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
-import { SubscriptionPage } from '../../components/SubscriptionPage'
+import { lazyPanel } from '../../components/lazyPanel'
 import { VipBadge } from '../../components/VipBadge'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -27,6 +26,22 @@ import { useInView } from '../../lib/useInView'
 import { usePwaInstall } from '../../lib/usePwaInstall'
 import type { Language, SavedAnalysis } from '../../types'
 import './desktop.css'
+
+// Las dos pantallas más pesadas del shell, y ninguna se dibuja al entrar: la de
+// suscripción vive detrás del menú de cuenta y el tutorial detrás de "¿cómo exporto
+// el chat?" (son ~590 líneas de SVG dibujado a mano). Sacarlas del bundle inicial es
+// sacar peso de la carga que sí bloquea la primera pantalla.
+const SubscriptionPage = lazyPanel(
+  () => import('../../components/SubscriptionPage'),
+  (m) => m.SubscriptionPage,
+  // Reemplaza todo el shell, así que sin fallback quedaría la pantalla en blanco.
+  'screen',
+)
+
+const ExportTutorialModal = lazyPanel(
+  () => import('../../components/ExportTutorialModal'),
+  (m) => m.ExportTutorialModal,
+)
 
 /**
  * El Vistazo de siempre, para monitor. El JSX es exactamente el que vivía en
@@ -336,7 +351,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             <div>
               <p className="eyebrow">{analysis.chatName}</p>
               <h1>{copy.metricsTitle}</h1>
-              <p className="lead">{copy.metricsSubtitle}</p>
             </div>
 
             <div className="analytics-hero-actions">
@@ -422,7 +436,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             <div>
               <p className="eyebrow">{copy.heroCaption}</p>
               <h1>{copy.metricsTitle}</h1>
-              <p className="lead">{copy.metricsSubtitle}</p>
             </div>
           </section>
 

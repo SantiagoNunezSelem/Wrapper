@@ -1,0 +1,54 @@
+# Actualizaciones automáticas de dependencias.
+#
+# El job "Seguridad" de tests.yml avisa cuando una dependencia queda con un aviso
+# abierto; esto es la otra mitad, la que además abre el PR que lo arregla. Sin esto el
+# aviso llega igual, pero alguien tiene que sentarse a mirar qué versión lo corrige.
+version: 2
+
+updates:
+  # Un solo PR semanal por ecosistema en vez de uno por paquete: son tres ecosistemas y
+  # un repo de una persona, y diez PRs sueltos por semana terminan sin revisar.
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Lo que sólo corre en la máquina de desarrollo o en CI se agrupa entero: si rompe
+      # algo, rompe el build, que es exactamente donde se quiere que aparezca.
+      herramientas:
+        dependency-type: development
+        update-types: [minor, patch]
+      # Lo que sí viaja al navegador se agrupa aparte y sólo en patch: un minor de React
+      # merece su propio PR y su propia mirada.
+      runtime:
+        dependency-type: production
+        update-types: [patch]
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # El stack de Microsoft se versiona junto: subir EF Core sin subir el resto del
+      # 9.0.x es cómo aparecen los conflictos de versión transitiva.
+      microsoft:
+        patterns: ["Microsoft.*"]
+        update-types: [minor, patch]
+      resto:
+        patterns: ["*"]
+        exclude-patterns: ["Microsoft.*"]
+        update-types: [minor, patch]
+
+  # Las propias actions del workflow: un `actions/checkout@v4` sin tocar durante dos años
+  # es la forma más silenciosa de quedarse con una versión con aviso de seguridad.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

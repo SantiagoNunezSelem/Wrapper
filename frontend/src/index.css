@@ -88,3 +88,35 @@ input {
   outline-color: var(--vz-text-strong);
   outline-offset: 2px;
 }
+
+/* --- Scrollbar global -----------------------------------------------------
+   "Fantasma": casi invisible en reposo, un poco más marcado al pasar el mouse
+   — nunca compite con el contenido. `*` a propósito: así cualquier área nueva
+   con overflow lo hereda sin declarar nada — antes solo .history-list
+   (desktop.css) tenía su propio scrollbar prolijo, todo el resto (el modal de
+   métricas, los popovers, el buscador de historial de pagos) se quedaba con
+   el gris de sistema. Los `display: none` de mobile (.m-scroll-x,
+   .m-sheet-body) siguen ganando: una clase pisa al universal por
+   especificidad, no hace falta tocarlos. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vz-surface-4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--vz-surface-4);
+  border-radius: var(--vz-radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--vz-surface-6);
+}

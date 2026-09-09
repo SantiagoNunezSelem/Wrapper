@@ -7,10 +7,13 @@ function LockIcon() {
   )
 }
 
-function CheckIcon() {
+// Misma corona (path y color ámbar) que ya usa el shell mobile para marcar VIP
+// (`shells/mobile/icons.tsx`, `CrownIcon`) — así el círculo de escritorio no
+// inventa un segundo lenguaje visual para lo mismo.
+function CrownIcon() {
   return (
-    <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 13l4 4L19 7" />
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="currentColor">
+      <path d="M3 8l4 3 5-6 5 6 4-3-2 10H5L3 8Z" />
     </svg>
   )
 }
@@ -18,7 +21,7 @@ function CheckIcon() {
 export function VipBadge({ active, label, compact = false }: { active: boolean; label: string; compact?: boolean }) {
   return (
     <div className={`vip-badge ${compact ? 'is-compact' : ''}`}>
-      <span className={`vip-badge-circle ${active ? 'is-active' : 'is-locked'}`}>{active ? <CheckIcon /> : <LockIcon />}</span>
+      <span className={`vip-badge-circle ${active ? 'is-active' : 'is-locked'}`}>{active ? <CrownIcon /> : <LockIcon />}</span>
       <span className="vip-badge-label">{label}</span>
     </div>
   )

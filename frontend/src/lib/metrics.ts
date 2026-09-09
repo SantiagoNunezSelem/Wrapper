@@ -31,6 +31,16 @@ const PER_PARTICIPANT_TOP_LIMIT = 15
  */
 const TONOPICANTE_EXAMPLE_LIMIT = 50
 const TONOPICANTE_PER_PARTICIPANT_LIMIT = 25
+/** Same idea as TONOPICANTE_EXAMPLE_LIMIT, for "Qué tan tensa está la conversación"
+ * (redflags): how many AI-confirmed + structural (silence) examples the detail view
+ * shows in total. */
+const REDFLAGS_EXAMPLE_LIMIT = 50
+/**
+ * Long-silence examples are all structurally identical ("nadie contestó por un
+ * rato") — past a handful they read as filler, not insight, so only the longest
+ * ones (the ones actually worth a second look) make the cut.
+ */
+const MAX_SILENCE_EXAMPLES = 5
 // How many real messages of context to show before/after a highlighted moment,
 // so the user can actually recall the exchange instead of reading it in isolation.
 const CONTEXT_WINDOW = 3
@@ -141,14 +151,31 @@ interface TieredDictionary {
   matchAny(text: string): TieredWordMatch | null
   matchExplicit(text: string): string | null
   matchGeneral(text: string): string | null
+  /** Sólo el nivel ancho (ver `countOnlyWords`). Es el último recurso de
+   * `buildAiCandidates` cuando los niveles específicos casi no encontraron nada. */
+  matchCountOnly(text: string): string | null
 }
 
-function buildTieredDictionary(explicitWords: string[], generalWords: string[]): TieredDictionary {
+function buildTieredDictionary(
+  explicitWords: string[],
+  generalWords: string[],
+  /**
+   * La red ancha del conteo: un "boludo" suelto es un insulto en el diccionario aunque
+   * nueve de cada diez veces sea muletilla. Cuenta para el número, pero no se le manda a
+   * la IA salvo que los niveles específicos de arriba casi no hayan encontrado nada (ver
+   * `MIN_SPECIFIC_CANDIDATES` en aiCandidates.ts) — así el número grande no se achica y
+   * lo que la IA juzga sigue siendo lo que vale la pena juzgar.
+   */
+  countOnlyWords: string[] = [],
+): TieredDictionary {
   const explicitSet = new Set(explicitWords)
   const explicitPattern = toBoundaryPattern(explicitWords)
   const generalPattern = toBoundaryPattern(generalWords)
-  const anyPattern = toBoundaryPattern([...explicitWords, ...generalWords])
-  const entries = [...explicitWords, ...generalWords].map((word) => ({
+  // Sin palabras, `toBoundaryPattern` produciría una alternancia vacía que matchea en
+  // cualquier lado; los diccionarios sin nivel ancho tienen que no matchear nunca.
+  const countOnlyPattern = countOnlyWords.length > 0 ? toBoundaryPattern(countOnlyWords) : null
+  const anyPattern = toBoundaryPattern([...explicitWords, ...generalWords, ...countOnlyWords])
+  const entries = [...explicitWords, ...generalWords, ...countOnlyWords].map((word) => ({
     word,
     isExplicit: explicitSet.has(word),
     pattern: new RegExp(`\\b${escapeRegExp(word)}\\b`),
@@ -171,32 +198,81 @@ function buildTieredDictionary(explicitWords: string[], generalWords: string[]):
     },
     matchExplicit: (text) => explicitPattern.exec(normalizeForMatch(text))?.[0] ?? null,
     matchGeneral: (text) => generalPattern.exec(normalizeForMatch(text))?.[0] ?? null,
+    matchCountOnly: (text) => countOnlyPattern?.exec(normalizeForMatch(text))?.[0] ?? null,
   }
 }
 
 interface RedFlagCategory {
-  weight: number
   labelEs: string
   labelEn: string
+  /** Cómo se lee el conteo de esta categoría cuando es el más alto del chat y encabeza
+   * la tarjeta ("563 insultos", "238 mensajes de control"). */
+  countEs: { one: string; many: string }
+  countEn: { one: string; many: string }
   dict: TieredDictionary
 }
 
+/**
+ * Un insulto suelto no es un insulto: en rioplatense "boludo", "pelotudo" o "forro" son
+ * muletillas de trato, no agresiones ("dale boludo", "boludo ayer me la vi"). Medido
+ * sobre los dos chats reales de Project_Context/: de 413 "insultos" del grupo de amigos,
+ * 146 eran un "boludo" suelto y ninguno de los primeros que miré era una agresión.
+ *
+ * Así que un sustantivo insultante sólo cuenta cuando está dirigido a alguien. Cada uno
+ * se expande a las formas que lo dirigen — las mismas que usaría una persona real, con
+ * los intensificadores del medio ("sos re pelotudo") ya contemplados, porque el
+ * diccionario matchea frases literales y no tolera palabras sueltas entre medio.
+ */
+// Cada apertura multiplica el diccionario por la cantidad de sustantivos, pero medido
+// sobre los chats reales no cuesta tiempo de análisis apreciable (20.4s con y sin el
+// diccionario generado, sobre 124k mensajes), así que la lista cubre las formas
+// naturales de las dos variantes del idioma en vez de quedarse en las mínimas.
+const directedOpenersEs = [
+  'sos', 'sos un', 'sos una', 'sos re', 'sos un re', 'sos muy', 'sos medio', 'sos tan',
+  'sos el', 'sos la', 'eres', 'eres un', 'eres una', 'eres muy', 'eres tan',
+]
+const directedOpenersEn = [
+  "you're", "you're a", "you're an", "you're so", 'you are', 'you are a', 'you are an', 'you are so',
+  'such a', 'such an', 'what a',
+]
+
+function directedEs(nouns: string[]): string[] {
+  return nouns.flatMap((noun) => [
+    ...directedOpenersEs.map((opener) => `${opener} ${noun}`),
+    `que ${noun} que sos`,
+    `que ${noun} sos`,
+    `${noun} de mierda`,
+  ])
+}
+
+function directedEn(nouns: string[]): string[] {
+  return nouns.flatMap((noun) => directedOpenersEn.map((opener) => `${opener} ${noun}`))
+}
+
 // Categorized so one ambiguous word (like a plain "perdón"/"sorry") never taints the
-// score by itself — each category groups phrases that, together, actually read as a
+// count by itself — each category groups phrases that, together, actually read as a
 // real relationship-tension pattern rather than everyday politeness. Each category is
 // itself split into an explicit tier (the phrases most tightly tied to the category,
 // prioritized for the AI) and a general tier (a much wider net of everyday phrasing —
 // friends casually insulting each other, milder jealousy, etc.) that always counts
-// toward the score/chart regardless of whether the AI ever saw it.
+// toward the chart regardless of whether the AI ever saw it.
 const redFlagCategories: RedFlagCategory[] = [
   {
-    weight: 4,
     labelEs: 'Celos y control',
     labelEn: 'Jealousy & control',
+    countEs: { one: 'mensaje de control', many: 'mensajes de control' },
+    countEn: { one: 'controlling message', many: 'controlling messages' },
     dict: buildTieredDictionary(
       [
-        'celos', 'celoso', 'celosa', 'celosito', 'celosita', 'jealous', 'controlador', 'controladora',
-        'me controlas', 'manipulador', 'manipuladora', 'manipulacion', 'toxico', 'toxica', 'toxic',
+        // Mismo criterio que en Insultos: "celoso" o "jealous" sueltos son casi siempre
+        // chiste ("jealous?" 61 veces en el grupo de amigos, medido). Sólo cuentan
+        // dirigidos, o dichos en primera persona sobre uno mismo.
+        ...directedEs(['celoso', 'celosa', 'celosito', 'celosita', 'controlador', 'controladora',
+          'manipulador', 'manipuladora', 'toxico', 'toxica', 'posesivo', 'posesiva',
+          'desconfiado', 'desconfiada', 'paranoico', 'paranoica']),
+        ...directedEn(['jealous', 'controlling', 'toxic', 'possessive', 'paranoid', 'insecure']),
+        'estas celoso', 'estas celosa', 'me dan celos', 'tengo celos', 'estoy celoso', 'estoy celosa',
+        'me pone celoso', 'me pone celosa', 'me controlas', 'manipulacion',
         'no confio en ti', 'no confio en vos', 'no te creo nada', 'no te creo', 'estas mintiendo',
         'me estas mintiendo', 'me estas ignorando', 'me ignoras', 'con quien estas', 'con quien andas',
         'con quien hablabas', 'quien es el', 'quien es ese', 'quien es esa', 'revisa tu celular',
@@ -208,26 +284,31 @@ const redFlagCategories: RedFlagCategory[] = [
         'con quien chateas',
       ],
       [
-        'estas celoso', 'estas celosa', 'sos posesivo', 'sos posesiva', 'posesivo', 'posesiva', 'me asfixias',
+        'me asfixias',
         'me ahogas', 'no me dejas respirar', 'siempre desconfiando', 'me revisas el celular',
         'me revisas el whatsapp', 'me estas stalkeando', 'me controlas todo', 'controlas todo lo que hago',
         'quien te escribio', 'quien te llamo', 'con quien saliste', 'con quien estuviste', 'a donde fuiste',
         'adonde fuiste', 'me tenes que avisar todo', 'me tienes que avisar todo', 'me pedis explicaciones',
-        'me pides explicaciones', 'desconfiado', 'desconfiada', 'sos un paranoico', 'sos una paranoica',
-        'sos muy celoso', 'sos muy celosa', 'no me dejas salir', 'no me dejas tener amigos',
+        'me pides explicaciones', 'no me dejas salir', 'no me dejas tener amigos',
         'me haces sentir vigilada', 'me haces sentir vigilado',
-        "you're so jealous", "you're controlling", 'stop controlling me', "you're suffocating me",
+        'stop controlling me', "you're suffocating me",
         "you're smothering me", 'let me breathe', "why don't you trust me", 'stop checking my phone',
         "you're spying on me", 'stalking me', 'who texted you', 'who called you', 'where were you',
-        'where did you go', 'you need to explain yourself', 'paranoid', 'so possessive', 'overprotective',
-        "you're insecure", "you don't let me have friends", "you never let me out", "you always assume the worst",
+        'where did you go', 'you need to explain yourself', 'overprotective',
+        "you don't let me have friends", "you never let me out", "you always assume the worst",
+      ],
+      [
+        'celos', 'celoso', 'celosa', 'celosito', 'celosita', 'jealous', 'controlador', 'controladora',
+        'manipulador', 'manipuladora', 'toxico', 'toxica', 'toxic', 'posesivo', 'posesiva',
+        'desconfiado', 'desconfiada', 'paranoid', 'so possessive',
       ],
     ),
   },
   {
-    weight: 3,
     labelEs: 'Culpa y reproches',
     labelEn: 'Guilt-tripping',
+    countEs: { one: 'mensaje de reproche', many: 'mensajes de reproche' },
+    countEn: { one: 'guilt-tripping message', many: 'guilt-tripping messages' },
     dict: buildTieredDictionary(
       [
         'siempre haces lo mismo', 'siempre lo mismo', 'nunca me escuchas', 'nunca estas', 'es tu culpa',
@@ -255,55 +336,90 @@ const redFlagCategories: RedFlagCategory[] = [
     ),
   },
   {
-    weight: 5,
     labelEs: 'Insultos',
     labelEn: 'Insults',
+    countEs: { one: 'insulto', many: 'insultos' },
+    countEn: { one: 'insult', many: 'insults' },
+    // Los dos primeros niveles son sólo formas dirigidas — es lo que la IA recibe para
+    // juzgar, y de ahí salen los ejemplos que se muestran. Los sustantivos sueltos van
+    // en el tercero: cuentan para el número pero no llegan a la IA. La única entrada que
+    // quedó afuera del todo es "moron": 70 de los 297 "insultos" de un chat real eran la
+    // localidad de Morón, que después de sacarle la tilde queda idéntica al insulto.
     dict: buildTieredDictionary(
       [
-        'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica', 'asqueroso',
-        'asquerosa', 'das asco', 'me das asco', 'te odio', 'i hate you', 'sos un desastre',
-        'eres un desastre', "you're pathetic", "you're an idiot", 'sos una basura', 'eres una basura',
-        'sos basura', 'eres basura', 'sos un fracasado', 'eres un fracasado', 'sos una fracasada',
-        'eres una fracasada', 'no servis para nada', 'no sirves para nada', 'sos una verguenza',
-        'eres una verguenza', 'sos un perdedor', 'eres un perdedor', 'sos ridiculo', 'sos ridicula',
-        'eres ridiculo', 'eres ridicula', 'no vales nada', 'sos un desgraciado',
-        'eres un desgraciado', 'callate la boca', "you're trash", "you're garbage",
-        "you're worthless", "you're a loser", 'shut up', 'screw you', "you're disgusting",
-        'you make me sick', "you're a joke", "you're useless", "you're stupid", 'sos un inutil',
-        'eres un inutil',
+        ...directedEs([
+          'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica',
+          'asqueroso', 'asquerosa', 'basura', 'fracasado', 'fracasada', 'verguenza',
+          'perdedor', 'perdedora', 'ridiculo', 'ridicula', 'desgraciado', 'desgraciada',
+        ]),
+        ...directedEn([
+          'idiot', 'pathetic', 'trash', 'garbage', 'worthless', 'disgusting', 'joke',
+          'useless', 'stupid', 'loser',
+        ]),
+        'das asco', 'me das asco', 'te odio', 'i hate you', 'no servis para nada',
+        'no sirves para nada', 'no vales nada', 'callate la boca', 'you make me sick',
       ],
       [
+        ...directedEs([
+          'boludo', 'boluda', 'pelotudo', 'pelotuda', 'huevon', 'gil', 'gila', 'tarado', 'tarada',
+          'forro', 'forra', 'tonto', 'tonta', 'menso', 'mensa', 'baboso', 'babosa', 'zopenco',
+          'zopenca', 'bobo', 'boba', 'anormal', 'pendejo', 'pendeja', 'nabo', 'sorete', 'mogolico',
+          'mogolica', 'infeliz', 'sinverguenza',
+        ]),
+        ...directedEn([
+          'jerk', 'asshole', 'jackass', 'dumbass', 'dumbo', 'airhead', 'nitwit', 'dimwit',
+          'numbskull', 'knucklehead', 'meathead', 'blockhead', 'wanker', 'douche', 'douchebag',
+          'scumbag', 'lowlife', 'clown', 'embarrassment', 'gross', 'annoying', 'dumb',
+        ]),
+        'screw you', 'piss off', 'get lost', 'you suck',
+      ],
+      [
+        // "basura", "verguenza", "ridiculo", "perdedor", "fracasado" y "desgraciado" no
+        // están acá a propósito: son palabras de uso corriente que sólo son insulto
+        // cuando van dirigidas ("sacá la basura", "qué vergüenza el precio"), así que
+        // viven únicamente en las formas dirigidas de arriba.
+        'idiota', 'imbecil', 'estupido', 'estupida', 'inutil', 'patetico', 'patetica', 'asqueroso',
+        'asquerosa',
         'boludo', 'boluda', 'pelotudo', 'pelotuda', 'huevon', 'gil', 'gila', 'tarado', 'tarada',
         'forro', 'forra', 'tonto', 'tonta', 'menso', 'mensa', 'baboso', 'babosa', 'zopenco', 'zopenca',
         'bobo', 'boba', 'anormal', 'pendejo', 'pendeja', 'nabo', 'sorete', 'mogolico', 'mogolica',
         'infeliz', 'sinverguenza',
-        'idiot', 'moron', 'dumbass', 'jerk', 'asshole', 'jackass', 'loser', 'dumbo', 'airhead', 'nitwit',
-        'dimwit', 'numbskull', 'knucklehead', 'meathead', 'blockhead', 'wanker', 'douche', 'douchebag',
-        'scumbag', 'lowlife', 'dumb ass', 'piss off', 'get lost', 'you suck', "you're an embarrassment",
-        "you're a clown", "you're gross", "you're annoying", "you're so dumb", 'such an idiot',
+        'idiot', 'dumbass', 'dumb ass', 'jerk', 'asshole', 'jackass', 'loser', 'dumbo', 'airhead',
+        'nitwit', 'dimwit', 'numbskull', 'knucklehead', 'meathead', 'blockhead', 'wanker', 'douche',
+        'douchebag', 'scumbag', 'lowlife', 'shut up',
       ],
     ),
   },
   {
-    weight: 5,
     labelEs: 'Amenazas de ruptura',
     labelEn: 'Breakup threats',
+    countEs: { one: 'amenaza de ruptura', many: 'amenazas de ruptura' },
+    countEn: { one: 'breakup threat', many: 'breakup threats' },
     dict: buildTieredDictionary(
       [
         'terminamos', 'se acabo', 'quiero terminar', 'quiero cortar', 'ya no te quiero', 'ya no te amo',
         'no te amo mas', 'romper contigo', 'no quiero verte mas', 'no quiero saber nada de ti',
         'no quiero saber nada de vos', 'breaking up with you', "we're done", "i'm done with you",
-        'hasta aca llegamos', 'chau para siempre', 'this is over', 'i want out',
-        'quiero salir de esto', 'no doy mas con esto',
+        'hasta aca llegamos', 'chau para siempre', 'this is over', 'no doy mas con esto',
+        // Familias que faltaban por completo: "cortar" (como se dice acá, no sólo
+        // "quiero cortar"), "separar" y "divorcio" — casi nunca se usan por accidente
+        // en un chat de pareja, así que van directo al nivel fuerte.
+        // "me corto"/"te corto" quedaron afuera: en los chats reales eran siempre el pelo
+        // o la llamada, nunca la relación.
+        'cortamos', 'nos cortamos', 'quiero cortar contigo', 'nos separamos',
+        'quiero separarme', 'separarnos', 'mejor nos separamos', 'quiero el divorcio', 'pido el divorcio',
+        'quiero divorciarme', 'nos divorciamos', 'me quiero divorciar',
+        "let's break up", 'i want to break up', 'we should break up', 'i want a divorce', "let's get a divorce",
       ],
       [
-        'ya no aguanto mas', 'no doy mas', 'estoy cansado de esto', 'estoy cansada de esto',
-        'necesito un tiempo', 'necesitamos un tiempo', 'quiero un tiempo', 'me quiero ir', 'no se si seguir',
-        'no se si aguanto', 'esto no da para mas', 'ya no puedo mas', 'estoy pensando en dejarlo',
+        'no doy mas', 'estoy cansado de esto', 'estoy cansada de esto',
+        'necesito un tiempo', 'necesitamos un tiempo', 'quiero un tiempo', 'no se si seguir',
+        'esto no da para mas', 'estoy pensando en dejarlo',
         'estoy pensando en dejarte', 'quiero parar esto', 'quiero pausar esto', 'no le veo futuro a esto',
         'ya no se que hacer con esto', 'no se si vale la pena seguir', 'esto ya no funciona',
-        'estoy al limite', 'no aguanto mas esta relacion', 'no doy mas con vos', 'no doy mas contigo',
-        'quiero terminar con esto',
+        'no aguanto mas esta relacion', 'no doy mas con vos', 'no doy mas contigo',
+        'quiero terminar con esto', 'pensando en cortar', 'pensando en separarnos', 'no se si seguir con vos',
+        'no se si seguir contigo',
         "i can't do this anymore", 'i need space', 'i need a break', 'i need time apart',
         "i don't know if i can keep going", "this isn't working anymore", "i don't see a future in this",
         "i'm exhausted from this", "i'm done trying", 'maybe we should take a break', 'i think we need space',
@@ -311,7 +427,8 @@ const redFlagCategories: RedFlagCategory[] = [
         "i'm losing hope in this", 'this is exhausting me', "i don't know what we're doing anymore",
         'i need to think about us', "maybe this isn't meant to be", "i can't keep doing this",
         'this relationship is draining me', "i'm not happy anymore", "i don't think i can keep fighting for this",
-        'we need to talk about ending this', "i'm at my limit",
+        'we need to talk about ending this', 'thinking about breaking up', 'thinking about a divorce',
+        "i don't know if i want to stay with you",
       ],
     ),
   },
@@ -459,8 +576,41 @@ export function matchAiKeywordGeneral(metricId: AiMetricId, text: string): strin
   return null
 }
 
-/** Accepted message ids per AI metric, as returned by the backend. */
-export type AiVerdicts = Partial<Record<AiMetricId, ReadonlySet<string>>>
+/**
+ * El nivel más ancho: las palabras sueltas que normalmente sólo cuentan y no viajan a la
+ * IA (ver `countOnlyWords`). `buildAiCandidates` lo usa únicamente como último recurso,
+ * cuando los niveles específicos casi no dieron candidatos — antes de mandarle a la IA un
+ * lote casi vacío, conviene mandarle "boludo" suelto y que ella decida. Tonopicante ya
+ * tiene sus propios tres niveles y no usa éste.
+ */
+export function matchAiKeywordWide(metricId: AiMetricId, text: string): string | null {
+  if (metricId === 'tonopicante') {
+    return null
+  }
+
+  for (const category of redFlagCategories) {
+    const match = category.dict.matchCountOnly(text)
+    if (match) {
+      return match
+    }
+  }
+
+  return null
+}
+
+/**
+ * One metric's AI verdict, expanded from candidate ids to the real message ids they
+ * stood for. `rejected` is only meaningful for redflags today (see metricRedflags'
+ * score reweighting) — tonopicante's score stays purely dictionary-based on purpose
+ * and never reads it.
+ */
+export interface AiMetricVerdict {
+  accepted: ReadonlySet<string>
+  rejected: ReadonlySet<string>
+}
+
+/** Verdicts per AI metric, as returned by the backend. */
+export type AiVerdicts = Partial<Record<AiMetricId, AiMetricVerdict>>
 
 /** Per-metric AI state handed to `gateAnalysis`. A metric missing from this map is
  * treated as still pending, which keeps it locked rather than leaking raw numbers. */
@@ -1802,18 +1952,26 @@ function metricWordcloud(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
-  const { chatMessages, textMessages, language } = ctx
+function metricRedflags(ctx: MetricContext, verdict?: AiMetricVerdict): MetricResult {
+  const { chatMessages, textMessages, participants, language } = ctx
+  const accepted = verdict?.accepted
+  const rejected = verdict?.rejected
 
-  // Every keyword hit — explicit or general tier — counts toward the score, chart, and
-  // breakdown below, regardless of whether the AI ever got to look at it: the AI verdict
-  // only decides which of these hits get shown as a detailed, real-message example (see
-  // momentsById further down), it never shrinks the overall tally. Deletions and long
-  // silences never go through the AI at all — they're structural facts about the chat,
-  // with no wording to misread.
+  // Every keyword hit — explicit or general tier — counts toward the headline and the
+  // chart, with one exception: a hit the AI actually looked at and explicitly said isn't
+  // a real redflag drops out entirely, since that's the only verdict specific enough to
+  // trust over the raw keyword match. A hit the AI never got to classify, or that
+  // Gemini's safety floor blocked outright, still counts: neither of those is a "no".
+  // Separately, the AI verdict also decides which of these hits get shown as a detailed,
+  // real-message example (see keywordMomentsById further down) — that filtering is
+  // stricter (accepted-only) and independent of this rejected-only discount. Deletions
+  // and long silences never go through the AI at all — they're structural facts about
+  // the chat, with no wording to misread.
   const categoryHits = redFlagCategories.map((category) => ({
     category,
-    messages: textMessages.filter((message) => category.dict.hasAny(message.contentText)),
+    messages: textMessages.filter(
+      (message) => category.dict.hasAny(message.contentText) && !rejected?.has(message.id),
+    ),
   }))
   const deletions = chatMessages.filter((message) => message.isDeleted)
   // 48h matches the threshold "Rachas de Inactividad" already uses for a "long
@@ -1825,23 +1983,46 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
     return { hasData: false }
   }
 
-  // Rate-based, not absolute: a chat with 50,000 messages will rack up more raw
-  // deletions and silences than one with 500 just by existing longer, so every
-  // component is scaled against message volume before it can move the score.
-  const weightedKeywordSum = categoryHits.reduce((sum, entry) => sum + entry.messages.length * entry.category.weight, 0)
-  const messageCount = Math.max(textMessages.length, 1)
-  const score = Math.min(
-    100,
-    Math.round(
-      (weightedKeywordSum / messageCount) * 550 +
-        (deletions.length / Math.max(chatMessages.length, 1)) * 180 +
-        longSilences.length * 1.8,
-    ),
-  )
+  // Las seis cubetas que se cuentan, ya ordenadas de mayor a menor: la más alta es la
+  // que encabeza la tarjeta ("563 insultos") y el resto arma el gráfico. Antes acá vivía
+  // una puntuación 0-100 con pesos por categoría; un número compuesto de tasas ponderadas
+  // no le decía nada a nadie —dos chats muy distintos daban 34 y 35— mientras que "cuántos
+  // mensajes de este tipo hay" se lee solo y se puede verificar contando.
+  const buckets = [
+    ...categoryHits
+      .filter((entry) => entry.messages.length > 0)
+      .map((entry) => ({
+        label: categoryLabel(entry.category, language),
+        count: entry.messages.length,
+        countLabel: language === 'es' ? entry.category.countEs : entry.category.countEn,
+      })),
+    ...(deletions.length > 0
+      ? [
+          {
+            label: language === 'es' ? 'Borrados' : 'Deletions',
+            count: deletions.length,
+            countLabel:
+              language === 'es'
+                ? { one: 'mensaje borrado', many: 'mensajes borrados' }
+                : { one: 'deleted message', many: 'deleted messages' },
+          },
+        ]
+      : []),
+    ...(longSilences.length > 0
+      ? [
+          {
+            label: language === 'es' ? 'Silencios largos' : 'Long silences',
+            count: longSilences.length,
+            countLabel:
+              language === 'es'
+                ? { one: 'silencio largo', many: 'silencios largos' }
+                : { one: 'long silence', many: 'long silences' },
+          },
+        ]
+      : []),
+  ].sort((left, right) => right.count - left.count)
 
-  if (score === 0) {
-    return { hasData: false }
-  }
+  const top = buckets[0]
 
   const byKeywordSender = countBySender(categoryHits.flatMap((entry) => entry.messages))
 
@@ -1852,60 +2033,95 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
   // isn't shown to a real user until the card unlocks anyway). Deletions still count
   // toward the score and the breakdown chart above, but a "this message got deleted"
   // example has no actual text to show — so, on purpose, they never appear here.
-  const momentsById = new Map<string, { message: ChatMessage; heading: string }>()
+  const keywordMomentsById = new Map<string, { message: ChatMessage; heading: string }>()
   for (const entry of categoryHits) {
     for (const message of entry.messages) {
       if (accepted && !accepted.has(message.id)) {
         continue
       }
-      if (!momentsById.has(message.id)) {
-        momentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
+      if (!keywordMomentsById.has(message.id)) {
+        keywordMomentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
       }
     }
   }
-  for (const gap of longSilences) {
-    if (!momentsById.has(gap.after.id)) {
-      momentsById.set(gap.after.id, { message: gap.after, heading: silenceHeading(gap, language) })
-    }
-  }
-  const moments = [...momentsById.values()].sort(
+  const keywordMoments = [...keywordMomentsById.values()].sort(
     (left, right) => (ctx.messageIndex.get(left.message.id) ?? 0) - (ctx.messageIndex.get(right.message.id) ?? 0),
   )
+
+  // Longest gaps first, capped at MAX_SILENCE_EXAMPLES — every long silence still
+  // counts toward the score above, but as *examples* they're all the same beat
+  // ("nadie contestó por un rato"), so only the ones actually worth a second look
+  // make the cut. Reserving their slots before capping keywordMoments guarantees they
+  // survive the REDFLAGS_EXAMPLE_LIMIT truncation below instead of possibly getting
+  // crowded out by a chat with hundreds of keyword hits.
+  const silenceMoments = [...longSilences]
+    .filter((gap) => !keywordMomentsById.has(gap.after.id))
+    .sort((left, right) => right.hours - left.hours)
+    .slice(0, MAX_SILENCE_EXAMPLES)
+    .map((gap) => ({ message: gap.after, heading: silenceHeading(gap, language) }))
+
+  // Spread the silence examples through the list instead of leaving them wherever
+  // chronology happens to put them — five near-identical "nadie contestó" cards in a
+  // row reads as filler even when that's genuinely when the gaps occurred.
+  const moments = spreadEvenly(
+    keywordMoments.slice(0, Math.max(0, REDFLAGS_EXAMPLE_LIMIT - silenceMoments.length)),
+    silenceMoments,
+  )
+
+  // One mini ranking per category (plus deletions and long silences, same six buckets
+  // as the chart above) — the overall "by participant" breakdown mixes celos, culpa,
+  // insultos and rupturas into one bar per person, which hides who's actually driving
+  // *which* pattern; a person could lead on jealousy and barely register on insults.
+  const categorySeries: MetricSeriesEntry[] = [
+    ...categoryHits
+      .filter((entry) => entry.messages.length > 0)
+      .map((entry) => ({
+        name: categoryLabel(entry.category, language),
+        chart: {
+          kind: 'bar' as const,
+          items: rankingPercentBars(countBySender(entry.messages), entry.messages.length, participants.length),
+        },
+      })),
+    ...(deletions.length > 0
+      ? [
+          {
+            name: language === 'es' ? 'Borrados' : 'Deletions',
+            chart: {
+              kind: 'bar' as const,
+              items: rankingPercentBars(countBySender(deletions), deletions.length, participants.length),
+            },
+          },
+        ]
+      : []),
+    ...(longSilences.length > 0
+      ? [
+          {
+            name: language === 'es' ? 'Silencios largos' : 'Long silences',
+            chart: {
+              kind: 'bar' as const,
+              items: rankingPercentBars(
+                countBySender(longSilences.map((gap) => gap.after)),
+                longSilences.length,
+                participants.length,
+              ),
+            },
+          },
+        ]
+      : []),
+  ]
 
   return {
     hasData: true,
     basic: {
-      value: `${score}/100`,
-      label: language === 'es' ? 'puntuación heurística de tensión' : 'heuristic tension score',
+      value: formatNumber(top.count, language),
+      label: top.count === 1 ? top.countLabel.one : top.countLabel.many,
       chart: {
         kind: 'bar',
-        items: [
-          ...categoryHits
-            .filter((entry) => entry.messages.length > 0)
-            .map((entry) => ({
-              label: categoryLabel(entry.category, language),
-              value: entry.messages.length,
-              displayValue: formatNumber(entry.messages.length, language),
-            })),
-          ...(deletions.length > 0
-            ? [
-                {
-                  label: language === 'es' ? 'Borrados' : 'Deletions',
-                  value: deletions.length,
-                  displayValue: formatNumber(deletions.length, language),
-                },
-              ]
-            : []),
-          ...(longSilences.length > 0
-            ? [
-                {
-                  label: language === 'es' ? 'Silencios largos' : 'Long silences',
-                  value: longSilences.length,
-                  displayValue: formatNumber(longSilences.length, language),
-                },
-              ]
-            : []),
-        ],
+        items: buckets.map((bucket) => ({
+          label: bucket.label,
+          value: bucket.count,
+          displayValue: formatNumber(bucket.count, language),
+        })),
       },
     },
     detail: {
@@ -1914,7 +2130,8 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
           ? 'No es un diagnóstico: cruza silencios largos, borrados y frases clave agrupadas por categoría (celos, insultos, culpa, rupturas).'
           : 'Not a diagnosis: it combines long silences, deletions, and keyword phrases grouped by category (jealousy, insults, guilt-tripping, breakups).',
       breakdown: totalKeywordHits > 0 ? breakdownPercent(byKeywordSender, totalKeywordHits) : undefined,
-      groups: capGroups(moments).map((moment) => momentGroup(ctx, moment.message, moment.heading)),
+      series: categorySeries,
+      groups: moments.map((moment) => momentGroup(ctx, moment.message, moment.heading)),
       paginatedItemsLabel: language === 'es' ? 'Momentos señalados' : 'Flagged moments',
     },
   }
@@ -2124,8 +2341,12 @@ function metricDramatico(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
+function metricTonoPicante(ctx: MetricContext, verdict?: AiMetricVerdict): MetricResult {
   const { textMessages, participants, language } = ctx
+  // Tonopicante's score/chart/heatmap stay purely dictionary-based on purpose (see the
+  // comment below) — only `accepted` (which examples to show) is read here; `rejected`
+  // is redflags-only, see metricRedflags' score reweighting.
+  const accepted = verdict?.accepted
   // Every keyword hit — explicit or general tier — counts toward the score, chart, and
   // hour heatmap, regardless of whether the AI ever got to look at it: the AI verdict
   // only decides which hits get shown as a detailed, real-message example (see
@@ -2482,6 +2703,37 @@ function dayRangeGroup(ctx: MetricContext, day: string, heading: string, maxHigh
  * few call sites that still build their `MessageGroup[]` incrementally. */
 function capGroups<T>(items: T[]): T[] {
   return items.slice(0, GROUP_CAP)
+}
+
+/**
+ * `base`, with `extras` inserted at roughly even intervals instead of wherever they'd
+ * naturally land — so a handful of same-shaped examples (e.g. long-silence moments,
+ * all reading as "nobody replied for a while") come across as a few notes spread
+ * through the list instead of a run of near-identical cards bunched together.
+ */
+function spreadEvenly<T>(base: T[], extras: T[]): T[] {
+  if (extras.length === 0) {
+    return base
+  }
+
+  const step = Math.max(1, Math.floor(base.length / (extras.length + 1)))
+  const result: T[] = []
+  let nextExtra = 0
+
+  for (let index = 0; index < base.length; index += 1) {
+    result.push(base[index])
+    if (nextExtra < extras.length && (index + 1) % step === 0) {
+      result.push(extras[nextExtra])
+      nextExtra += 1
+    }
+  }
+
+  while (nextExtra < extras.length) {
+    result.push(extras[nextExtra])
+    nextExtra += 1
+  }
+
+  return result
 }
 
 // ---------------------------------------------------------------------------

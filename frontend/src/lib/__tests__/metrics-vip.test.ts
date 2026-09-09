@@ -343,36 +343,39 @@ describe('countWordOccurrences', () => {
 // ---------------------------------------------------------------------------
 
 describe('métrica redflags', () => {
-  it('puntúa de 0 a 100 y nunca se pasa', async () => {
+  it('encabeza con el conteo de la categoría más alta, en singular cuando es una sola', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-10T10:00:00', from: 'Ana', text: 'me dejaste en visto otra vez' },
     ])
 
-    expect(card.basic?.value).toBe('100/100')
-    expect(card.basic?.label).toBe('puntuación heurística de tensión')
+    expect(card.basic?.value).toBe('1')
+    expect(card.basic?.label).toBe('mensaje de control')
   })
 
-  it('el puntaje es una tasa: el mismo acierto pesa menos en un chat largo', async () => {
+  it('gana la categoría con más mensajes, no la más grave', async () => {
+    const card = await requireVipMetric('redflags', [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'me dejaste en visto otra vez' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'sos un pelotudo' },
+      { at: '2025-03-10T10:02:00', from: 'Beto', text: 'sos un idiota' },
+      { at: '2025-03-10T10:03:00', from: 'Beto', text: 'sos una basura' },
+    ])
+
+    expect(card.basic?.value).toBe('3')
+    expect(card.basic?.label).toBe('insultos')
+  })
+
+  it('el conteo es absoluto: el mismo acierto vale igual en un chat largo', async () => {
+    // Antes esto era una tasa (acierto / mensajes del chat), y el número resultante
+    // no significaba nada para nadie: dos chats muy distintos daban 34 y 35.
     const card = await requireVipMetric('redflags', [
       ...filler(99),
       { at: '2025-03-10T10:00:00', from: 'Beto', text: 'me dejaste en visto otra vez' },
     ])
 
-    // 1 acierto de peso 4 sobre 100 mensajes: (4/100)*550 = 22.
-    expect(card.basic?.value).toBe('22/100')
+    expect(card.basic?.value).toBe('1')
   })
 
-  it('pondera cada categoría con su peso', async () => {
-    const insult = await requireVipMetric('redflags', [
-      ...filler(99),
-      { at: '2025-03-10T10:00:00', from: 'Beto', text: 'sos un pelotudo' },
-    ])
-
-    // Insultos pesa 5: (5/100)*550 = 27.5 → 28.
-    expect(insult.basic?.value).toBe('28/100')
-  })
-
-  it('los borrados suman al puntaje aunque no haya ninguna palabra clave', async () => {
+  it('los borrados pueden encabezar aunque no haya ninguna palabra clave', async () => {
     const card = await requireVipMetric('redflags', [
       ...filler(90),
       ...Array.from({ length: 10 }, (_, index) => ({
@@ -383,18 +386,42 @@ describe('métrica redflags', () => {
       })),
     ])
 
-    // 10 borrados sobre 100 mensajes: (10/100)*180 = 18.
-    expect(card.basic?.value).toBe('18/100')
+    expect(card.basic?.value).toBe('10')
+    expect(card.basic?.label).toBe('mensajes borrados')
   })
 
-  it('los silencios de 48h+ suman al puntaje', async () => {
+  it('los silencios de 48h+ también cuentan como su propia categoría', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-01T10:00:00', from: 'Ana', text: 'hola' },
       { at: '2025-03-05T10:00:00', from: 'Beto', text: 'hola' },
     ])
 
-    // 1 silencio largo: 1.8 → 2.
-    expect(card.basic?.value).toBe('2/100')
+    expect(card.basic?.value).toBe('1')
+    expect(card.basic?.label).toBe('silencio largo')
+  })
+
+  it('un insulto suelto cuenta para el número, aunque sea muletilla', async () => {
+    // La red del conteo es ancha a propósito. El filtro fino vive en los candidatos que
+    // se le mandan a la IA (ver aiCandidates.test.ts), que son sólo formas dirigidas.
+    const card = await requireVipMetric('redflags', [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'dale boludo, vamos' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'boludo ayer me la vi' },
+      { at: '2025-03-10T10:02:00', from: 'Ana', text: 'sos un pelotudo' },
+    ])
+
+    expect(card.basic?.value).toBe('3')
+    expect(card.basic?.label).toBe('insultos')
+  })
+
+  it('no confunde la localidad de Morón con el insulto en inglés', async () => {
+    // 70 de los 297 "insultos" de un chat real eran esto: normalizeForMatch le saca la
+    // tilde a "Morón" y quedaba idéntica a "moron".
+    expect(
+      await vipMetric('redflags', [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'vos seguis en moron?' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: 'la universidad de moron' },
+      ]),
+    ).toBeUndefined()
   })
 
   it('sin aciertos, sin borrados y sin silencios no hay tarjeta', async () => {
@@ -417,6 +444,62 @@ describe('métrica redflags', () => {
     expect(labels).toContain('Celos y control')
     expect(labels).toContain('Insultos')
     expect(labels).toContain('Borrados')
+  })
+
+  it('el gráfico principal va de mayor a menor, no en el orden fijo de las categorías', async () => {
+    const card = await requireVipMetric('redflags', [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'estas celoso otra vez' },
+      { at: '2025-03-10T10:01:00', from: 'Ana', text: 'sos posesivo' },
+      { at: '2025-03-10T10:02:00', from: 'Beto', text: 'sos un pelotudo' },
+      { at: '2025-03-10T10:03:00', from: 'Beto', text: 'sos un idiota' },
+      { at: '2025-03-10T10:04:00', from: 'Ana', text: 'sos una basura' },
+    ])
+
+    const values = bars(card).map((item) => item.value)
+    expect(values).toEqual([...values].sort((left, right) => right - left))
+    // Insultos (3) quedó primero pese a que "Celos y control" va antes en la lista
+    // de categorías del código.
+    expect(bars(card)[0].label).toBe('Insultos')
+  })
+
+  it('el desglose por categoría trae un ranking de participantes por cada una', async () => {
+    const card = await requireVipMetric('redflags', [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'estas celoso otra vez' },
+      { at: '2025-03-10T10:01:00', from: 'Ana', text: 'sos posesivo' },
+      { at: '2025-03-10T10:02:00', from: 'Beto', text: 'sos un pelotudo' },
+    ])
+
+    const series = card.detail?.series ?? []
+    const celos = series.find((entry) => entry.name === 'Celos y control')
+    const insultos = series.find((entry) => entry.name === 'Insultos')
+
+    if (celos?.chart?.kind !== 'bar' || insultos?.chart?.kind !== 'bar') {
+      throw new Error('Se esperaba un gráfico de barras por categoría.')
+    }
+    // Los dos celos son de Ana: 100% de esa categoría es de ella, no se mezcla con
+    // los insultos de Beto en el mismo número.
+    expect(celos.chart.items).toEqual([{ label: 'Ana', value: 2, displayValue: '100.0%' }])
+    expect(insultos.chart.items).toEqual([{ label: 'Beto', value: 1, displayValue: '100.0%' }])
+  })
+
+  it('reconoce las familias de cortar, separar y divorcio como amenaza de ruptura', async () => {
+    expect(
+      await vipMetric('redflags', [{ at: '2025-03-10T10:00:00', from: 'Ana', text: 'cortamos, se termino' }]),
+    ).toBeDefined()
+    expect(
+      await vipMetric('redflags', [{ at: '2025-03-10T10:00:00', from: 'Ana', text: 'quiero separarme de vos' }]),
+    ).toBeDefined()
+    expect(
+      await vipMetric('redflags', [{ at: '2025-03-10T10:00:00', from: 'Ana', text: 'quiero el divorcio' }]),
+    ).toBeDefined()
+  })
+
+  it('"me quiero ir" ya no cuenta como amenaza de ruptura por ser demasiado ambigua', async () => {
+    // Su significado por defecto es querer irse de un lugar, no de la relación —
+    // aparecía constantemente sin tener nada que ver con una ruptura real.
+    expect(
+      await vipMetric('redflags', [{ at: '2025-03-10T10:00:00', from: 'Ana', text: 'me quiero ir de la fiesta' }]),
+    ).toBeUndefined()
   })
 
   it('traduce los nombres de categoría al inglés', async () => {
@@ -456,10 +539,59 @@ describe('métrica redflags', () => {
     expect(card.detail?.intro).toContain('No es un diagnóstico')
   })
 
+  it('los silencios largos se limitan a los 5 más largos como ejemplo', async () => {
+    const hours = [49, 50, 51, 52, 53, 54, 55, 56]
+    let time = new Date('2025-01-01T00:00:00Z').getTime()
+    const specs: MessageSpec[] = [{ at: new Date(time).toISOString(), from: 'Ana', text: 'msg0' }]
+
+    hours.forEach((h, index) => {
+      time += h * 3_600_000
+      specs.push({ at: new Date(time).toISOString(), from: index % 2 === 0 ? 'Beto' : 'Ana', text: `msg${index + 1}` })
+    })
+
+    const card = await requireVipMetric('redflags', specs)
+    const highlighted = (card.detail?.groups ?? []).map(
+      (group) => group.bubbles.find((bubble) => bubble.isHighlight)?.text,
+    )
+
+    // Sólo los 5 silencios más largos (52 a 56hs) llegan a ser ejemplo, no los 8.
+    expect(highlighted).toHaveLength(5)
+    expect(new Set(highlighted)).toEqual(new Set(['msg4', 'msg5', 'msg6', 'msg7', 'msg8']))
+  })
+
+  it('no agrupa los silencios largos todos juntos: los reparte entre los demás ejemplos', async () => {
+    const insults = burst({ at: '2025-01-01T10:00:00', from: 'Beto', count: 12, stepMinutes: 2, text: () => 'sos un pelotudo' })
+    let time = new Date(insults[insults.length - 1].at).getTime()
+    const silences: MessageSpec[] = []
+    for (let index = 0; index < 3; index += 1) {
+      time += 49 * 3_600_000
+      silences.push({ at: new Date(time).toISOString(), from: 'Ana', text: 'aca ando de nuevo' })
+    }
+
+    const card = await requireVipMetric('redflags', [...insults, ...silences])
+    const headings = (card.detail?.groups ?? []).map((group) => group.heading)
+    const silenceIndices = headings
+      .map((heading, index) => (heading.includes('Silencio') ? index : -1))
+      .filter((index) => index >= 0)
+
+    expect(silenceIndices).toHaveLength(3)
+    // No deberían quedar los 3 pegados al principio de la lista de ejemplos.
+    expect(silenceIndices[0]).toBeGreaterThan(0)
+    expect(Math.max(...silenceIndices) - Math.min(...silenceIndices)).toBeGreaterThan(3)
+  })
+
+  it('el total de ejemplos se limita a 50', async () => {
+    const card = await requireVipMetric('redflags', [
+      ...burst({ at: '2025-01-01T10:00:00', from: 'Beto', count: 60, stepMinutes: 2, text: () => 'sos un pelotudo' }),
+    ])
+
+    expect(card.detail?.groups).toHaveLength(50)
+  })
+
   it('no cuenta una palabra clave que es parte de otra palabra', async () => {
     expect(
       await vipMetric('redflags', [
-        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'compramos un celoso... digo, un celofan' },
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'sos un celoso, y traeme el celofan' },
       ]),
     ).toBeDefined()
 

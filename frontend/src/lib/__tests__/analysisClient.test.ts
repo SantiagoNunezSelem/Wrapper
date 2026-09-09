@@ -178,13 +178,15 @@ describe('buildAiCandidatesInWorker', () => {
 describe('applyAiVerdictsInWorker', () => {
   it('manda el núcleo y los veredictos', async () => {
     const { applyAiVerdictsInWorker } = await freshClient()
-    const pending = applyAiVerdictsInWorker(core, 'abc', 'es', [], { redflags: ['1', '2'] })
+    const pending = applyAiVerdictsInWorker(core, 'abc', 'es', [], {
+      redflags: { accepted: ['1', '2'], rejected: ['3'] },
+    })
 
     expect(worker().posted[0]).toMatchObject({
       type: 'applyAi',
       sourceHash: 'abc',
       language: 'es',
-      verdicts: { redflags: ['1', '2'] },
+      verdicts: { redflags: { accepted: ['1', '2'], rejected: ['3'] } },
     })
 
     worker().reply({ requestId: 0, type: 'applyAi', core })

@@ -95,8 +95,6 @@ export const MetricCard = memo(function MetricCard({
         ) : null}
       </div>
 
-      <p className="metric-description">{card.description}</p>
-
       {aiBlocked ? (
         <AiStatePanel state={card.ai!} {...ai!} />
       ) : locked || !card.basic ? (

@@ -10,7 +10,43 @@ process.env.TZ = 'America/Argentina/Buenos_Aires'
 
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
+import { defaultExclude, defineConfig } from 'vitest/config'
+
+/**
+ * Los tests que no necesitan un DOM y corren en Node pelado.
+ *
+ * Levantar jsdom cuesta unos tres segundos por archivo, y estos son aritmética sobre
+ * arrays —el parser, las 24 métricas, los candidatos de IA— que nunca toca un
+ * `document`. Pagar ese arranque para correrlos era casi la mitad del tiempo de
+ * `npm test`.
+ *
+ * Van enumerados y no por carpeta porque `src/lib/__tests__` está mezclado: ahí conviven
+ * el parser y el cliente HTTP, que stubea `fetch` y `localStorage`. Enumerar la lista
+ * corta hace que la de al lado —qué necesita DOM— siga siendo el default: un test nuevo
+ * que no esté acá corre en jsdom, o sea más lento pero nunca roto. Sumar uno a esta lista
+ * es una decisión explícita, y si estaba mal el test falla en la primera corrida con
+ * "document is not defined".
+ */
+const testsSinDom = [
+  'src/lib/__tests__/aiCandidates.test.ts',
+  'src/lib/__tests__/format.test.ts',
+  'src/lib/__tests__/hash.test.ts',
+  'src/lib/__tests__/landingPreview.test.ts',
+  'src/lib/__tests__/metrics-core.test.ts',
+  'src/lib/__tests__/metrics-free.test.ts',
+  'src/lib/__tests__/metrics-vip.test.ts',
+  'src/lib/__tests__/parser.test.ts',
+  'src/lib/__tests__/shareTargetFile.test.ts',
+]
+
+/** Higiene de mocks entre tests: la misma para los dos proyectos. */
+const mocksLimpios = {
+  globals: true,
+  restoreMocks: true,
+  clearMocks: true,
+  unstubEnvs: true,
+  unstubGlobals: true,
+} as const
 
 /**
  * Configuración de tests separada de `vite.config.ts` a propósito: esa lee el
@@ -20,16 +56,34 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [react()],
   test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: [fileURLToPath(new URL('./src/test/setup.ts', import.meta.url))],
-    include: ['src/**/*.test.{ts,tsx}'],
-    // El worker de análisis y el service worker no se cargan nunca en jsdom; los tests
-    // que los tocan los mockean explícitamente.
-    restoreMocks: true,
-    clearMocks: true,
-    unstubEnvs: true,
-    unstubGlobals: true,
+    // Dos proyectos, y lo único que los separa es si montan un DOM (ver `testsSinDom`).
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'logica',
+          environment: 'node',
+          include: testsSinDom,
+          // Sin `setupFiles`: todo lo que hace el setup —matchers de jest-dom, el doble
+          // de `matchMedia`, la limpieza de React Testing Library, los polyfills de
+          // Blob— existe para el DOM que este proyecto justamente no monta.
+          ...mocksLimpios,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          setupFiles: [fileURLToPath(new URL('./src/test/setup.ts', import.meta.url))],
+          include: ['src/**/*.test.{ts,tsx}'],
+          exclude: [...testsSinDom, ...defaultExclude],
+          // El worker de análisis y el service worker no se cargan nunca en jsdom; los
+          // tests que los tocan los mockean explícitamente.
+          ...mocksLimpios,
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       // `json-summary` es el que lee scripts/coverage-gate.mjs para el resumen del PR;

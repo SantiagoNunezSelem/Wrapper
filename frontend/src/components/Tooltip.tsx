@@ -1,6 +1,6 @@
 import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import type { Placement } from '@floating-ui/dom'
-import { useTooltipController } from './TooltipProvider'
+import { useTooltipController } from './tooltipContext'
 
 type TriggerProps = {
   onPointerEnter?: (event: React.PointerEvent) => void
