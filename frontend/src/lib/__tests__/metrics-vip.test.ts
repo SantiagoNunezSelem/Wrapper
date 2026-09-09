@@ -343,36 +343,39 @@ describe('countWordOccurrences', () => {
 // ---------------------------------------------------------------------------
 
 describe('métrica redflags', () => {
-  it('puntúa de 0 a 100 y nunca se pasa', async () => {
+  it('encabeza con el conteo de la categoría más alta, en singular cuando es una sola', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-10T10:00:00', from: 'Ana', text: 'me dejaste en visto otra vez' },
     ])
 
-    expect(card.basic?.value).toBe('100/100')
-    expect(card.basic?.label).toBe('puntuación de tensión')
+    expect(card.basic?.value).toBe('1')
+    expect(card.basic?.label).toBe('mensaje de control')
   })
 
-  it('el puntaje es una tasa: el mismo acierto pesa menos en un chat largo', async () => {
+  it('gana la categoría con más mensajes, no la más grave', async () => {
+    const card = await requireVipMetric('redflags', [
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'me dejaste en visto otra vez' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'sos un pelotudo' },
+      { at: '2025-03-10T10:02:00', from: 'Beto', text: 'sos un idiota' },
+      { at: '2025-03-10T10:03:00', from: 'Beto', text: 'sos una basura' },
+    ])
+
+    expect(card.basic?.value).toBe('3')
+    expect(card.basic?.label).toBe('insultos')
+  })
+
+  it('el conteo es absoluto: el mismo acierto vale igual en un chat largo', async () => {
+    // Antes esto era una tasa (acierto / mensajes del chat), y el número resultante
+    // no significaba nada para nadie: dos chats muy distintos daban 34 y 35.
     const card = await requireVipMetric('redflags', [
       ...filler(99),
       { at: '2025-03-10T10:00:00', from: 'Beto', text: 'me dejaste en visto otra vez' },
     ])
 
-    // 1 acierto de peso 4 sobre 100 mensajes: (4/100)*550 = 22.
-    expect(card.basic?.value).toBe('22/100')
+    expect(card.basic?.value).toBe('1')
   })
 
-  it('pondera cada categoría con su peso', async () => {
-    const insult = await requireVipMetric('redflags', [
-      ...filler(99),
-      { at: '2025-03-10T10:00:00', from: 'Beto', text: 'sos un pelotudo' },
-    ])
-
-    // Insultos pesa 5: (5/100)*550 = 27.5 → 28.
-    expect(insult.basic?.value).toBe('28/100')
-  })
-
-  it('los borrados suman al puntaje aunque no haya ninguna palabra clave', async () => {
+  it('los borrados pueden encabezar aunque no haya ninguna palabra clave', async () => {
     const card = await requireVipMetric('redflags', [
       ...filler(90),
       ...Array.from({ length: 10 }, (_, index) => ({
@@ -383,51 +386,42 @@ describe('métrica redflags', () => {
       })),
     ])
 
-    // 10 borrados sobre 100 mensajes: (10/100)*180 = 18.
-    expect(card.basic?.value).toBe('18/100')
+    expect(card.basic?.value).toBe('10')
+    expect(card.basic?.label).toBe('mensajes borrados')
   })
 
-  it('los silencios de 48h+ suman al puntaje, sin saturar un chat chico', async () => {
-    // Con sólo 2 mensajes reales, ese único silencio no puede tratarse como "la
-    // mitad de todo el chat" — SILENCE_RATE_FLOOR lo calcula como si el chat
-    // tuviera al menos 1000 mensajes para este término, así que un silencio
-    // aislado en un chat nuevo y corto no dispara el puntaje al techo.
+  it('los silencios de 48h+ también cuentan como su propia categoría', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-01T10:00:00', from: 'Ana', text: 'hola' },
       { at: '2025-03-05T10:00:00', from: 'Beto', text: 'hola' },
     ])
 
-    // (1/1000)*50000 = 50 — igual que el chat de 1000 mensajes de más abajo.
-    expect(card.basic?.value).toBe('50/100')
+    expect(card.basic?.value).toBe('1')
+    expect(card.basic?.label).toBe('silencio largo')
   })
 
-  it('el mismo silencio pesa menos en un chat largo, igual que el resto del puntaje', async () => {
-    // Antes esto NO era así: el término de silencios era el único que no se
-    // escalaba por volumen de mensajes (un simple `cantidad * 1.8`), así que en
-    // chats grandes terminaba siendo casi todo el puntaje él solo — verificado
-    // contra los dos chats reales de Project_Context/ (85k y 124k mensajes), donde
-    // el término de silencios explicaba la mayor parte de un puntaje ~34-35/100
-    // pese a tener cantidades de insultos muy distintas entre sí.
+  it('un insulto suelto cuenta para el número, aunque sea muletilla', async () => {
+    // La red del conteo es ancha a propósito. El filtro fino vive en los candidatos que
+    // se le mandan a la IA (ver aiCandidates.test.ts), que son sólo formas dirigidas.
     const card = await requireVipMetric('redflags', [
-      ...filler(998),
-      { at: '2025-03-10T03:37:00', from: 'Ana', text: 'hola' },
-      { at: '2025-03-12T04:00:00', from: 'Beto', text: 'hola de nuevo' },
+      { at: '2025-03-10T10:00:00', from: 'Ana', text: 'dale boludo, vamos' },
+      { at: '2025-03-10T10:01:00', from: 'Beto', text: 'boludo ayer me la vi' },
+      { at: '2025-03-10T10:02:00', from: 'Ana', text: 'sos un pelotudo' },
     ])
 
-    // 1 silencio largo sobre 1000 mensajes: (1/1000)*50000 = 50.
-    expect(card.basic?.value).toBe('50/100')
+    expect(card.basic?.value).toBe('3')
+    expect(card.basic?.label).toBe('insultos')
   })
 
-  it('por encima de 1000 mensajes el piso ya no actúa: vuelve a regir la tasa real', async () => {
-    const card = await requireVipMetric('redflags', [
-      ...filler(1998),
-      { at: '2025-03-10T20:17:00', from: 'Ana', text: 'hola' },
-      { at: '2025-03-12T21:00:00', from: 'Beto', text: 'hola de nuevo' },
-    ])
-
-    // 1 silencio largo sobre 2000 mensajes: (1/2000)*50000 = 25, menos que los 50
-    // del chat de 1000 o menos — el piso no sigue aplanando una vez superado.
-    expect(card.basic?.value).toBe('25/100')
+  it('no confunde la localidad de Morón con el insulto en inglés', async () => {
+    // 70 de los 297 "insultos" de un chat real eran esto: normalizeForMatch le saca la
+    // tilde a "Morón" y quedaba idéntica a "moron".
+    expect(
+      await vipMetric('redflags', [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'vos seguis en moron?' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: 'la universidad de moron' },
+      ]),
+    ).toBeUndefined()
   })
 
   it('sin aciertos, sin borrados y sin silencios no hay tarjeta', async () => {
@@ -597,7 +591,7 @@ describe('métrica redflags', () => {
   it('no cuenta una palabra clave que es parte de otra palabra', async () => {
     expect(
       await vipMetric('redflags', [
-        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'compramos un celoso... digo, un celofan' },
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'sos un celoso, y traeme el celofan' },
       ]),
     ).toBeDefined()
 

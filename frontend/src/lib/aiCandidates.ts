@@ -4,6 +4,7 @@ import {
   matchAiKeywordExplicit,
   matchAiKeywordGeneral,
   matchAiKeywordModerate,
+  matchAiKeywordWide,
   normalizeForMatch,
   type AiMetricId,
 } from './metrics'
@@ -95,6 +96,16 @@ function maxCandidates(metricId: AiMetricId): number {
   return metricId === 'redflags' ? REDFLAGS_MAX_CANDIDATES : MAX_CANDIDATES_PER_METRIC
 }
 
+/**
+ * Debajo de esto el lote es tan chico que no vale la pena seguir siendo exigente: se
+ * completa con el nivel ancho del diccionario (las palabras sueltas que normalmente sólo
+ * cuentan — ver `matchAiKeywordWide`). Un chat donde nadie escribió "sos un pelotudo"
+ * pero sí muchos "boludo" sueltos tiene más para mostrar si dejamos que la IA mire esos,
+ * en vez de devolver cinco ejemplos y nada más. Sólo actúa en ese caso: con suficientes
+ * aciertos específicos, las palabras sueltas no entran nunca.
+ */
+const MIN_SPECIFIC_CANDIDATES = 15
+
 export interface AiCandidate {
   /** Short id sent to the model — a plain counter, because ids are billed too. */
   id: string
@@ -143,6 +154,11 @@ export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId)
   }
   if (candidates.length < cap) {
     collectCandidates(pool, metricId, matchAiKeywordGeneral, candidates, byRendering, usedIndices)
+  }
+  // Último recurso, y sólo si lo específico casi no encontró nada (ver
+  // MIN_SPECIFIC_CANDIDATES): recién ahí entran las palabras sueltas.
+  if (candidates.length < MIN_SPECIFIC_CANDIDATES) {
+    collectCandidates(pool, metricId, matchAiKeywordWide, candidates, byRendering, usedIndices)
   }
 
   return candidates

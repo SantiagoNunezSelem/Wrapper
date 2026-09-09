@@ -507,32 +507,31 @@ describe('applyAiVerdicts', () => {
     })
     const redflags = applied.rawVipMetrics.find((item) => item.id === 'redflags')
 
-    // Sin aciertos aceptados la tarjeta pierde los ejemplos, pero el score heurístico
-    // sigue existiendo: la tarjeta se mantiene con datos.
+    // Sin aciertos aceptados la tarjeta pierde los ejemplos, pero el conteo del
+    // diccionario sigue existiendo: la tarjeta se mantiene con datos.
     expect(redflags?.detail?.groups ?? []).toHaveLength(0)
-    expect(redflags?.basic?.value).toMatch(/^\d+\/100$/)
+    expect(redflags?.basic?.value).toBe('1')
   })
 
-  it('un rechazo explícito de la IA resta el peso del acierto en el puntaje de redflags', async () => {
-    // 99 mensajes neutros + 1 insulto: mismo cálculo que "pondera cada categoría con
-    // su peso" en metrics-vip — (5/100)*550 = 27.5 → 28. Es el único acierto de
-    // diccionario del chat, así que si la IA lo rechaza explícitamente no queda nada
-    // que sostenga el puntaje.
+  it('un rechazo explícito de la IA descuenta el acierto del conteo de redflags', async () => {
+    // 99 mensajes neutros + 1 insulto dirigido: es el único acierto de diccionario del
+    // chat, así que si la IA lo rechaza explícitamente no queda nada que contar.
     const withInsult = chat(
       ...burst({ at: '2025-03-09T10:00:00', from: 'Ana', count: 99, stepMinutes: 1, text: () => 'todo bien por aca' }),
       { at: '2025-03-10T10:00:00', from: 'Beto', text: 'sos un pelotudo' },
     )
     const core = await computeAnalysisCore('Chat', withInsult, 'es', 'hash')
     const before = core.rawVipMetrics.find((item) => item.id === 'redflags')!
-    expect(before.basic?.value).toBe('28/100')
+    expect(before.basic?.value).toBe('1')
+    expect(before.basic?.label).toBe('insulto')
 
     const insultId = withInsult[withInsult.length - 1].id
     const applied = await applyAiVerdicts(core, withInsult, 'es', {
       redflags: { accepted: new Set(), rejected: new Set([insultId]) },
     })
 
-    // Sin borrados ni silencios largos que lo sostengan, el puntaje cae a 0 y la
-    // tarjeta directamente desaparece.
+    // Sin borrados ni silencios largos que lo sostengan, no queda nada que mostrar y
+    // la tarjeta directamente desaparece.
     expect(applied.rawVipMetrics.some((item) => item.id === 'redflags')).toBe(false)
   })
 

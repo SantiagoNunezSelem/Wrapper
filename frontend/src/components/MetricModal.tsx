@@ -93,7 +93,6 @@ export function MetricModal({
   return (
     <ModalShell onDismiss={onClose} label={card.title} className="metric-modal" closeLabel={copy.close}>
         <h2>{card.title}</h2>
-        <p className="panel-copy modal-description">{card.description}</p>
 
         {aiBlocked ? (
           <AiStatePanel state={card.ai!} {...ai!} tall />

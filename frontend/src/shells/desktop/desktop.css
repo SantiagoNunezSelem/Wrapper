@@ -752,16 +752,6 @@
   color: var(--vz-text-dim);
 }
 
-.metric-description {
-  color: var(--vz-text-muted);
-  line-height: 1.5;
-  font-size: 0.92rem;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
 /* .history-panel is .analytics-sidebar's only child now (the account panel
    moved into the topbar's .account-menu dropdown — see App.tsx), so it's free
    to take up the sidebar's full height. min-height: 0 overrides the flex

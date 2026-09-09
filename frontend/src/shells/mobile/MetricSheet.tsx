@@ -154,7 +154,6 @@ export function MetricSheet({
         <header className="m-sheet-head">
           <div className="m-sheet-title">
             <h2>{card.title}</h2>
-            <p>{card.description}</p>
           </div>
           <button type="button" className="m-sheet-close" onClick={onClose} aria-label={copy.close}>
             ✕

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
 import { buildAiCandidates, buildAllAiCandidates, toMessageIds } from '../aiCandidates'
-import { matchAiKeywordExplicit, matchAiKeywordGeneral, matchAiKeywordModerate } from '../metrics'
+import {
+  matchAiKeywordExplicit,
+  matchAiKeywordGeneral,
+  matchAiKeywordModerate,
+  matchAiKeywordWide,
+} from '../metrics'
 
 beforeEach(resetMessageIds)
 
@@ -22,12 +27,28 @@ describe('matchAiKeyword — los dos niveles del diccionario', () => {
   it('recorre todas las categorías de red flags', () => {
     expect(matchAiKeywordExplicit('redflags', 'me dejaste en visto')).toBe('me dejaste en visto')
     expect(matchAiKeywordExplicit('redflags', 'hoy comimos pizza')).toBeNull()
-    expect(matchAiKeywordGeneral('redflags', 'sos posesivo')).toBe('sos posesivo')
+    expect(matchAiKeywordExplicit('redflags', 'sos posesivo')).toBe('sos posesivo')
+    expect(matchAiKeywordGeneral('redflags', 'no me dejas respirar')).toBe('no me dejas respirar')
+  })
+
+  it('un insulto suelto no llega a la IA; el dirigido sí', () => {
+    // Medido sobre el grupo de amigos real: 146 de sus 413 "insultos" eran un "boludo"
+    // suelto de trato ("dale boludo", "boludo ayer me la vi"). Cuentan para el número
+    // (ver metrics-vip), pero gastar un lugar del lote de la IA en eso no sirve.
+    expect(matchAiKeywordExplicit('redflags', 'dale boludo, vamos')).toBeNull()
+    expect(matchAiKeywordGeneral('redflags', 'dale boludo, vamos')).toBeNull()
+    expect(matchAiKeywordGeneral('redflags', 'sos un boludo')).toBe('sos un boludo')
+    expect(matchAiKeywordGeneral('redflags', 'pelotudo de mierda')).toBe('pelotudo de mierda')
+    // El nivel ancho sí lo reconoce — es el que entra sólo como último recurso.
+    expect(matchAiKeywordWide('redflags', 'dale boludo, vamos')).toBe('boludo')
+    expect(matchAiKeywordWide('tonopicante', 'que culo')).toBeNull()
   })
 
   it('normaliza tildes y mayúsculas antes de comparar', () => {
     expect(matchAiKeywordExplicit('tonopicante', 'CULO')).toBe('culo')
-    expect(matchAiKeywordExplicit('redflags', 'sos un MANIPULADOR')).toBe('manipulador')
+    // La palabra clave que viaja a la IA es la frase dirigida entera, no el sustantivo
+    // suelto: es lo que le permite distinguir un insulto real de una muletilla.
+    expect(matchAiKeywordExplicit('redflags', 'sos un MANIPULADOR')).toBe('sos un manipulador')
   })
 
   it('respeta los límites de palabra', () => {
@@ -280,6 +301,47 @@ describe('buildAiCandidates', () => {
     }))
 
     expect(candidates(many, 'redflags')).toHaveLength(75)
+  })
+
+  it('si lo específico casi no encontró nada, completa con palabras sueltas', () => {
+    // 2 aciertos dirigidos y un montón de "boludo" suelto: con sólo 2 candidatos no vale
+    // la pena seguir siendo exigente, así que entran los sueltos a completar el lote.
+    const built = candidates(
+      [
+        { at: '2025-03-10T10:00:00', from: 'Ana', text: 'sos un pelotudo' },
+        { at: '2025-03-10T10:01:00', from: 'Beto', text: 'pelotudo de mierda' },
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T11:${String(index).padStart(2, '0')}:00`,
+          from: 'Ana',
+          text: `dale boludo numero ${index}`,
+        })),
+      ],
+      'redflags',
+    )
+
+    expect(built.length).toBeGreaterThan(2)
+    expect(built.map((item) => item.keyword)).toContain('boludo')
+  })
+
+  it('con suficientes aciertos específicos, las palabras sueltas no entran nunca', () => {
+    const built = candidates(
+      [
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T10:${String(index).padStart(2, '0')}:00`,
+          from: 'Beto',
+          text: `sos un pelotudo numero ${index}`,
+        })),
+        ...Array.from({ length: 20 }, (_, index) => ({
+          at: `2025-03-10T11:${String(index).padStart(2, '0')}:00`,
+          from: 'Ana',
+          text: `dale boludo numero ${index}`,
+        })),
+      ],
+      'redflags',
+    )
+
+    expect(built).toHaveLength(20)
+    expect(built.map((item) => item.keyword)).not.toContain('boludo')
   })
 
   it('excluye del pool los mensajes de sistema y los placeholders', () => {

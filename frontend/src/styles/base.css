@@ -672,10 +672,6 @@ h3 {
   right: 16px;
 }
 
-.modal-description {
-  margin-top: -6px;
-}
-
 .modal-basic {
   display: flex;
   flex-direction: column;
