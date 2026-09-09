@@ -208,6 +208,9 @@ export interface AiMetricState {
   metricId: string
   status: 'ready' | 'failed'
   acceptedIds: string[]
+  /** Candidates the AI actually looked at and explicitly said no to — distinct from one
+   * that was blocked or never sent at all. */
+  rejectedIds: string[]
   errorCode: string | null
   retryAvailableAtUtc: string | null
   updatedAtUtc: string

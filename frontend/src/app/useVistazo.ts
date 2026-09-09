@@ -4,7 +4,7 @@ import type { AiPanelProps } from '../components/AiStatePanel'
 import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
-import { toAcceptedMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
+import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
 import {
   analyzeAiMetrics,
@@ -1070,7 +1070,7 @@ export function useVistazo() {
           })
 
       const nextStates: AiCardStates = {}
-      const verdicts: Partial<Record<AiMetricId, string[]>> = {}
+      const verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>> = {}
 
       for (const result of results) {
         if (!isAiMetricId(result.metricId)) {
@@ -1085,7 +1085,10 @@ export function useVistazo() {
 
         if (result.status === 'ready') {
           const set = candidateSets.find((candidate) => candidate.metricId === result.metricId)
-          verdicts[result.metricId] = [...toAcceptedMessageIds(set?.candidates ?? [], result.acceptedIds)]
+          verdicts[result.metricId] = {
+            accepted: [...toMessageIds(set?.candidates ?? [], result.acceptedIds)],
+            rejected: [...toMessageIds(set?.candidates ?? [], result.rejectedIds)],
+          }
         }
       }
 

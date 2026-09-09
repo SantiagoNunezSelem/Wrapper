@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chat, conversation, message, resetMessageIds } from '../../test/fixtures'
+import { burst, chat, conversation, message, resetMessageIds } from '../../test/fixtures'
 import type { AiCardState, MetricCard } from '../../types'
 import {
   aiMetricIds,
@@ -467,7 +467,7 @@ describe('applyAiVerdicts', () => {
     const before = core.rawVipMetrics.filter((item) => !isAiMetricId(item.id))
 
     const applied = await applyAiVerdicts(core, spicy, 'es', {
-      tonopicante: new Set([spicy[0].id]),
+      tonopicante: { accepted: new Set([spicy[0].id]), rejected: new Set() },
     })
     const after = applied.rawVipMetrics.filter((item) => !isAiMetricId(item.id))
 
@@ -484,7 +484,7 @@ describe('applyAiVerdicts', () => {
     expect(before.detail?.breakdown?.map((entry) => entry.name).sort()).toEqual(['Ana', 'Beto'])
 
     const applied = await applyAiVerdicts(core, spicy, 'es', {
-      tonopicante: new Set([spicy[0].id]),
+      tonopicante: { accepted: new Set([spicy[0].id]), rejected: new Set() },
     })
     const after = applied.rawVipMetrics.find((item) => item.id === 'tonopicante')!
 
@@ -502,7 +502,9 @@ describe('applyAiVerdicts', () => {
 
     expect(core.rawVipMetrics.some((item) => item.id === 'redflags')).toBe(true)
 
-    const applied = await applyAiVerdicts(core, only, 'es', { redflags: new Set<string>() })
+    const applied = await applyAiVerdicts(core, only, 'es', {
+      redflags: { accepted: new Set<string>(), rejected: new Set<string>() },
+    })
     const redflags = applied.rawVipMetrics.find((item) => item.id === 'redflags')
 
     // Sin aciertos aceptados la tarjeta pierde los ejemplos, pero el score heurístico
@@ -511,10 +513,33 @@ describe('applyAiVerdicts', () => {
     expect(redflags?.basic?.value).toMatch(/^\d+\/100$/)
   })
 
+  it('un rechazo explícito de la IA resta el peso del acierto en el puntaje de redflags', async () => {
+    // 99 mensajes neutros + 1 insulto: mismo cálculo que "pondera cada categoría con
+    // su peso" en metrics-vip — (5/100)*550 = 27.5 → 28. Es el único acierto de
+    // diccionario del chat, así que si la IA lo rechaza explícitamente no queda nada
+    // que sostenga el puntaje.
+    const withInsult = chat(
+      ...burst({ at: '2025-03-09T10:00:00', from: 'Ana', count: 99, stepMinutes: 1, text: () => 'todo bien por aca' }),
+      { at: '2025-03-10T10:00:00', from: 'Beto', text: 'sos un pelotudo' },
+    )
+    const core = await computeAnalysisCore('Chat', withInsult, 'es', 'hash')
+    const before = core.rawVipMetrics.find((item) => item.id === 'redflags')!
+    expect(before.basic?.value).toBe('28/100')
+
+    const insultId = withInsult[withInsult.length - 1].id
+    const applied = await applyAiVerdicts(core, withInsult, 'es', {
+      redflags: { accepted: new Set(), rejected: new Set([insultId]) },
+    })
+
+    // Sin borrados ni silencios largos que lo sostengan, el puntaje cae a 0 y la
+    // tarjeta directamente desaparece.
+    expect(applied.rawVipMetrics.some((item) => item.id === 'redflags')).toBe(false)
+  })
+
   it('mantiene los colores de participante después del recálculo', async () => {
     const core = await computeAnalysisCore('Chat', spicy, 'es', 'hash')
     const applied = await applyAiVerdicts(core, spicy, 'es', {
-      tonopicante: new Set([spicy[0].id, spicy[1].id]),
+      tonopicante: { accepted: new Set([spicy[0].id, spicy[1].id]), rejected: new Set() },
     })
     const breakdown = applied.rawVipMetrics.find((item) => item.id === 'tonopicante')?.detail?.breakdown ?? []
 

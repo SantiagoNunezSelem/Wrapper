@@ -20,11 +20,43 @@ import {
 /** Past this length the flagged message explains itself; neighbours would only cost tokens. */
 const SELF_SUFFICIENT_WORDS = 20
 
+/**
+ * Redflags reads higher: whether a jab is real "directed conflict" or a joke often
+ * hinges on what it's replying to, more than tonopicante's tone-only call does — so
+ * this metric gets a wider self-sufficiency bar before it decides a hit doesn't need
+ * its neighbours. See REDFLAGS_MAX_CANDIDATES below for the token-budget trade this
+ * buys back: raising this number alone would have raised the metric's cost.
+ */
+const REDFLAGS_SELF_SUFFICIENT_WORDS = 50
+
+function selfSufficientWords(metricId: AiMetricId): number {
+  return metricId === 'redflags' ? REDFLAGS_SELF_SUFFICIENT_WORDS : SELF_SUFFICIENT_WORDS
+}
+
 /** Under this, a three-message window is too thin to judge ("ok" / "hot" / "jaja"). */
 const MIN_WINDOW_WORDS = 5
 
 /** Extra messages pulled in — one per side — when the base window is too thin. */
 const EXTRA_CONTEXT_PER_SIDE = 1
+
+/**
+ * Redflags-specific versions of the two constants above. Short back-and-forth
+ * messages ("dejame en paz" / "sos igual que tu papa" / "no me hables asi") are
+ * exactly the case this metric most needs more of the exchange for, so the bar for
+ * "this window is too thin" is the same 50 words as REDFLAGS_SELF_SUFFICIENT_WORDS
+ * (not the everyday-metric's near-empty-message bar of 5), and it's allowed to reach
+ * twice as far per side to try to get there.
+ */
+const REDFLAGS_MIN_WINDOW_WORDS = 50
+const REDFLAGS_EXTRA_CONTEXT_PER_SIDE = 2
+
+function minWindowWords(metricId: AiMetricId): number {
+  return metricId === 'redflags' ? REDFLAGS_MIN_WINDOW_WORDS : MIN_WINDOW_WORDS
+}
+
+function extraContextPerSide(metricId: AiMetricId): number {
+  return metricId === 'redflags' ? REDFLAGS_EXTRA_CONTEXT_PER_SIDE : EXTRA_CONTEXT_PER_SIDE
+}
 
 /** Hard ceiling on the flagged message, cropped so the keyword always survives the cut. */
 const MAX_HIT_WORDS = 50
@@ -43,6 +75,25 @@ const MAX_CONTEXT_WORDS = 25
  * the hits most likely to actually matter instead of just the first ones found.
  */
 const MAX_CANDIDATES_PER_METRIC = 300
+
+/**
+ * Redflags-specific ceiling — a quarter of MAX_CANDIDATES_PER_METRIC, worked out from
+ * the two redflags-specific widenings above so this metric's worst-case token spend
+ * never grows past its original ceiling (300 candidates × ≤50 words/each = 15,000
+ * words), no matter how the real chat is shaped:
+ *   - a hit's own text: still ≤MAX_HIT_WORDS (50) either way.
+ *   - context: up to REDFLAGS_EXTRA_CONTEXT_PER_SIDE (2) + the base 1 reach = 3
+ *     neighbours per side when REDFLAGS_MIN_WINDOW_WORDS isn't met, i.e. up to 6
+ *     context lines, ≤MAX_CONTEXT_WORDS (25) each = ≤150 words.
+ *   - worst case per snippet: 50 + 150 = 200 words — 4× the original ≤50-word
+ *     ceiling a bare hit used to cost. Quartering the candidate count (300 → 75)
+ *     keeps 75 × 200 = 15,000, the same ceiling as before any of this.
+ */
+const REDFLAGS_MAX_CANDIDATES = 75
+
+function maxCandidates(metricId: AiMetricId): number {
+  return metricId === 'redflags' ? REDFLAGS_MAX_CANDIDATES : MAX_CANDIDATES_PER_METRIC
+}
 
 export interface AiCandidate {
   /** Short id sent to the model — a plain counter, because ids are billed too. */
@@ -85,11 +136,12 @@ export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId)
   // (see metrics.ts's matchAiKeywordExplicit/matchAiKeywordModerate/matchAiKeywordGeneral
   // for the tiered dictionaries — redflags has no moderate tier, so that pass is a no-op
   // for it).
+  const cap = maxCandidates(metricId)
   collectCandidates(pool, metricId, matchAiKeywordExplicit, candidates, byRendering, usedIndices)
-  if (candidates.length < MAX_CANDIDATES_PER_METRIC) {
+  if (candidates.length < cap) {
     collectCandidates(pool, metricId, matchAiKeywordModerate, candidates, byRendering, usedIndices)
   }
-  if (candidates.length < MAX_CANDIDATES_PER_METRIC) {
+  if (candidates.length < cap) {
     collectCandidates(pool, metricId, matchAiKeywordGeneral, candidates, byRendering, usedIndices)
   }
 
@@ -104,7 +156,9 @@ function collectCandidates(
   byRendering: Map<string, AiCandidate>,
   usedIndices: Set<number>,
 ): void {
-  for (let index = 0; index < pool.length && candidates.length < MAX_CANDIDATES_PER_METRIC; index += 1) {
+  const cap = maxCandidates(metricId)
+
+  for (let index = 0; index < pool.length && candidates.length < cap; index += 1) {
     if (usedIndices.has(index)) {
       continue
     }
@@ -117,7 +171,7 @@ function collectCandidates(
     }
 
     usedIndices.add(index)
-    const text = renderSnippet(pool, index, keyword)
+    const text = renderSnippet(pool, index, keyword, metricId)
     const dedupeKey = `${keyword}\n${text}`
     const existing = byRendering.get(dedupeKey)
 
@@ -141,20 +195,21 @@ function collectCandidates(
 }
 
 /**
- * Expands the model's accepted short ids back into the parsed-message ids they stood
- * for, ready to hand to `applyAiVerdicts`.
+ * Expands the model's short candidate ids back into the parsed-message ids they stood
+ * for, ready to hand to `applyAiVerdicts`. Works for any list of candidate ids — the
+ * accepted ones, the explicitly rejected ones, or anything else the backend hands back.
  */
-export function toAcceptedMessageIds(candidates: AiCandidate[], acceptedIds: string[]): Set<string> {
+export function toMessageIds(candidates: AiCandidate[], candidateIds: string[]): Set<string> {
   const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]))
-  const accepted = new Set<string>()
+  const messageIds = new Set<string>()
 
-  for (const id of acceptedIds) {
+  for (const id of candidateIds) {
     for (const messageId of byId.get(id)?.messageIds ?? []) {
-      accepted.add(messageId)
+      messageIds.add(messageId)
     }
   }
 
-  return accepted
+  return messageIds
 }
 
 /**
@@ -166,19 +221,22 @@ export function toAcceptedMessageIds(candidates: AiCandidate[], acceptedIds: str
  *     *B: la comida estaba re caliente
  *     A: jaja
  */
-function renderSnippet(pool: ChatMessage[], index: number, keyword: string): string {
+function renderSnippet(pool: ChatMessage[], index: number, keyword: string, metricId: AiMetricId): string {
   const hit = pool[index]
   const lines: ChatMessage[] = []
 
-  if (countWords(hit.contentText) > SELF_SUFFICIENT_WORDS) {
+  if (countWords(hit.contentText) > selfSufficientWords(metricId)) {
     lines.push(hit)
   } else {
     let reach = 1
 
     // Three short messages can still add up to nothing ("ok" / "hot" / "jaja") —
     // widen by one message per side before giving the model something unjudgeable.
-    if (windowWordCount(pool, index, reach) < MIN_WINDOW_WORDS) {
-      reach += EXTRA_CONTEXT_PER_SIDE
+    // Redflags widens further and more often (see REDFLAGS_MIN_WINDOW_WORDS): a short
+    // exchange still under 50 words even with a neighbour on each side needs more of
+    // it to tell a real pattern from a one-off joke.
+    if (windowWordCount(pool, index, reach) < minWindowWords(metricId)) {
+      reach += extraContextPerSide(metricId)
     }
 
     for (let cursor = Math.max(0, index - reach); cursor < index; cursor += 1) {

@@ -31,6 +31,16 @@ const PER_PARTICIPANT_TOP_LIMIT = 15
  */
 const TONOPICANTE_EXAMPLE_LIMIT = 50
 const TONOPICANTE_PER_PARTICIPANT_LIMIT = 25
+/** Same idea as TONOPICANTE_EXAMPLE_LIMIT, for "Qué tan tensa está la conversación"
+ * (redflags): how many AI-confirmed + structural (silence) examples the detail view
+ * shows in total. */
+const REDFLAGS_EXAMPLE_LIMIT = 50
+/**
+ * Long-silence examples are all structurally identical ("nadie contestó por un
+ * rato") — past a handful they read as filler, not insight, so only the longest
+ * ones (the ones actually worth a second look) make the cut.
+ */
+const MAX_SILENCE_EXAMPLES = 5
 // How many real messages of context to show before/after a highlighted moment,
 // so the user can actually recall the exchange instead of reading it in isolation.
 const CONTEXT_WINDOW = 3
@@ -293,17 +303,24 @@ const redFlagCategories: RedFlagCategory[] = [
         'terminamos', 'se acabo', 'quiero terminar', 'quiero cortar', 'ya no te quiero', 'ya no te amo',
         'no te amo mas', 'romper contigo', 'no quiero verte mas', 'no quiero saber nada de ti',
         'no quiero saber nada de vos', 'breaking up with you', "we're done", "i'm done with you",
-        'hasta aca llegamos', 'chau para siempre', 'this is over', 'i want out',
-        'quiero salir de esto', 'no doy mas con esto',
+        'hasta aca llegamos', 'chau para siempre', 'this is over', 'no doy mas con esto',
+        // Familias que faltaban por completo: "cortar" (como se dice acá, no sólo
+        // "quiero cortar"), "separar" y "divorcio" — casi nunca se usan por accidente
+        // en un chat de pareja, así que van directo al nivel fuerte.
+        'cortamos', 'te corto', 'nos cortamos', 'me corto', 'quiero cortar contigo', 'nos separamos',
+        'quiero separarme', 'separarnos', 'mejor nos separamos', 'quiero el divorcio', 'pido el divorcio',
+        'quiero divorciarme', 'nos divorciamos', 'me quiero divorciar',
+        "let's break up", 'i want to break up', 'we should break up', 'i want a divorce', "let's get a divorce",
       ],
       [
-        'ya no aguanto mas', 'no doy mas', 'estoy cansado de esto', 'estoy cansada de esto',
-        'necesito un tiempo', 'necesitamos un tiempo', 'quiero un tiempo', 'me quiero ir', 'no se si seguir',
-        'no se si aguanto', 'esto no da para mas', 'ya no puedo mas', 'estoy pensando en dejarlo',
+        'no doy mas', 'estoy cansado de esto', 'estoy cansada de esto',
+        'necesito un tiempo', 'necesitamos un tiempo', 'quiero un tiempo', 'no se si seguir',
+        'esto no da para mas', 'estoy pensando en dejarlo',
         'estoy pensando en dejarte', 'quiero parar esto', 'quiero pausar esto', 'no le veo futuro a esto',
         'ya no se que hacer con esto', 'no se si vale la pena seguir', 'esto ya no funciona',
-        'estoy al limite', 'no aguanto mas esta relacion', 'no doy mas con vos', 'no doy mas contigo',
-        'quiero terminar con esto',
+        'no aguanto mas esta relacion', 'no doy mas con vos', 'no doy mas contigo',
+        'quiero terminar con esto', 'pensando en cortar', 'pensando en separarnos', 'no se si seguir con vos',
+        'no se si seguir contigo',
         "i can't do this anymore", 'i need space', 'i need a break', 'i need time apart',
         "i don't know if i can keep going", "this isn't working anymore", "i don't see a future in this",
         "i'm exhausted from this", "i'm done trying", 'maybe we should take a break', 'i think we need space',
@@ -311,7 +328,8 @@ const redFlagCategories: RedFlagCategory[] = [
         "i'm losing hope in this", 'this is exhausting me', "i don't know what we're doing anymore",
         'i need to think about us', "maybe this isn't meant to be", "i can't keep doing this",
         'this relationship is draining me', "i'm not happy anymore", "i don't think i can keep fighting for this",
-        'we need to talk about ending this', "i'm at my limit",
+        'we need to talk about ending this', 'thinking about breaking up', 'thinking about a divorce',
+        "i don't know if i want to stay with you",
       ],
     ),
   },
@@ -459,8 +477,19 @@ export function matchAiKeywordGeneral(metricId: AiMetricId, text: string): strin
   return null
 }
 
-/** Accepted message ids per AI metric, as returned by the backend. */
-export type AiVerdicts = Partial<Record<AiMetricId, ReadonlySet<string>>>
+/**
+ * One metric's AI verdict, expanded from candidate ids to the real message ids they
+ * stood for. `rejected` is only meaningful for redflags today (see metricRedflags'
+ * score reweighting) — tonopicante's score stays purely dictionary-based on purpose
+ * and never reads it.
+ */
+export interface AiMetricVerdict {
+  accepted: ReadonlySet<string>
+  rejected: ReadonlySet<string>
+}
+
+/** Verdicts per AI metric, as returned by the backend. */
+export type AiVerdicts = Partial<Record<AiMetricId, AiMetricVerdict>>
 
 /** Per-metric AI state handed to `gateAnalysis`. A metric missing from this map is
  * treated as still pending, which keeps it locked rather than leaking raw numbers. */
@@ -1802,15 +1831,22 @@ function metricWordcloud(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
-  const { chatMessages, textMessages, language } = ctx
+function metricRedflags(ctx: MetricContext, verdict?: AiMetricVerdict): MetricResult {
+  const { chatMessages, textMessages, participants, language } = ctx
+  const accepted = verdict?.accepted
+  const rejected = verdict?.rejected
 
   // Every keyword hit — explicit or general tier — counts toward the score, chart, and
-  // breakdown below, regardless of whether the AI ever got to look at it: the AI verdict
-  // only decides which of these hits get shown as a detailed, real-message example (see
-  // momentsById further down), it never shrinks the overall tally. Deletions and long
-  // silences never go through the AI at all — they're structural facts about the chat,
-  // with no wording to misread.
+  // breakdown below, with one exception: a hit the AI actually looked at and explicitly
+  // said isn't a real redflag (see `rejected` in weightedKeywordSum below) drops out of
+  // the score entirely — that's the only verdict specific enough to trust over the raw
+  // keyword match. A hit the AI never got to classify, or that Gemini's safety floor
+  // blocked outright, keeps its plain dictionary weight: neither of those is a "no".
+  // Separately, the AI verdict also decides which of these hits get shown as a detailed,
+  // real-message example (see momentsById further down) — that filtering is stricter
+  // (accepted-only) and independent of the score's rejected-only discount. Deletions and
+  // long silences never go through the AI at all — they're structural facts about the
+  // chat, with no wording to misread.
   const categoryHits = redFlagCategories.map((category) => ({
     category,
     messages: textMessages.filter((message) => category.dict.hasAny(message.contentText)),
@@ -1828,14 +1864,41 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
   // Rate-based, not absolute: a chat with 50,000 messages will rack up more raw
   // deletions and silences than one with 500 just by existing longer, so every
   // component is scaled against message volume before it can move the score.
-  const weightedKeywordSum = categoryHits.reduce((sum, entry) => sum + entry.messages.length * entry.category.weight, 0)
+  //
+  // Verified 2026-09-02 against the two real chats in Project_Context/: silences
+  // used to be the one component NOT actually scaled (a flat `longSilences.length *
+  // 1.8`, despite this very comment), and both chats are large enough (85k/124k
+  // messages) that the other two components shrink toward zero — so the score was
+  // really just `silences * 1.8` wearing a costume. 14 silences vs 8 produced 35/100
+  // and 34/100: two very differently-toxic chats (297 vs 412 insults, over totally
+  // different message volumes) landing on nearly the same number by coincidence of
+  // silence count, not of tension. 50,000 below is calibrated against those same two
+  // chats so a silence still moves the score, just scaled like everything else here:
+  // (14/124019)*50000 ≈ 5.6, (8/85707)*50000 ≈ 4.7 — a real, visible contribution,
+  // but no longer one big enough to single-handedly decide the result.
+  //
+  // That multiplier is big enough that the rate alone isn't safe for a small chat —
+  // a single 48h+ gap (someone travels, a busy week) is common even in a short,
+  // otherwise calm chat, and dividing by a small real message count would still
+  // saturate the score from that one gap alone. SILENCE_RATE_FLOOR treats any chat
+  // under 1,000 messages as if it had exactly 1,000 for this term only — raised
+  // until a single gap resolves to a visible but non-dominant ~50 points instead of
+  // instantly maxing out. Only applies to this term: the keyword and deletion rates
+  // already behave reasonably at realistic small sizes (a single insult in a
+  // 100-message chat lands at 28, not 100).
+  const SILENCE_RATE_FLOOR = 1000
+  const weightedKeywordSum = categoryHits.reduce(
+    (sum, entry) =>
+      sum + entry.messages.filter((message) => !rejected?.has(message.id)).length * entry.category.weight,
+    0,
+  )
   const messageCount = Math.max(textMessages.length, 1)
   const score = Math.min(
     100,
     Math.round(
       (weightedKeywordSum / messageCount) * 550 +
         (deletions.length / Math.max(chatMessages.length, 1)) * 180 +
-        longSilences.length * 1.8,
+        (longSilences.length / Math.max(chatMessages.length, SILENCE_RATE_FLOOR)) * 50000,
     ),
   )
 
@@ -1852,31 +1915,88 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
   // isn't shown to a real user until the card unlocks anyway). Deletions still count
   // toward the score and the breakdown chart above, but a "this message got deleted"
   // example has no actual text to show — so, on purpose, they never appear here.
-  const momentsById = new Map<string, { message: ChatMessage; heading: string }>()
+  const keywordMomentsById = new Map<string, { message: ChatMessage; heading: string }>()
   for (const entry of categoryHits) {
     for (const message of entry.messages) {
       if (accepted && !accepted.has(message.id)) {
         continue
       }
-      if (!momentsById.has(message.id)) {
-        momentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
+      if (!keywordMomentsById.has(message.id)) {
+        keywordMomentsById.set(message.id, { message, heading: `${message.sender} — ${categoryLabel(entry.category, language)}` })
       }
     }
   }
-  for (const gap of longSilences) {
-    if (!momentsById.has(gap.after.id)) {
-      momentsById.set(gap.after.id, { message: gap.after, heading: silenceHeading(gap, language) })
-    }
-  }
-  const moments = [...momentsById.values()].sort(
+  const keywordMoments = [...keywordMomentsById.values()].sort(
     (left, right) => (ctx.messageIndex.get(left.message.id) ?? 0) - (ctx.messageIndex.get(right.message.id) ?? 0),
   )
+
+  // Longest gaps first, capped at MAX_SILENCE_EXAMPLES — every long silence still
+  // counts toward the score above, but as *examples* they're all the same beat
+  // ("nadie contestó por un rato"), so only the ones actually worth a second look
+  // make the cut. Reserving their slots before capping keywordMoments guarantees they
+  // survive the REDFLAGS_EXAMPLE_LIMIT truncation below instead of possibly getting
+  // crowded out by a chat with hundreds of keyword hits.
+  const silenceMoments = [...longSilences]
+    .filter((gap) => !keywordMomentsById.has(gap.after.id))
+    .sort((left, right) => right.hours - left.hours)
+    .slice(0, MAX_SILENCE_EXAMPLES)
+    .map((gap) => ({ message: gap.after, heading: silenceHeading(gap, language) }))
+
+  // Spread the silence examples through the list instead of leaving them wherever
+  // chronology happens to put them — five near-identical "nadie contestó" cards in a
+  // row reads as filler even when that's genuinely when the gaps occurred.
+  const moments = spreadEvenly(
+    keywordMoments.slice(0, Math.max(0, REDFLAGS_EXAMPLE_LIMIT - silenceMoments.length)),
+    silenceMoments,
+  )
+
+  // One mini ranking per category (plus deletions and long silences, same six buckets
+  // as the chart above) — the overall "by participant" breakdown mixes celos, culpa,
+  // insultos and rupturas into one bar per person, which hides who's actually driving
+  // *which* pattern; a person could lead on jealousy and barely register on insults.
+  const categorySeries: MetricSeriesEntry[] = [
+    ...categoryHits
+      .filter((entry) => entry.messages.length > 0)
+      .map((entry) => ({
+        name: categoryLabel(entry.category, language),
+        chart: {
+          kind: 'bar' as const,
+          items: rankingPercentBars(countBySender(entry.messages), entry.messages.length, participants.length),
+        },
+      })),
+    ...(deletions.length > 0
+      ? [
+          {
+            name: language === 'es' ? 'Borrados' : 'Deletions',
+            chart: {
+              kind: 'bar' as const,
+              items: rankingPercentBars(countBySender(deletions), deletions.length, participants.length),
+            },
+          },
+        ]
+      : []),
+    ...(longSilences.length > 0
+      ? [
+          {
+            name: language === 'es' ? 'Silencios largos' : 'Long silences',
+            chart: {
+              kind: 'bar' as const,
+              items: rankingPercentBars(
+                countBySender(longSilences.map((gap) => gap.after)),
+                longSilences.length,
+                participants.length,
+              ),
+            },
+          },
+        ]
+      : []),
+  ]
 
   return {
     hasData: true,
     basic: {
       value: `${score}/100`,
-      label: language === 'es' ? 'puntuación heurística de tensión' : 'heuristic tension score',
+      label: language === 'es' ? 'puntuación de tensión' : 'tension score',
       chart: {
         kind: 'bar',
         items: [
@@ -1905,7 +2025,7 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
                 },
               ]
             : []),
-        ],
+        ].sort((left, right) => right.value - left.value),
       },
     },
     detail: {
@@ -1914,7 +2034,8 @@ function metricRedflags(ctx: MetricContext, accepted?: ReadonlySet<string>): Met
           ? 'No es un diagnóstico: cruza silencios largos, borrados y frases clave agrupadas por categoría (celos, insultos, culpa, rupturas).'
           : 'Not a diagnosis: it combines long silences, deletions, and keyword phrases grouped by category (jealousy, insults, guilt-tripping, breakups).',
       breakdown: totalKeywordHits > 0 ? breakdownPercent(byKeywordSender, totalKeywordHits) : undefined,
-      groups: capGroups(moments).map((moment) => momentGroup(ctx, moment.message, moment.heading)),
+      series: categorySeries,
+      groups: moments.map((moment) => momentGroup(ctx, moment.message, moment.heading)),
       paginatedItemsLabel: language === 'es' ? 'Momentos señalados' : 'Flagged moments',
     },
   }
@@ -2124,8 +2245,12 @@ function metricDramatico(ctx: MetricContext): MetricResult {
   }
 }
 
-function metricTonoPicante(ctx: MetricContext, accepted?: ReadonlySet<string>): MetricResult {
+function metricTonoPicante(ctx: MetricContext, verdict?: AiMetricVerdict): MetricResult {
   const { textMessages, participants, language } = ctx
+  // Tonopicante's score/chart/heatmap stay purely dictionary-based on purpose (see the
+  // comment below) — only `accepted` (which examples to show) is read here; `rejected`
+  // is redflags-only, see metricRedflags' score reweighting.
+  const accepted = verdict?.accepted
   // Every keyword hit — explicit or general tier — counts toward the score, chart, and
   // hour heatmap, regardless of whether the AI ever got to look at it: the AI verdict
   // only decides which hits get shown as a detailed, real-message example (see
@@ -2482,6 +2607,37 @@ function dayRangeGroup(ctx: MetricContext, day: string, heading: string, maxHigh
  * few call sites that still build their `MessageGroup[]` incrementally. */
 function capGroups<T>(items: T[]): T[] {
   return items.slice(0, GROUP_CAP)
+}
+
+/**
+ * `base`, with `extras` inserted at roughly even intervals instead of wherever they'd
+ * naturally land — so a handful of same-shaped examples (e.g. long-silence moments,
+ * all reading as "nobody replied for a while") come across as a few notes spread
+ * through the list instead of a run of near-identical cards bunched together.
+ */
+function spreadEvenly<T>(base: T[], extras: T[]): T[] {
+  if (extras.length === 0) {
+    return base
+  }
+
+  const step = Math.max(1, Math.floor(base.length / (extras.length + 1)))
+  const result: T[] = []
+  let nextExtra = 0
+
+  for (let index = 0; index < base.length; index += 1) {
+    result.push(base[index])
+    if (nextExtra < extras.length && (index + 1) % step === 0) {
+      result.push(extras[nextExtra])
+      nextExtra += 1
+    }
+  }
+
+  while (nextExtra < extras.length) {
+    result.push(extras[nextExtra])
+    nextExtra += 1
+  }
+
+  return result
 }
 
 // ---------------------------------------------------------------------------

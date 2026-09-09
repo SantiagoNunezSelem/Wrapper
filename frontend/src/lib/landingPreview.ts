@@ -244,7 +244,7 @@ export function getLandingPreviewCards(language: Language): MetricCard[] {
       hasData: true,
       basic: {
         value: '38/100',
-        label: es ? 'puntuación heurística de tensión' : 'heuristic tension score',
+        label: es ? 'puntuación de tensión' : 'tension score',
         chart: {
           kind: 'donut',
           items: es

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using backend.Models;
 using backend.Options;
@@ -88,7 +90,7 @@ public class AiMetricServiceTests : IDisposable
             SourceHash = "abc",
             MetricId = "redflags",
             Status = AiMetricStatus.Ready,
-            ResultJson = "[\"1\",\"2\"]",
+            ResultJson = "{\"Accepted\":[\"1\",\"2\"],\"Rejected\":[\"3\"]}",
         });
         await _db.Context.SaveChangesAsync();
 
@@ -98,6 +100,30 @@ public class AiMetricServiceTests : IDisposable
         Assert.Equal("redflags", result.MetricId);
         Assert.Equal(AiMetricStatus.Ready, result.Status);
         Assert.Equal(["1", "2"], result.AcceptedIds);
+        Assert.Equal(["3"], result.RejectedIds);
+    }
+
+    [Fact]
+    public async Task GetAsync_lee_un_veredicto_viejo_guardado_como_arreglo_plano()
+    {
+        // Formato de antes de que existiera RejectedIds: un arreglo JSON de ids
+        // aceptados a secas, sin el objeto {Accepted, Rejected}. No hay migración de
+        // base de datos — ResultJson siempre fue una columna de texto — así que una
+        // fila vieja tiene que seguir leyéndose bien.
+        _db.Context.AiMetricResults.Add(new AiMetricResult
+        {
+            UserId = _userId,
+            SourceHash = "abc",
+            MetricId = "redflags",
+            Status = AiMetricStatus.Ready,
+            ResultJson = "[\"1\",\"2\"]",
+        });
+        await _db.Context.SaveChangesAsync();
+
+        var result = Assert.Single(await Service().GetAsync(_userId, "abc", default));
+
+        Assert.Equal(["1", "2"], result.AcceptedIds);
+        Assert.Empty(result.RejectedIds);
     }
 
     [Fact]
@@ -169,6 +195,20 @@ public class AiMetricServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Un_candidato_que_Gemini_miro_y_no_aceptó_queda_como_rechazo_explícito()
+    {
+        // De los 2 fragmentos enviados, Gemini sólo confirmó el "1" — el "2" sí lo miró
+        // (fue parte del mismo lote exitoso) y decidió no incluirlo: eso es un "no" real,
+        // distinto de uno que nunca llegó a clasificarse.
+        GeminiAccepts("1");
+
+        var results = await Service().AnalyzeAsync(_userId, "abc", OneMetric(snippets: 2), default);
+
+        Assert.Equal(["1"], results[0].AcceptedIds);
+        Assert.Equal(["2"], results[0].RejectedIds);
+    }
+
+    [Fact]
     public async Task Ignora_un_id_de_metrica_que_no_existe()
     {
         GeminiAccepts();
@@ -217,6 +257,39 @@ public class AiMetricServiceTests : IDisposable
         await service.AnalyzeAsync(_userId, "abc", OneMetric(snippets: 2), default);
 
         Assert.Equal(2, _http.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Un_veredicto_cacheado_con_el_hash_de_antes_de_versionar_el_prompt_se_recalcula()
+    {
+        // Verificado el 2026-09-02: Gemini marcó "qué tonto haberme quedado triste"
+        // como insulto con una redacción vieja del prompt de redflags. Arreglar la
+        // redacción no alcanza si el veredicto ya cacheado de esa persona nunca se
+        // recalcula — el hash tiene que incluir el prompt, no sólo los fragmentos, para
+        // que una mejora de redacción alcance a los chats ya analizados. Esta fila
+        // simula exactamente ese estado: guardada con el hash de antes del fix (sólo
+        // fragmentos, sin el prompt).
+        var snippets = OneMetric(metricId: "redflags", snippets: 1)[0].Snippets;
+        var legacyHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            string.Join('\x1f', snippets.Select(item => $"{item.Id}\x1f{item.Keyword}\x1f{item.Text}")))));
+
+        _db.Context.AiMetricResults.Add(new AiMetricResult
+        {
+            UserId = _userId,
+            SourceHash = "abc",
+            MetricId = "redflags",
+            Status = AiMetricStatus.Ready,
+            InputHash = legacyHash,
+            ResultJson = "{\"Accepted\":[\"1\"],\"Rejected\":[]}",
+        });
+        await _db.Context.SaveChangesAsync();
+        GeminiAccepts();
+
+        await Service().AnalyzeAsync(_userId, "abc", OneMetric(metricId: "redflags", snippets: 1), default);
+
+        // El hash guardado ya no coincide con el que ahora incluye el prompt: no fue
+        // un "cache hit", se volvió a llamar a Gemini.
+        Assert.Single(_http.Requests);
     }
 
     [Fact]
@@ -378,13 +451,16 @@ public class AiMetricServiceTests : IDisposable
         // Para redflags el rechazo del piso de seguridad es evidencia débil de un
         // conflicto real dirigido a la otra persona — puede tratarse de odio o una
         // amenaza sobre algo ajeno a la relación — así que sigue rigiendo "ante la
-        // duda, excluí": no cuenta, pero tampoco tumba la métrica entera.
+        // duda, excluí": no cuenta, pero tampoco tumba la métrica entera. Y, a
+        // diferencia de un rechazo explícito, tampoco entra a RejectedIds — un bloqueo
+        // es un "no sé", no un "no": el puntaje reponderado no debe restarle por esto.
         _http.Always(HttpStatusCode.OK, JsonSerializer.Serialize(new { promptFeedback = new { blockReason = "SAFETY" } }));
 
         var result = (await Service().AnalyzeAsync(_userId, "abc", OneMetric(metricId: "redflags", snippets: 1), default))[0];
 
         Assert.Equal(AiMetricStatus.Ready, result.Status);
         Assert.Empty(result.AcceptedIds);
+        Assert.Empty(result.RejectedIds);
         Assert.Single(_http.Requests);
     }
 

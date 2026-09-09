@@ -78,6 +78,15 @@ public class AiMetricPromptsTests
         Assert.Contains("broma o sarcasmo entre amigos", instruction);
     }
 
+    [Fact]
+    public void La_instrucción_de_red_flags_explica_el_uso_de_paréntesis_interrogación_como_ironía()
+    {
+        var instruction = AiMetricPrompts.SystemInstruction("redflags");
+
+        Assert.Contains("\"(?\"", instruction);
+        Assert.Contains("ironía", instruction);
+    }
+
     // -----------------------------------------------------------------------
     // Renderizado del lote
     // -----------------------------------------------------------------------

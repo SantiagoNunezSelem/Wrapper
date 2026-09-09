@@ -789,17 +789,7 @@
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(192, 132, 252, 0.4) transparent;
-}
-
-.history-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.history-list::-webkit-scrollbar-thumb {
-  background: rgba(192, 132, 252, 0.4);
-  border-radius: var(--vz-radius-pill);
+  /* El scrollbar en sí ya lo pinta la regla global en index.css. */
 }
 
 .history-item {
@@ -1581,12 +1571,10 @@
   background: transparent;
   color: var(--vz-text-dim);
   cursor: pointer;
-  /* Escondidos hasta que la fila esté en hover o algo adentro tenga el foco:
-     renombrar y borrar son las acciones raras de esta lista, abrir es la
-     común. `:focus-within` es lo que las deja alcanzables con teclado, donde
-     no hay hover. */
-  opacity: 0;
-  transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
+  /* Siempre visibles: escondidos hasta el hover se leían como "no hay forma
+     de borrar este chat" a primera vista, sobre todo en la primera fila de
+     la lista, que nunca arranca en hover. */
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .history-rename {
@@ -1597,13 +1585,6 @@
   right: 10px;
 }
 
-.history-row:hover .history-rename,
-.history-row:focus-within .history-rename,
-.history-row:hover .history-delete,
-.history-row:focus-within .history-delete {
-  opacity: 1;
-}
-
 .history-rename:hover {
   background: var(--vz-surface-4);
   color: var(--vz-text-strong);
@@ -1612,13 +1593,4 @@
 .history-delete:hover {
   background: var(--vz-danger-bg);
   color: var(--vz-danger-text);
-}
-
-/* Sin hover (táctil) nunca habría forma de llegar a los botones, así que ahí
-   quedan siempre visibles. */
-@media (hover: none) {
-  .history-rename,
-  .history-delete {
-    opacity: 1;
-  }
 }

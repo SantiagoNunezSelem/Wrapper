@@ -117,7 +117,7 @@ describe('analysisWorker', () => {
       sourceHash: 'abc',
       language: 'es',
       core: core.core,
-      verdicts: { tonopicante: [messages[0].id] },
+      verdicts: { tonopicante: { accepted: [messages[0].id], rejected: [] } },
     })
 
     expect(reply.type).toBe('applyAi')

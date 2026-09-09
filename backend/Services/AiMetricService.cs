@@ -21,10 +21,17 @@ public sealed record AiSnippetInput(string Id, string Keyword, string Text);
 
 public sealed record AiMetricRequestItem(string MetricId, List<AiSnippetInput> Snippets);
 
+/// <param name="RejectedIds">
+/// Candidates Gemini actually looked at and explicitly said no to — distinct from one
+/// that was blocked or never sent at all (see <see cref="AiMetricService.ClassifyBatchAsync"/>).
+/// Only this bucket is specific enough evidence to discount a hit's weight in a score;
+/// the frontend's "redflags" metric is the first to use it that way.
+/// </param>
 public sealed record AiMetricStateDto(
     string MetricId,
     string Status,
     IReadOnlyList<string> AcceptedIds,
+    IReadOnlyList<string> RejectedIds,
     string? ErrorCode,
     DateTime? RetryAvailableAtUtc,
     DateTime UpdatedAtUtc);
@@ -180,7 +187,7 @@ public sealed class AiMetricService(
         IReadOnlyList<AiSnippetInput> snippets,
         CancellationToken cancellationToken)
     {
-        var inputHash = ComputeInputHash(snippets);
+        var inputHash = ComputeInputHash(metricId, snippets);
         var now = DateTime.UtcNow;
 
         var row = await db.AiMetricResults.FirstOrDefaultAsync(
@@ -217,7 +224,7 @@ public sealed class AiMetricService(
         // No candidate survived the keyword filters: a valid, free "nothing here" verdict.
         if (snippets.Count == 0)
         {
-            Apply(row, AiCallOutcome.Success([]));
+            Apply(row, ClassificationOutcome.Success([], []));
         }
         else
         {
@@ -234,7 +241,7 @@ public sealed class AiMetricService(
         return ToDto(row);
     }
 
-    private async Task<AiCallOutcome> ClassifyInBatchesAsync(
+    private async Task<ClassificationOutcome> ClassifyInBatchesAsync(
         string metricId,
         IReadOnlyList<AiSnippetInput> snippets,
         CancellationToken cancellationToken)
@@ -242,6 +249,7 @@ public sealed class AiMetricService(
         var instruction = AiMetricPrompts.SystemInstruction(metricId);
         var batchSize = Math.Max(1, _options.BatchSize);
         var accepted = new List<string>();
+        var rejected = new List<string>();
 
         // Only tonopicante's candidates carry the raw anatomical/crude vocabulary that
         // trips Gemini's safety floor — softened fresh on every call, never persisted,
@@ -253,19 +261,20 @@ public sealed class AiMetricService(
         for (var offset = 0; offset < preparedSnippets.Count; offset += batchSize)
         {
             var batch = preparedSnippets.Skip(offset).Take(batchSize).ToList();
-            var (batchAccepted, failure) = await ClassifyBatchAsync(metricId, instruction, batch, cancellationToken);
+            var (batchAccepted, batchRejected, failure) = await ClassifyBatchAsync(metricId, instruction, batch, cancellationToken);
 
             // One bad batch fails the whole metric on purpose: keeping a partial answer
             // would silently undercount the metric with no way for the user to tell.
             if (failure is not null)
             {
-                return failure;
+                return ClassificationOutcome.Failure(failure.ErrorCode!);
             }
 
             accepted.AddRange(batchAccepted);
+            rejected.AddRange(batchRejected);
         }
 
-        return AiCallOutcome.Success(accepted);
+        return ClassificationOutcome.Success(accepted, rejected);
     }
 
     /// <summary>
@@ -283,7 +292,7 @@ public sealed class AiMetricService(
     /// Quota/unavailable/config/invalid failures are not retried here: a smaller batch
     /// wouldn't fix an exhausted quota or a bad key, only waste calls before failing anyway.
     /// </summary>
-    private async Task<(List<string> Accepted, AiCallOutcome? Failure)> ClassifyBatchAsync(
+    private async Task<(List<string> Accepted, List<string> Rejected, AiCallOutcome? Failure)> ClassifyBatchAsync(
         string metricId,
         string instruction,
         IReadOnlyList<AiSnippetInput> batch,
@@ -296,7 +305,12 @@ public sealed class AiMetricService(
             // The model can only ever confirm ids we actually sent — a hallucinated id
             // must not slip into the result.
             var batchIds = batch.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            return (outcome.AcceptedIds.Where(batchIds.Contains).ToList(), null);
+            var accepted = outcome.AcceptedIds.Where(batchIds.Contains).ToList();
+            // Everything Gemini actually looked at but chose not to include is an
+            // explicit "no" — the only verdict specific enough to discount a keyword
+            // hit's weight in a score (see metricRedflags' reweighting on the frontend).
+            var rejected = batchIds.Except(accepted).ToList();
+            return (accepted, rejected, null);
         }
 
         if (outcome.ErrorCode == AiErrorCode.Blocked && batch.Count <= 1)
@@ -316,49 +330,56 @@ public sealed class AiMetricService(
                     "Gemini's safety floor would not classify message {Id} even alone; counting it as a hit for {MetricId} instead of excluding it.",
                     id,
                     metricId);
-                return ([id], null);
+                return ([id], [], null);
             }
 
             // For redflags the same refusal is much weaker evidence — it can just as
             // easily be a threat or hate-speech floor tripping on something unrelated to
             // a directed conflict — so "ante la duda, excluí" (see AiMetricPrompts) still
-            // applies: left out, not counted, and not allowed to sink every other
-            // candidate in this metric that Gemini did manage to classify.
+            // applies for the shown examples: left out, not counted. It is NOT the same
+            // as an explicit rejection, though — a block is Gemini saying "I don't know",
+            // not "no" — so unlike a real rejection it must not end up in `Rejected`
+            // either: it stays neutral, keeping its plain dictionary weight in the score.
             logger.LogInformation(
                 "Gemini's safety floor would not classify message {Id} even alone; excluding it from {MetricId}.",
                 id,
                 metricId);
-            return ([], null);
+            return ([], [], null);
         }
 
         if (outcome.ErrorCode != AiErrorCode.Blocked)
         {
-            return ([], outcome);
+            return ([], [], outcome);
         }
 
         var half = batch.Count / 2;
-        var (firstAccepted, firstFailure) = await ClassifyBatchAsync(metricId, instruction, batch.Take(half).ToList(), cancellationToken);
+        var (firstAccepted, firstRejected, firstFailure) =
+            await ClassifyBatchAsync(metricId, instruction, batch.Take(half).ToList(), cancellationToken);
         if (firstFailure is not null)
         {
-            return ([], firstFailure);
+            return ([], [], firstFailure);
         }
 
-        var (secondAccepted, secondFailure) = await ClassifyBatchAsync(metricId, instruction, batch.Skip(half).ToList(), cancellationToken);
+        var (secondAccepted, secondRejected, secondFailure) =
+            await ClassifyBatchAsync(metricId, instruction, batch.Skip(half).ToList(), cancellationToken);
         if (secondFailure is not null)
         {
-            return ([], secondFailure);
+            return ([], [], secondFailure);
         }
 
         firstAccepted.AddRange(secondAccepted);
-        return (firstAccepted, null);
+        firstRejected.AddRange(secondRejected);
+        return (firstAccepted, firstRejected, null);
     }
 
-    private void Apply(AiMetricResult row, AiCallOutcome outcome)
+    private void Apply(AiMetricResult row, ClassificationOutcome outcome)
     {
         if (outcome.IsSuccess)
         {
             row.Status = AiMetricStatus.Ready;
-            row.ResultJson = JsonSerializer.Serialize(outcome.AcceptedIds, SerializerOptions);
+            row.ResultJson = JsonSerializer.Serialize(
+                new StoredVerdict(outcome.AcceptedIds.ToList(), outcome.RejectedIds.ToList()),
+                SerializerOptions);
             row.ErrorCode = null;
             row.RetryAvailableAtUtc = null;
             return;
@@ -409,28 +430,68 @@ public sealed class AiMetricService(
     }
 
     /// <summary>
-    /// Fingerprints the exact payload behind a verdict. If the keyword dictionaries or
-    /// the context-window rules change in code, the snippets change, this hash changes,
-    /// and the stale verdict is recomputed instead of being reused forever.
+    /// Fingerprints the exact payload behind a verdict — the snippets AND the prompt
+    /// they were judged against. If the keyword dictionaries or the context-window
+    /// rules change in code, the snippets change and this hash changes with them. The
+    /// prompt is folded in for the same reason: a chat analysed before a wording fix
+    /// to <see cref="AiMetricPrompts.SystemInstruction"/> (verified 2026-09-02 — Gemini
+    /// flagged a self-critical "qué tonto haberme quedado triste" as an insult under
+    /// the old wording) must not go on showing that stale verdict forever just because
+    /// its snippets never changed. Either way, the stale verdict gets recomputed
+    /// instead of reused — this is the one hash covering both triggers.
     /// </summary>
-    private static string ComputeInputHash(IReadOnlyList<AiSnippetInput> snippets)
+    private static string ComputeInputHash(string metricId, IReadOnlyList<AiSnippetInput> snippets)
     {
         var canonical = string.Join(
             FieldSeparator,
             snippets.Select(item => $"{item.Id}{FieldSeparator}{item.Keyword}{FieldSeparator}{item.Text}"));
+        canonical = $"{AiMetricPrompts.SystemInstruction(metricId)}{FieldSeparator}{canonical}";
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
-    private static AiMetricStateDto ToDto(AiMetricResult row) => new(
-        row.MetricId,
-        row.Status,
-        row.ResultJson is null
-            ? []
-            : JsonSerializer.Deserialize<List<string>>(row.ResultJson, SerializerOptions) ?? [],
-        row.ErrorCode,
-        AsUtc(row.RetryAvailableAtUtc),
-        AsUtc(row.UpdatedAtUtc) ?? row.UpdatedAtUtc);
+    private static AiMetricStateDto ToDto(AiMetricResult row)
+    {
+        var (accepted, rejected) = DeserializeVerdict(row.ResultJson);
+        return new(
+            row.MetricId,
+            row.Status,
+            accepted,
+            rejected,
+            row.ErrorCode,
+            AsUtc(row.RetryAvailableAtUtc),
+            AsUtc(row.UpdatedAtUtc) ?? row.UpdatedAtUtc);
+    }
+
+    /// <summary>
+    /// A row written before <see cref="StoredVerdict"/> existed holds a bare JSON array
+    /// of accepted ids instead of the <c>{Accepted, Rejected}</c> shape — reading that
+    /// old shape as "accepted, nothing rejected" costs nothing and needs no DB
+    /// migration, since `ResultJson` is just a text column either way.
+    /// </summary>
+    private static (IReadOnlyList<string> Accepted, IReadOnlyList<string> Rejected) DeserializeVerdict(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return ([], []);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                return (JsonSerializer.Deserialize<List<string>>(json, SerializerOptions) ?? [], []);
+            }
+
+            var stored = JsonSerializer.Deserialize<StoredVerdict>(json, SerializerOptions);
+            return (stored?.Accepted ?? [], stored?.Rejected ?? []);
+        }
+        catch (JsonException)
+        {
+            return ([], []);
+        }
+    }
 
     /// <summary>
     /// SQLite stores dates as text and EF reads them back with <c>DateTimeKind.Unspecified</c>,
@@ -440,4 +501,26 @@ public sealed class AiMetricService(
     /// </summary>
     private static DateTime? AsUtc(DateTime? value) =>
         value is null ? null : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
+}
+
+/// <summary>The shape `AiMetricResult.ResultJson` is stored as. See `AiMetricService.DeserializeVerdict`
+/// for how an older, pre-`Rejected` row (a bare JSON array) still reads back correctly.</summary>
+internal sealed record StoredVerdict(List<string> Accepted, List<string> Rejected);
+
+/// <summary>
+/// The result of judging one whole metric's worth of candidates — as opposed to
+/// <see cref="AiCallOutcome"/>, which is just one raw Gemini HTTP call. Kept separate
+/// because only this layer knows the full candidate set a batch was drawn from, which
+/// is what turns "not accepted" into a meaningful "explicitly rejected".
+/// </summary>
+internal sealed record ClassificationOutcome(
+    bool IsSuccess,
+    IReadOnlyList<string> AcceptedIds,
+    IReadOnlyList<string> RejectedIds,
+    string? ErrorCode)
+{
+    public static ClassificationOutcome Success(IReadOnlyList<string> accepted, IReadOnlyList<string> rejected) =>
+        new(true, accepted, rejected, null);
+
+    public static ClassificationOutcome Failure(string errorCode) => new(false, [], [], errorCode);
 }
