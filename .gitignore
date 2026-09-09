@@ -12,6 +12,13 @@ backend/*.db-wal
 .vercel
 .env*
 
+# Dependencias y caché de las herramientas de front.
+#
+# Faltaba, y por eso había un `node_modules/.vite/vitest/.../results.json` versionado:
+# vitest guarda ahí qué tests corrieron y cuánto tardaron, así que aparecía como
+# modificado en cada `npm test` y ensuciaba el `git status` de cualquier rama.
+node_modules/
+
 # Artefactos de los tests
 backend.Tests/bin/
 backend.Tests/obj/

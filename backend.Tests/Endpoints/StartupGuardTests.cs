@@ -1,3 +1,4 @@
+using backend.Options;
 using backend.Tests.Infrastructure;
 
 namespace backend.Tests.Endpoints;
@@ -24,6 +25,20 @@ public sealed class StartupGuardTests
     public void No_arranca_en_produccion_con_una_clave_del_repositorio(string placeholder)
     {
         using var factory = Production(placeholder);
+
+        var error = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        Assert.Contains("placeholder", Unwrap(error).Message);
+    }
+
+    [Fact]
+    public void No_arranca_en_produccion_con_el_default_de_JwtOptions()
+    {
+        // El caso que no se ve mirando los appsettings: si el deploy no trae sección Jwt,
+        // el binder no falla, devuelve la clase con sus valores por defecto. Esa clave está
+        // en el repositorio igual que las otras dos, y mide más de 32 bytes, así que pasaría
+        // limpia por la comprobación de largo si el guard no la conociera.
+        using var factory = Production(new JwtOptions().SigningKey);
 
         var error = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
 

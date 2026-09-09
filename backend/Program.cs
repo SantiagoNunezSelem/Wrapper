@@ -799,11 +799,17 @@ static void EnsureProductionSecrets(WebApplicationBuilder builder)
 
     var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 
-    // The values committed to appsettings.json / appsettings.Development.json.
+    // The values committed to appsettings.json / appsettings.Development.json, plus the
+    // default baked into JwtOptions itself. That third one is the one that is easy to miss:
+    // it is what binds when a deployment ships without a Jwt section at all, and it is long
+    // enough to slip past the length check below, so without it here such a deploy would
+    // boot happily on a key that is sitting in the repository. It is read off the type
+    // instead of retyped as a literal so the list cannot drift the next time it changes.
     string[] knownPlaceholders =
     [
         "change-this-before-production-use-a-long-random-secret-key",
         "wrapper-crm-development-signing-key-change-me-before-production",
+        new JwtOptions().SigningKey,
     ];
 
     if (knownPlaceholders.Contains(jwt.SigningKey, StringComparer.Ordinal))

@@ -11,19 +11,40 @@ import { RecaptchaNotice } from '../../components/RecaptchaNotice'
 import { RenameDialog } from '../../components/RenameDialog'
 import { ResponsiveGoogleLogin } from '../../components/ResponsiveGoogleLogin'
 import { useModalDismiss } from '../../components/useModalDismiss'
-import { SubscriptionPage } from '../../components/SubscriptionPage'
+import { lazyPanel } from '../../components/lazyPanel'
 import { useEditableWordCloud } from '../../components/useEditableWordCloud'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import type { Vistazo } from '../../app/useVistazo'
 import type { MetricCard } from '../../types'
-import { ExportTutorialSheet } from './ExportTutorialSheet'
 import { MetricList } from './MetricList'
 import { MetricSheet } from './MetricSheet'
 import { MobileDrawer } from './MobileDrawer'
 import { MobileTabBar, type MobileTab } from './MobileTabBar'
 import { MobileAccount, MobileHistory, MobileHome } from './MobileViews'
-import { StoryMode } from './StoryMode'
 import './mobile.css'
+
+// Tres pantallas que sólo aparecen después de un toque, y entre las tres son la mayor
+// parte del peso del shell: la de suscripción, el recorrido tipo historia y el
+// tutorial de exportación con sus ilustraciones. Ninguna hace falta para pintar el
+// home, así que ninguna viaja en el bundle que lo bloquea.
+const SubscriptionPage = lazyPanel(
+  () => import('../../components/SubscriptionPage'),
+  (m) => m.SubscriptionPage,
+  // Reemplaza todo el shell, así que sin fallback quedaría la pantalla en blanco.
+  'screen',
+)
+
+const StoryMode = lazyPanel(
+  () => import('./StoryMode'),
+  (m) => m.StoryMode,
+  // Idem: el recorrido tapa el home entero.
+  'screen',
+)
+
+const ExportTutorialSheet = lazyPanel(
+  () => import('./ExportTutorialSheet'),
+  (m) => m.ExportTutorialSheet,
+)
 
 type MobileView = MobileTab
 

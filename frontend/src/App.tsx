@@ -2,7 +2,18 @@ import { useIsMobile } from './app/useIsMobile'
 import { useVistazo } from './app/useVistazo'
 import { DesktopShell } from './shells/desktop/DesktopShell'
 import { MobileShell } from './shells/mobile/MobileShell'
-import { SharedStoryView } from './shells/mobile/SharedStoryView'
+import { lazyPanel } from './components/lazyPanel'
+
+// La página pública de un recorrido compartido: la ve quien abre un link `/s/{slug}`,
+// que no es el recorrido normal de nadie que ya está usando la app. Cargarla aparte
+// deja fuera del bundle principal todo lo que arrastra (StoryMode y sus gráficos).
+const SharedStoryView = lazyPanel(
+  () => import('./shells/mobile/SharedStoryView'),
+  (m) => m.SharedStoryView,
+  // Es la pantalla entera y encima la primera que ve quien abre el link: sin fallback,
+  // el link recién compartido abre en blanco.
+  'screen',
+)
 
 /**
  * La raíz: arma el estado una sola vez y elige quién lo dibuja.

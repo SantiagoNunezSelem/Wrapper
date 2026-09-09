@@ -46,11 +46,12 @@ jobs:
         run: npm ci
 
       - name: Lint
-        # `--max-warnings` en vez de `--deny-warnings`: el repo ya tenía 5 advertencias
-        # antes de estos tests, y bloquear el PR por ellas sería empezar en rojo por algo
-        # ajeno. Con el tope fijo, no pueden aparecer más; bajarlo a 0 es el paso siguiente
-        # una vez que se limpien (ver "Hallazgos" en TESTING.md).
-        run: npx oxlint --max-warnings=5
+        # El tope estuvo en 5 mientras quedaban las advertencias que el repo ya traía. Ya
+        # están las cinco resueltas —cuatro `exhaustive-deps` en useVistazo, silenciadas una
+        # por una con el motivo escrito al lado, y el hook de tooltip movido a su propio
+        # archivo— así que ahora el tope es 0: una advertencia nueva rompe el PR, que es la
+        # única forma de que no se vuelvan a acumular.
+        run: npx oxlint --max-warnings=0
 
       - name: Typecheck y build
         run: npm run build
@@ -65,6 +66,51 @@ jobs:
           name: cobertura-frontend
           path: frontend/coverage
           retention-days: 7
+
+  # Auditoría de dependencias, en un job aparte de los tests: una vulnerabilidad nueva
+  # aparece sola —sin que nadie toque el repo— cuando se publica el aviso, y mezclarla
+  # con el job que compila haría que un PR sin relación se ponga en rojo sin decir por
+  # qué. Acá el motivo es el único contenido del job.
+  seguridad:
+    name: Seguridad
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # Se audita el lockfile, no el árbol instalado: `npm audit` resuelve contra
+      # package-lock.json, así que no hace falta un `npm ci` previo para saber si alguna
+      # dependencia tiene un aviso abierto.
+      - name: Auditar npm
+        working-directory: frontend
+        # `high` y no `moderate`: el umbral tiene que ser uno que valga la pena frenar un
+        # merge. Con `moderate` el job estaría rojo de fondo por avisos de herramientas
+        # de build que nunca llegan al bundle, y un rojo permanente se ignora.
+        run: npm audit --audit-level=high
+
+      - name: Restaurar
+        run: dotnet restore Wrapper.sln
+
+      # `dotnet list package --vulnerable` sale con código 0 aunque encuentre algo: lo
+      # único que hace es imprimir la tabla. Así que el veredicto se lee del texto.
+      - name: Auditar NuGet
+        run: |
+          informe=$(dotnet list package --vulnerable --include-transitive)
+          echo "$informe"
+          if echo "$informe" | grep -q "has the following vulnerable packages"; then
+            echo "::error::Hay paquetes NuGet con vulnerabilidades conocidas (ver la tabla de arriba)."
+            exit 1
+          fi
 
   backend:
     name: Backend

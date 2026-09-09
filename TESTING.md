@@ -43,12 +43,13 @@ node scripts/coverage-gate.mjs
 
 ## Qué corre en cada PR
 
-`.github/workflows/tests.yml` levanta tres jobs:
+`.github/workflows/tests.yml` levanta cuatro jobs:
 
 | Job | Qué hace | Rompe el PR si… |
 | --- | --- | --- |
-| **Frontend** | `oxlint --max-warnings=5`, `tsc -b && vite build`, `vitest run --coverage` | falla un test, no compila, o aparece una advertencia de lint nueva |
+| **Frontend** | `oxlint --max-warnings=0`, `tsc -b && vite build`, `vitest run --coverage` | falla un test, no compila, o aparece cualquier advertencia de lint |
 | **Backend** | `dotnet build -warnaserror`, `dotnet test --collect:"XPlat Code Coverage"` | falla un test o el compilador emite cualquier advertencia |
+| **Seguridad** | `npm audit --audit-level=high`, `dotnet list package --vulnerable` | una dependencia tiene un aviso de seguridad abierto |
 | **Cobertura** | junta los dos informes, escribe una tabla en el resumen del PR | una zona baja del umbral |
 
 Los umbrales por zona viven en dos lugares: los del frontend en `frontend/vitest.config.ts`
@@ -70,6 +71,16 @@ motivo equivocado.
 formatea fechas con `Intl` sobre horas locales y varias métricas cortan el día a las 6am:
 sin fijar la zona, la misma aserción da distinto en una máquina argentina que en el runner
 de GitHub (UTC). Esa decisión es lo que hizo visible el hallazgo 4 de más abajo.
+
+Ese mismo archivo parte la suite en dos proyectos, y lo único que los separa es si montan
+un DOM. Levantar jsdom cuesta unos tres segundos por archivo de test, y buena parte de la
+suite —el parser, las 24 métricas, los candidatos de IA— es aritmética sobre arrays que
+nunca toca un `document`; pagar ese arranque para correrla era casi la mitad del tiempo
+total. Los que corren en Node pelado van enumerados en `testsSinDom`, y no por carpeta,
+porque `src/lib/__tests__` está mezclado: ahí conviven el parser y el cliente HTTP, que
+stubea `fetch` y `localStorage`. Enumerar la lista corta deja jsdom como default, así que
+un test nuevo que no esté ahí corre más lento pero nunca roto, y sumar uno a la lista es
+una decisión explícita que, si estaba mal, falla en la primera corrida.
 
 ### Backend — xUnit + WebApplicationFactory
 
@@ -242,10 +253,16 @@ Ninguno de los dos aplica a `es` ni a `en`, que es el soporte que la app declara
 
 ## Observaciones
 
-**Cinco advertencias de lint preexistentes.** Cuatro de `react-hooks/exhaustive-deps` en
-`useVistazo.ts` y una de `react/only-export-components` en `TooltipProvider.tsx`. Ninguna
-la introdujeron los tests. El workflow usa `--max-warnings=5` para que no puedan aparecer
-más; bajarlo a `0` es el paso siguiente cuando se limpien.
+**Las cinco advertencias de lint preexistentes ya están resueltas.** Eran cuatro de
+`react-hooks/exhaustive-deps` en `useVistazo.ts` y una de `react/only-export-components`
+en `TooltipProvider.tsx`. Las cuatro primeras eran deliberadas —las tres funciones que
+faltaban en los arrays están declaradas en el cuerpo del hook, así que cambian de
+identidad en cada render y meterlas ahí dispararía el efecto en cada render— y quedaron
+silenciadas una por una con el motivo escrito al lado, que es lo que la advertencia
+pedía que se hiciera explícito. La quinta se arregló moviendo `useTooltipController` y
+su contexto a `tooltipContext.ts`, para que `TooltipProvider.tsx` exporte sólo el
+componente y Fast Refresh vuelva a funcionar en ese archivo. El workflow ahora corre con
+`--max-warnings=0`.
 
 **Un checkout sin credenciales devuelve 502 aunque la cuenta ya tenga Pro.** El chequeo
 "el proveedor está configurado" viene antes que "ya tenés una suscripción", así que un

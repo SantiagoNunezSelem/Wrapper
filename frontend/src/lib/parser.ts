@@ -1,4 +1,3 @@
-import JSZip from 'jszip'
 import type { ChatMessage } from '../types'
 import { sha256Hex } from './hash'
 
@@ -54,6 +53,11 @@ async function readFileText(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
 
   if (isZipSignature(buffer)) {
+    // jszip pesa ~100 kB minificado y sólo hace falta cuando el archivo es realmente un
+    // .zip. Importarlo acá adentro lo saca del bundle inicial: quien abre la landing o
+    // sube un .txt exportado sin comprimir nunca lo descarga, y quien sí sube un .zip lo
+    // pide justo cuando ya está esperando a que se lea el archivo.
+    const { default: JSZip } = await import('jszip')
     const archive = await JSZip.loadAsync(buffer)
     const txtFile = archive.file(/\.txt$/i)[0]
 

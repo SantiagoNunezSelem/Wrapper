@@ -1,20 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { autoUpdate, computePosition, flip, offset, shift, type Placement } from '@floating-ui/dom'
+import { TooltipContext, type TooltipContextValue } from './tooltipContext'
 
 interface TooltipState {
   anchor: HTMLElement
   content: ReactNode
   placement: Placement
 }
-
-interface TooltipContextValue {
-  show: (anchor: HTMLElement, content: ReactNode, placement: Placement) => void
-  hide: (anchor: HTMLElement) => void
-  toggle: (anchor: HTMLElement, content: ReactNode, placement: Placement) => void
-}
-
-const TooltipContext = createContext<TooltipContextValue | null>(null)
 
 /**
  * Un único bubble compartido por toda la app, en vez de uno por trigger.
@@ -90,11 +83,31 @@ export function TooltipProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Un modal que se abre desde el mismo trigger (click o Enter sobre un botón
+    // con tooltip) no dispara pointerleave/blur en ese botón — el puntero no se
+    // movió, y useModalDismiss mueve el foco recién cuando el panel ya montó. Sin
+    // esto, el tooltip que ya estaba mostrado (por hover o por tap) queda flotando
+    // sobre el modal, apuntando a un disparador que quedó tapado. useModalDismiss
+    // mueve el foco a casi cualquier diálogo al abrirse, así que este evento
+    // alcanza sin que cada modal tenga que avisarle nada al tooltip.
+    function handleFocusIn(event: FocusEvent) {
+      const target = event.target as Node | null
+      if (!target) {
+        return
+      }
+      if (state!.anchor.contains(target) || bubbleRef.current?.contains(target)) {
+        return
+      }
+      setState(null)
+    }
+
     document.addEventListener('pointerdown', handlePointerDownOutside, true)
     document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('focusin', handleFocusIn)
     return () => {
       document.removeEventListener('pointerdown', handlePointerDownOutside, true)
       document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('focusin', handleFocusIn)
     }
   }, [state])
 
@@ -119,12 +132,4 @@ export function TooltipProvider({ children }: { children: ReactNode }) {
         )}
     </TooltipContext.Provider>
   )
-}
-
-export function useTooltipController(): TooltipContextValue {
-  const ctx = useContext(TooltipContext)
-  if (!ctx) {
-    throw new Error('useTooltipController must be used within a TooltipProvider')
-  }
-  return ctx
 }
