@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using backend.Data;
@@ -78,10 +78,9 @@ public sealed class SubscriptionService(
     /// card token (see <see cref="MercadoPagoClient.CreateSubscriptionAsync"/>), so this
     /// method already knows its id and has stamped <c>external_reference</c> with the
     /// local row's — which is what stops a completed payment from being stranded on
-    /// "pendiente". The older route, redirecting to the shared plan's <c>init_point</c>,
-    /// is kept as a fallback for accounts where <c>POST /preapproval</c> is refused; it
-    /// works, but nothing links back to the local row except the payer's Mercado Pago
-    /// account email, which is often not the address they signed in with.
+    /// "pendiente". If Mercado Pago refuses the preapproval, checkout fails here and the
+    /// payer is charged nothing; see <see cref="OpenProviderCheckoutAsync"/> for why there
+    /// is no second route.
     /// </summary>
     public async Task<CheckoutResult> StartCheckoutAsync(
         User user,
@@ -118,10 +117,9 @@ public sealed class SubscriptionService(
 
         var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
 
-        // Built but not tracked yet: ResolvePlanIdAsync saves the context on the fallback
-        // path, and a half-built row must not be written before Mercado Pago has accepted
-        // anything. Its Id exists from construction, which is what external_reference
-        // carries.
+        // Built but not tracked yet: a half-built row must not be written before Mercado
+        // Pago has accepted anything. Its Id exists from construction, which is what
+        // external_reference carries.
         var subscription = new Subscription
         {
             UserId = user.Id,
@@ -176,10 +174,17 @@ public sealed class SubscriptionService(
             .FirstOrDefault();
 
     /// <summary>
-    /// Asks Mercado Pago for a checkout URL, preferring the per-payer preapproval and
-    /// falling back to the shared plan link. The fallback exists because
-    /// <c>POST /preapproval</c> is not available on every account or country, and losing
-    /// checkout entirely would be a far worse failure than losing the id up front.
+    /// Asks Mercado Pago for a checkout URL: one preapproval for this payer, whose id and
+    /// <c>external_reference</c> are stamped on the local row before the redirect.
+    ///
+    /// There is deliberately no fallback to the shared plan link. Redirecting there when
+    /// this call fails reads as resilience and is the opposite: that link is anonymous, so
+    /// Mercado Pago charges the card and creates a subscription on their side with an id we
+    /// never learn and no <c>external_reference</c>. Nothing links it back — the webhook
+    /// can only guess by payer email, the reconciler skips it for having no id — so the
+    /// payer watches "pendiente" forever while being debited every month, and we cannot
+    /// even cancel it for them. A checkout that refuses to open is an annoyance the payer
+    /// can retry; a charge nobody can match is money we cannot account for.
     /// </summary>
     private async Task<string> OpenProviderCheckoutAsync(
         User user,
@@ -187,73 +192,29 @@ public sealed class SubscriptionService(
         bool withTrial,
         CancellationToken cancellationToken)
     {
-        if (_options.UseDirectPreapproval)
+        var preapproval = await client.CreateSubscriptionAsync(
+            user.Email,
+            subscription.Id.ToString(),
+            withTrial,
+            cancellationToken);
+
+        var initPoint = preapproval.InitPoint ?? preapproval.SandboxInitPoint;
+        if (string.IsNullOrWhiteSpace(preapproval.Id) || string.IsNullOrWhiteSpace(initPoint))
         {
-            try
-            {
-                var preapproval = await client.CreateSubscriptionAsync(
-                    user.Email,
-                    subscription.Id.ToString(),
-                    withTrial,
-                    cancellationToken);
-
-                var initPoint = preapproval.InitPoint ?? preapproval.SandboxInitPoint;
-                if (!string.IsNullOrWhiteSpace(preapproval.Id) && !string.IsNullOrWhiteSpace(initPoint))
-                {
-                    // Stored before the redirect — the whole point of this path.
-                    subscription.ExternalSubscriptionId = preapproval.Id;
-                    subscription.ExternalPlanId = preapproval.PreapprovalPlanId;
-
-                    if (withTrial)
-                    {
-                        subscription.TrialStartsAtUtc = DateTime.UtcNow;
-                    }
-
-                    return initPoint;
-                }
-
-                logger.LogWarning(
-                    "Mercado Pago accepted the preapproval but returned no usable init_point (id {Id}); falling back to the plan link.",
-                    preapproval.Id);
-            }
-            catch (MercadoPagoException exception)
-            {
-                logger.LogWarning(
-                    exception,
-                    "POST /preapproval was refused; falling back to the shared plan checkout. The subscription will have to be linked by payer email.");
-            }
+            throw new MercadoPagoException(
+                "Mercado Pago accepted the preapproval but returned no usable checkout URL.");
         }
 
-        var planId = await ResolvePlanIdAsync(withTrial, cancellationToken);
-        var plan = await client.GetPlanAsync(planId, cancellationToken);
+        // Stored before the redirect — the whole point of this path.
+        subscription.ExternalSubscriptionId = preapproval.Id;
+        subscription.ExternalPlanId = preapproval.PreapprovalPlanId;
 
-        if (string.IsNullOrWhiteSpace(plan?.InitPoint))
+        if (withTrial)
         {
-            throw new MercadoPagoException("Mercado Pago did not return a checkout URL for this plan.");
+            subscription.TrialStartsAtUtc = DateTime.UtcNow;
         }
 
-        subscription.ExternalPlanId = planId;
-
-        // Loud on purpose. This path still takes the payment, so nothing looks broken —
-        // but the row it produces has no preapproval id, which puts it outside everything
-        // that heals a stranded subscription: the webhook can only match it by payer
-        // email, and the reconciler skips it entirely. A warning in a log nobody is
-        // watching is how that turns into "pagué y sigue en pendiente" with no explanation
-        // on the screen, so it goes into the account's own event trail as well.
-        logger.LogWarning(
-            "Checkout for subscription {SubscriptionId} fell back to the shared plan link ({PlanId}); it has no " +
-            "preapproval id, so only the payer's Mercado Pago email can link it back.",
-            subscription.Id,
-            planId);
-
-        RecordEvent(
-            subscription,
-            "checkout",
-            "fallback_plan_link",
-            externalEventId: null,
-            notes: "POST /preapproval was unavailable; the checkout went through the shared plan link, which cannot be linked back by id.");
-
-        return plan.InitPoint;
+        return initPoint;
     }
 
     // ---------------------------------------------------------------------------
@@ -1196,80 +1157,6 @@ public sealed class SubscriptionService(
         }
 
         return string.IsNullOrWhiteSpace(lastFour) ? method : $"{method} ···· {lastFour}";
-    }
-
-    // ---------------------------------------------------------------------------
-    // Plans
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// The plan to attach a new subscriber to, created on first use and cached.
-    ///
-    /// The cache key includes a fingerprint of the pricing configuration, so changing
-    /// the amount in <c>appsettings.json</c> produces a new plan instead of silently
-    /// charging everyone the old price forever.
-    /// </summary>
-    private async Task<string> ResolvePlanIdAsync(bool withTrial, CancellationToken cancellationToken)
-    {
-        var configured = withTrial ? _options.PreapprovalPlanId : _options.PreapprovalPlanIdNoTrial;
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured;
-        }
-
-        if (!_options.AutoCreatePlan)
-        {
-            throw new MercadoPagoException(
-                withTrial
-                    ? "No plan configured: set MercadoPago:PreapprovalPlanId or enable AutoCreatePlan."
-                    : "No trial-free plan configured: set MercadoPago:PreapprovalPlanIdNoTrial or enable AutoCreatePlan.");
-        }
-
-        var key = $"mercadopago.plan.{(withTrial ? "trial" : "no_trial")}.{BuildPricingFingerprint(withTrial)}";
-        var stored = await db.AppSettings.FirstOrDefaultAsync(item => item.Key == key, cancellationToken);
-
-        if (stored is not null && !string.IsNullOrWhiteSpace(stored.Value))
-        {
-            return stored.Value;
-        }
-
-        var plan = await client.CreatePlanAsync(withTrial, cancellationToken);
-        if (string.IsNullOrWhiteSpace(plan.Id))
-        {
-            throw new MercadoPagoException("Mercado Pago created a plan without an id.");
-        }
-
-        if (stored is null)
-        {
-            db.AppSettings.Add(new AppSetting { Key = key, Value = plan.Id });
-        }
-        else
-        {
-            stored.Value = plan.Id;
-            stored.UpdatedAtUtc = DateTime.UtcNow;
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "Created Mercado Pago plan {PlanId} ({Kind}) for {Amount} {Currency} every {Frequency} {FrequencyType}.",
-            plan.Id,
-            withTrial ? "with free trial" : "without free trial",
-            _options.TransactionAmount,
-            _options.CurrencyId,
-            _options.Frequency,
-            _options.FrequencyType);
-
-        return plan.Id;
-    }
-
-    private string BuildPricingFingerprint(bool withTrial)
-    {
-        var seed = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{_options.TransactionAmount}|{_options.CurrencyId}|{_options.Frequency}|{_options.FrequencyType}|{(withTrial ? $"{_options.TrialFrequency}{_options.TrialFrequencyType}" : "none")}");
-
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed)))[..12].ToLowerInvariant();
     }
 
     // ---------------------------------------------------------------------------

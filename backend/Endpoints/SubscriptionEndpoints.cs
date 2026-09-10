@@ -36,7 +36,10 @@ public static class SubscriptionEndpoints
     /// HTTP method and path we called — so every catch site logs the real exception and
     /// hands the customer this instead.
     /// </summary>
-    private const string ProviderErrorMessage = "We couldn't reach Mercado Pago. Please try again in a moment.";
+    // No "try again in a moment": the most common reason checkout refuses to open is a
+    // rejected preapproval, which is a configuration fault that retrying never clears.
+    // Sending the payer around that loop is how a broken setup looks like a flaky network.
+    private const string ProviderErrorMessage = "No pudimos abrir el checkout de Mercado Pago. No se te cobró nada.";
 
     public static void MapSubscriptionEndpoints(this WebApplication app)
     {
@@ -810,7 +813,6 @@ public sealed record WebhookDiagnosticsResponse(
     string BackUrl,
     bool BackUrlIsPublic,
     string CheckoutReturnUrl,
-    bool DirectPreapprovalEnabled,
     int ReconcileIntervalMinutes,
     DateTime InstanceStartedAtUtc,
     long NotificationsReceived,
@@ -887,7 +889,6 @@ public sealed record WebhookDiagnosticsResponse(
             options.BackUrl,
             options.HasPublicBackUrl,
             options.CheckoutReturnUrl,
-            options.UseDirectPreapproval,
             options.ReconcileIntervalMinutes,
             log.StartedAtUtc,
             log.Received,

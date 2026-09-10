@@ -112,69 +112,73 @@ public class MercadoPagoClientTests
     }
 
     // -----------------------------------------------------------------------
-    // Creación del plan
+    // Creación de la suscripción
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task El_plan_con_trial_declara_la_prueba_gratis_de_forma_nativa()
+    public async Task La_suscripcion_se_crea_pendiente_y_atada_a_nuestra_fila()
+    {
+        // Los dos campos que impiden que un pago quede huérfano: el id vuelve en la
+        // respuesta y external_reference viaja con el nuestro, así que toda notificación
+        // posterior matchea por id sin depender del mail del pagador.
+        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-1","init_point":"https://mp/x"}"""));
+
+        await client.CreateSubscriptionAsync("pagador@test.com", "sub-42", includeFreeTrial: false, default);
+
+        Assert.EndsWith("/preapproval", http.LastRequest.Uri.AbsolutePath);
+        Assert.Contains("\"status\":\"pending\"", http.LastRequest.Body);
+        Assert.Contains("\"external_reference\":\"sub-42\"", http.LastRequest.Body);
+        Assert.Contains("\"payer_email\":\"pagador@test.com\"", http.LastRequest.Body);
+    }
+
+    [Fact]
+    public async Task La_suscripcion_con_trial_declara_la_prueba_gratis_de_forma_nativa()
     {
         // Simular el trial localmente rompería la conversión automática al día 8.
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-1","init_point":"https://mp/x"}"""));
+        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-1","init_point":"https://mp/x"}"""));
 
-        await client.CreatePlanAsync(includeFreeTrial: true, default);
+        await client.CreateSubscriptionAsync("a@test.com", "sub-1", includeFreeTrial: true, default);
 
         Assert.Contains("\"free_trial\"", http.LastRequest.Body);
         Assert.Contains("\"frequency\":7", http.LastRequest.Body);
         Assert.Contains("\"frequency_type\":\"days\"", http.LastRequest.Body);
-        Assert.EndsWith("/preapproval_plan", http.LastRequest.Uri.AbsolutePath);
     }
 
     [Fact]
-    public async Task El_plan_sin_trial_se_distingue_por_nombre()
-    {
-        // Mercado Pago aplica el free_trial del plan a TODOS sus suscriptores, así que
-        // "sin segunda semana gratis" tiene que ser un plan distinto.
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-2"}"""));
-
-        await client.CreatePlanAsync(includeFreeTrial: false, default);
-
-        Assert.Contains("sin prueba gratis", http.LastRequest.Body);
-    }
-
-    [Fact]
-    public async Task El_plan_sin_trial_OMITE_el_campo_free_trial()
+    public async Task La_suscripcion_sin_trial_OMITE_el_campo_free_trial()
     {
         // No alcanza con ponerlo en null: el DefaultIgnoreCondition.WhenWritingNull del
         // serializador NO se aplica a los valores de un Dictionary<string, object?> —
         // sólo a propiedades de un POCO — así que un null viajaría tal cual, que es
         // exactamente la clase de envío que GoogleAiClient documenta como rechazado por
         // su API. La clave directamente no se agrega.
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-2"}"""));
+        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-2","init_point":"https://mp/x"}"""));
 
-        await client.CreatePlanAsync(includeFreeTrial: false, default);
+        await client.CreateSubscriptionAsync("a@test.com", "sub-1", includeFreeTrial: false, default);
 
         Assert.DoesNotContain("free_trial", http.LastRequest.Body);
         Assert.DoesNotContain("null", http.LastRequest.Body);
     }
 
     [Fact]
-    public async Task El_plan_lleva_el_precio_y_la_moneda_configurados()
+    public async Task La_suscripcion_lleva_el_precio_y_la_moneda_configurados()
     {
         var options = new MercadoPagoOptions { AccessToken = Token, TransactionAmount = 9900m, CurrencyId = "UYU" };
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"plan-3"}"""), options);
+        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-3","init_point":"https://mp/x"}"""), options);
 
-        await client.CreatePlanAsync(includeFreeTrial: true, default);
+        await client.CreateSubscriptionAsync("a@test.com", "sub-1", includeFreeTrial: true, default);
 
         Assert.Contains("9900", http.LastRequest.Body);
         Assert.Contains("\"currency_id\":\"UYU\"", http.LastRequest.Body);
     }
 
     [Fact]
-    public async Task Un_plan_sin_cuerpo_de_respuesta_es_un_error_explicito()
+    public async Task Una_suscripcion_sin_cuerpo_de_respuesta_es_un_error_explicito()
     {
         var (client, _) = Build(stub => stub.Enqueue(HttpStatusCode.OK, ""));
 
-        await Assert.ThrowsAsync<MercadoPagoException>(() => client.CreatePlanAsync(true, default));
+        await Assert.ThrowsAsync<MercadoPagoException>(
+            () => client.CreateSubscriptionAsync("a@test.com", "sub-1", true, default));
     }
 
     [Fact]
@@ -182,9 +186,9 @@ public class MercadoPagoClientTests
     {
         // Mercado Pago rechaza un back_url que apunte a localhost.
         var options = new MercadoPagoOptions { AccessToken = Token, BackUrl = "http://localhost:5173" };
-        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"p"}"""), options);
+        var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"p","init_point":"https://mp/x"}"""), options);
 
-        await client.CreatePlanAsync(true, default);
+        await client.CreateSubscriptionAsync("a@test.com", "sub-1", true, default);
 
         Assert.Contains("mercadopago.com", http.LastRequest.Body);
         Assert.DoesNotContain("localhost", http.LastRequest.Body);

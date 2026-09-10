@@ -29,29 +29,16 @@ public sealed class MercadoPagoOptions
 
     public string ApiBaseUrl { get; set; } = "https://api.mercadopago.com";
 
-    /// <summary>
-    /// The <c>preapproval_plan</c> new subscribers with a free week are attached to.
-    /// Left empty it is created automatically on the first checkout and persisted into
-    /// the database, so a fresh account only ever needs the access token pasted in.
-    /// </summary>
-    public string PreapprovalPlanId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Separate plan for anyone who already used their trial. Mercado Pago applies a
-    /// plan's <c>free_trial</c> to every subscriber of that plan, so "no second free
-    /// week" has to be a different plan — it cannot be switched off per subscriber.
-    /// Auto-created alongside the other one when left empty.
-    /// </summary>
-    public string PreapprovalPlanIdNoTrial { get; set; } = string.Empty;
+    // No plan ids here on purpose: checkout creates one preapproval per payer and declares
+    // the free trial on it, so there is no shared plan to attach anyone to. See
+    // SubscriptionService.OpenProviderCheckoutAsync.
 
     /// <summary>
     /// The frontend's own origin (no trailing slash) — <c>https://vistazo.app</c> in
     /// production, <c>http://localhost:5173</c> while developing. Checkout is a redirect
     /// to Mercado Pago's hosted page, and this is where they send the payer back once
     /// it's done: <c>{BackUrl}/suscripcion?checkout=return</c>, which the frontend reads
-    /// to re-sync the subscription immediately instead of waiting on the webhook. Also
-    /// used as the <c>preapproval_plan</c>'s own <c>back_url</c> when one has to be
-    /// auto-created (see <see cref="AutoCreatePlan"/>).
+    /// to re-sync the subscription immediately instead of waiting on the webhook.
     /// </summary>
     public string BackUrl { get; set; } = "http://localhost:5173";
 
@@ -80,26 +67,6 @@ public sealed class MercadoPagoOptions
     /// would lock out people whose card recovers on its own.
     /// </summary>
     public int FailedPaymentGraceDays { get; set; } = 3;
-
-    /// <summary>Create the plan on demand when <see cref="PreapprovalPlanId"/> is empty.</summary>
-    public bool AutoCreatePlan { get; set; } = true;
-
-    /// <summary>
-    /// Open each checkout as its own <c>preapproval</c> (<c>POST /preapproval</c> with
-    /// <c>status: "pending"</c> and no card token) instead of sending everyone to the
-    /// shared plan's <c>init_point</c>.
-    ///
-    /// This is what makes a payment stop getting stuck on "pendiente". The plan link is
-    /// anonymous: Mercado Pago creates the real subscription on their side with an id we
-    /// never see and no <c>external_reference</c>, so the only way back to the local row
-    /// is the payer's Mercado Pago account email — which is frequently not the Google
-    /// address they signed in with. When they differ, neither the webhook nor a manual
-    /// sync can ever link the two and the account screen says "pendiente" forever while
-    /// Mercado Pago happily charges the card. Creating the preapproval ourselves hands
-    /// back its id *before* the redirect and lets us stamp <c>external_reference</c> with
-    /// our own subscription id, so every later notification matches by id.
-    /// </summary>
-    public bool UseDirectPreapproval { get; set; } = true;
 
     /// <summary>
     /// How often the background reconciler re-reads subscriptions that Mercado Pago may

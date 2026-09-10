@@ -140,10 +140,21 @@ cobra y la app dice "pendiente" para siempre.
 > `card_token_id` + `status: "authorized"`, y por eso el trial va declarado por
 > suscripción en vez de por plan.
 
-Si `POST /preapproval` fuera rechazado (hay cuentas y países donde no está habilitado), el
-checkout **cae automáticamente** al link del plan compartido: se pierde el id de arranque,
-pero no se pierde la venta. Queda anotado en el log con nivel `Warning`. Se puede forzar
-ese camino con `MercadoPago:UseDirectPreapproval: false`.
+Si `POST /preapproval` es rechazado, **el checkout no abre** y el pagador no es cobrado. No
+hay segundo camino a propósito: antes caía al link del plan compartido, que es anónimo —
+Mercado Pago cobraba igual y creaba la suscripción del lado suyo con un id que nunca
+veíamos y sin `external_reference`, así que nada la vinculaba de vuelta. El pagador miraba
+"pendiente" mientras le debitaban todos los meses, y desde acá no se podía ni cancelar. El
+motivo exacto del rechazo queda en el log:
+
+```
+Mercado Pago POST /preapproval failed with 400: {"message":"...","status":400}
+```
+
+Los dos que se ven en la práctica: `Both payer and collector must be real or test users`
+—el mail del pagador y la cuenta vendedora son uno real y otro de prueba, o son la misma
+cuenta, que es lo que pasa al probar con el mail propio— y un `back_url` que Mercado Pago
+no acepta.
 
 ### 1. Credenciales (ya cargadas para pruebas)
 
@@ -271,10 +282,10 @@ a más lenta:
    resuelve sola dentro de ese intervalo en vez de convertirse en un ticket.
 
 > Ojo con el punto 4: el reconciliador sólo mira filas que tengan el `preapproval_id`
-> guardado. Un checkout que cayó al link compartido del plan (ver `UseDirectPreapproval`)
-> no lo tiene, y queda afuera de esa red. Cuando pasa, ahora queda anotado como evento
-> `checkout / fallback_plan_link` en la propia cuenta, así que se ve en "Actividad de la
-> cuenta" en vez de sólo en un log.
+> guardado. Todo checkout que abre lo tiene —se guarda antes del redirect— así que la red
+> cubre todo lo que se abre hoy. Lo que queda afuera son las filas viejas creadas por el
+> link compartido del plan, de cuando existía ese camino: no tienen id, y sólo se pueden
+> vincular buscando por el mail del pagador (**Actualizar estado** lo intenta).
 
 ### 3.1. Cuando igual queda en "pendiente": `GET /api/subscription/diagnostics`
 
@@ -317,9 +328,6 @@ Todo en `backend\appsettings.json`, bajo `MercadoPago`:
 | `Frequency` / `FrequencyType` | `1` / `months` | Ciclo de facturación. |
 | `TrialFrequency` / `TrialFrequencyType` | `7` / `days` | Duración del trial. |
 | `FailedPaymentGraceDays` | `3` | Días de acceso tras un cobro rechazado, mientras Mercado Pago reintenta. |
-| `PreapprovalPlanId` | tu plan real (`36559e9e0fe24550a71ca3c4d58c8add`) | Solo se usa en el camino de fallback (ver arriba). |
-| `AutoCreatePlan` | `true` | Si `PreapprovalPlanId` estuviera vacío, crea uno solo la primera vez. |
-| `UseDirectPreapproval` | `true` | Crear un `preapproval` por pagador en vez de mandar al link del plan. **Es el arreglo del "pago pendiente"**; ponelo en `false` solo para volver al camino viejo. |
 | `BackUrl` | `http://localhost:5173` | **En producción tiene que ser el origen real del sitio** (`https://vistazo.app`). Mercado Pago rechaza un `back_url` que apunte a localhost, así que con el default el pagador termina en mercadopago.com y nunca vuelve a `/suscripcion` — con lo cual la re-consulta inmediata post-pago no corre. El backend lo avisa al arrancar. |
 | `ReconcileIntervalMinutes` | `15` | Cada cuánto corre el reconciliador. `0` lo apaga. |
 | `PendingCheckoutHours` | `48` | Cuánto tiempo un checkout sin terminar se sigue ofreciendo para retomar (y se sigue consultando). Después se da por abandonado. |
