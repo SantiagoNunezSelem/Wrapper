@@ -177,6 +177,71 @@ public class SubscriptionAccessEvaluatorTests
         Assert.Equal("pago_fallido", SubscriptionAccessEvaluator.GetVisibleState(user));
     }
 
+    // -----------------------------------------------------------------------
+    // "pendiente" son dos cosas distintas
+    //
+    // Adentro se guardan igual: un cobro que Mercado Pago está procesando y un checkout
+    // que alguien abrió y cerró sin pagar. Para quien lo lee no se parecen en nada — uno
+    // es "tu plata está en camino" y el otro es "no pasó nada" — así que el estado que
+    // ven los shells al lado del nombre no puede ser el mismo.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Un_checkout_abandonado_NO_figura_como_pago_pendiente()
+    {
+        // Abrir el pago y cerrar la pestaña no le debe poner a nadie un cartel diciendo
+        // que tiene plata dando vueltas.
+        var user = UserWith(Sub("pendiente"));
+
+        Assert.Equal("inactiva", SubscriptionAccessEvaluator.GetVisibleState(user));
+        Assert.False(SubscriptionAccessEvaluator.HasPaymentInFlight(user.Subscriptions[0]));
+    }
+
+    [Fact]
+    public void Un_cobro_que_Mercado_Pago_esta_procesando_SI_figura_pendiente()
+    {
+        var pending = Sub("pendiente");
+        pending.LastPaymentStatusDetail = "pending_contingency";
+
+        Assert.Equal("pendiente", SubscriptionAccessEvaluator.GetVisibleState(UserWith(pending)));
+        Assert.True(SubscriptionAccessEvaluator.HasPaymentInFlight(pending));
+    }
+
+    [Fact]
+    public void Una_tarjeta_rechazada_tampoco_es_un_pago_en_curso()
+    {
+        // El intento terminó y no se cobró nada. Decir "procesando" prometería que Pro
+        // está por prenderse solo; lo cierto es que hay que volver a intentarlo — y el
+        // motivo real ya se muestra aparte.
+        var declined = Sub("pendiente");
+        declined.LastPaymentStatusDetail = "cc_rejected_insufficient_amount";
+
+        Assert.False(SubscriptionAccessEvaluator.HasPaymentInFlight(declined));
+        Assert.Equal("inactiva", SubscriptionAccessEvaluator.GetVisibleState(UserWith(declined)));
+    }
+
+    [Fact]
+    public void Un_status_detail_desconocido_se_asume_en_curso()
+    {
+        // De los dos errores posibles con un código nuevo, decirle "lo seguimos" a alguien
+        // cuyo pago ya murió es mucho más barato que decirle "no pasó nada" a alguien que
+        // tiene la plata en movimiento.
+        var unknown = Sub("pendiente");
+        unknown.LastPaymentStatusDetail = "algo_que_mercado_pago_agregue";
+
+        Assert.True(SubscriptionAccessEvaluator.HasPaymentInFlight(unknown));
+    }
+
+    [Fact]
+    public void Ninguno_de_los_dos_da_acceso_Pro()
+    {
+        var pending = Sub("pendiente");
+        pending.LastPaymentStatusDetail = "pending_contingency";
+
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(UserWith(Sub("pendiente"))));
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(UserWith(pending)));
+    }
+
     [Fact]
     public void Desempata_por_fecha_de_creacion_cuando_no_hay_fechas_de_periodo()
     {

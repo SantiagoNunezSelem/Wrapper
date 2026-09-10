@@ -83,6 +83,11 @@ builder.Services.AddHttpClient<GoogleAiClient>();
 builder.Services.AddScoped<AiMetricService>();
 builder.Services.AddHttpClient<MercadoPagoClient>();
 builder.Services.AddSingleton<MercadoPagoSignatureValidator>();
+// Remembers what has actually reached the webhook, including the notifications the
+// signature check throws away — those never reach SubscriptionService and so leave no
+// event behind, which is what makes "nothing is arriving" and "everything is bouncing"
+// look identical from the outside. Read through /api/subscription/diagnostics.
+builder.Services.AddSingleton<MercadoPagoWebhookLog>();
 builder.Services.AddSingleton<ClientFingerprint>();
 builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();

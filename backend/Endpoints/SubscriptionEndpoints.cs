@@ -20,6 +20,16 @@ public static class SubscriptionEndpoints
     private static readonly TimeSpan WebhookBudget = TimeSpan.FromSeconds(18);
 
     /// <summary>
+    /// How stale a "pendiente" row may be before simply opening the account screen re-asks
+    /// Mercado Pago about it. Reading the overview is otherwise a pure local read, which is
+    /// exactly what leaves someone who has already paid staring at "pendiente" whenever the
+    /// webhook did not land and they did not come back through the checkout's return URL.
+    /// Short enough that a reload feels live, long enough that a screen polling itself does
+    /// not turn one visit into a dozen calls to Mercado Pago.
+    /// </summary>
+    private static readonly TimeSpan PendingRefreshAfter = TimeSpan.FromSeconds(20);
+
+    /// <summary>
     /// Shown to the customer whenever a <see cref="MercadoPagoException"/> reaches an
     /// endpoint. <see cref="MercadoPagoException.Message"/> is not safe to forward as-is —
     /// on a rejected request it embeds Mercado Pago's own raw error text, and on others the
@@ -40,6 +50,7 @@ public static class SubscriptionEndpoints
             SubscriptionService subscriptions,
             TrialEligibilityService trialEligibility,
             HttpContext http,
+            ILogger<SubscriptionService> logger,
             string? deviceId,
             CancellationToken cancellationToken) =>
         {
@@ -48,6 +59,8 @@ public static class SubscriptionEndpoints
             {
                 return Results.Unauthorized();
             }
+
+            await RefreshStalePendingAsync(user, subscriptions, logger, cancellationToken);
 
             var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
 
@@ -219,7 +232,47 @@ public static class SubscriptionEndpoints
             return Results.Ok(await BuildOverviewAsync(user, subscriptions, eligibility, cancellationToken));
         });
 
+        MapDiagnostics(app);
         MapWebhook(app);
+    }
+
+    /// <summary>
+    /// Answers, for the account that owns the app, the one question the billing screens
+    /// cannot: <b>is the webhook working at all?</b>
+    ///
+    /// Every way this integration fails silently converges on the same visible symptom —
+    /// a subscription that stays on "pendiente" — while the causes could not be more
+    /// different: the URL in the Mercado Pago panel points somewhere else, a topic is not
+    /// ticked, the signing secret does not match, the payer was never sent back. From
+    /// outside they are indistinguishable, and none of them leaves a row in the events
+    /// table, because a notification has to be verified before anything is written. This
+    /// puts the configuration and what has actually arrived side by side so the difference
+    /// is one request away instead of a guess.
+    /// </summary>
+    private static void MapDiagnostics(WebApplication app)
+    {
+        app.MapGet("/api/subscription/diagnostics", [Authorize] async (
+            ClaimsPrincipal principal,
+            AppDbContext db,
+            MercadoPagoWebhookLog webhookLog,
+            IOptions<MercadoPagoOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = principal.GetRequiredUserId();
+            var isAdmin = await db.Users
+                .Where(candidate => candidate.Id == userId)
+                .Select(candidate => candidate.IsAdmin)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            // 404 rather than 403: an endpoint that describes the payment configuration
+            // should not confirm its own existence to an account that cannot read it.
+            if (!isAdmin)
+            {
+                return Results.NotFound();
+            }
+
+            return Results.Ok(WebhookDiagnosticsResponse.Build(options.Value, webhookLog.Snapshot()));
+        });
     }
 
     private static void MapWebhook(WebApplication app)
@@ -230,6 +283,7 @@ public static class SubscriptionEndpoints
             HttpContext http,
             MercadoPagoSignatureValidator validator,
             SubscriptionService subscriptions,
+            MercadoPagoWebhookLog webhookLog,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
@@ -244,6 +298,12 @@ public static class SubscriptionEndpoints
             if (notification is null)
             {
                 logger.LogWarning("Discarded an unparseable Mercado Pago notification.");
+                webhookLog.Record(
+                    WebhookOutcomes.Unparseable,
+                    null,
+                    null,
+                    "Neither the body nor the query said which resource changed.");
+
                 return Results.BadRequest(new { message = "Unrecognised notification payload." });
             }
 
@@ -251,6 +311,14 @@ public static class SubscriptionEndpoints
             if (!check.IsValid)
             {
                 logger.LogWarning("Rejected a Mercado Pago notification: {Reason}", check.Reason);
+
+                // Recorded, not just logged. A rejected notification never reaches
+                // SubscriptionService, so it writes no event either — which leaves
+                // "nothing ever arrived" and "everything arrived and bounced" looking
+                // identical from the account screen, and those two have completely
+                // different fixes.
+                webhookLog.Record(WebhookOutcomes.Rejected, notification.Topic, notification.DataId, check.Reason);
+
                 return Results.Unauthorized();
             }
 
@@ -282,6 +350,12 @@ public static class SubscriptionEndpoints
                     notification.DataId,
                     WebhookBudget.TotalSeconds);
 
+                webhookLog.Record(
+                    WebhookOutcomes.TimedOut,
+                    notification.Topic,
+                    notification.DataId,
+                    $"Ran past the {WebhookBudget.TotalSeconds}s budget.");
+
                 return Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
             catch (Exception exception)
@@ -289,8 +363,12 @@ public static class SubscriptionEndpoints
                 // 500 asks Mercado Pago to redeliver, which is what we want for a
                 // transient fault — the handler is idempotent, so a repeat is harmless.
                 logger.LogError(exception, "Failed to process Mercado Pago notification {Topic}/{DataId}.", notification.Topic, notification.DataId);
+                webhookLog.Record(WebhookOutcomes.Failed, notification.Topic, notification.DataId, exception.Message);
+
                 return Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
+
+            webhookLog.Record(WebhookOutcomes.Accepted, notification.Topic, notification.DataId, notification.Action);
 
             return Results.Ok(new { received = true });
         });
@@ -403,6 +481,46 @@ public static class SubscriptionEndpoints
         return Results.Ok(await BuildOverviewAsync(user, subscriptions, eligibility, cancellationToken));
     }
 
+    /// <summary>
+    /// Re-asks Mercado Pago about a checkout that is still sitting on "pendiente".
+    ///
+    /// Everything that moves a subscription off that state — the webhook, the return
+    /// page's sync, the background reconciler — can be late or missing, and the one thing
+    /// a customer who has just paid actually does is open the app. Doing nothing there is
+    /// what turns a delivery problem into "pagué y la app dice que no". Bounded on both
+    /// sides: only a pending row, and only when the last look is older than
+    /// <see cref="PendingRefreshAfter"/>.
+    ///
+    /// A provider failure is swallowed on purpose — the stored state is still worth
+    /// showing, and this is a convenience layered on top of it, not the path that decides
+    /// anything.
+    /// </summary>
+    private static async Task RefreshStalePendingAsync(
+        User user,
+        SubscriptionService subscriptions,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var current = SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
+
+        if (current is null ||
+            current.Status != "pendiente" ||
+            current.IsDevSimulated ||
+            (current.LastSyncedAtUtc is { } lastSynced && DateTime.UtcNow - lastSynced < PendingRefreshAfter))
+        {
+            return;
+        }
+
+        try
+        {
+            await subscriptions.SyncAsync(user, cancellationToken);
+        }
+        catch (MercadoPagoException exception)
+        {
+            logger.LogWarning(exception, "Could not refresh the pending subscription for user {UserId}.", user.Id);
+        }
+    }
+
     private static Task<User?> LoadUserAsync(ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken)
     {
         var userId = principal.GetRequiredUserId();
@@ -507,6 +625,12 @@ public sealed record SubscriptionResponse(
     // Mercado Pago's status_detail for the charge that has not settled — what turns
     // "pendiente" into a sentence that says what to do about it.
     string? PendingReason,
+    // Whether Mercado Pago still has this charge going somewhere. The local status says
+    // "pendiente" both for that and for a checkout the payer opened and walked away from
+    // (a declined card included), and those are opposite messages: one is "tu plata está
+    // en camino", the other is "no pasó nada, no se te cobró". See
+    // SubscriptionAccessEvaluator.HasPaymentInFlight for how the two are told apart.
+    bool PaymentInProgress,
     DateTime CreatedAtUtc)
 {
     public static SubscriptionResponse From(Subscription subscription)
@@ -538,6 +662,7 @@ public sealed record SubscriptionResponse(
             hasAccess ? subscription.NextBillingAtUtc ?? subscription.TrialEndsAtUtc : null,
             subscription.Status == "pendiente" ? subscription.CheckoutUrl : null,
             subscription.LastPaymentStatusDetail,
+            SubscriptionAccessEvaluator.HasPaymentInFlight(subscription),
             subscription.CreatedAtUtc);
     }
 }
@@ -578,10 +703,15 @@ public sealed record SubscriptionActionsResponse(
         var canResumeCheckout = current.Status == "pendiente" && !string.IsNullOrWhiteSpace(current.CheckoutUrl);
 
         return new SubscriptionActionsResponse(
-            // A pending row with no link left to resume — a legacy checkout, or one whose
-            // URL was cleared — must still offer the plan, or the screen is a dead end:
-            // no way forward and nothing to cancel that would help.
-            CanSubscribe: current.Status is "inactiva" or "cancelada" || (current.Status == "pendiente" && !canResumeCheckout),
+            // A checkout the payer opened and abandoned is not a subscription in progress:
+            // nothing was authorised and nothing will be charged, so the plan stays on
+            // offer rather than the screen holding them hostage to a payment that never
+            // started. A pending row with no link left to resume — a legacy checkout, or
+            // one whose URL was cleared — needs the same, or it is a dead end: no way
+            // forward and nothing to cancel that would help.
+            CanSubscribe: current.Status is "inactiva" or "cancelada" ||
+                          (current.Status == "pendiente" &&
+                           (!canResumeCheckout || !SubscriptionAccessEvaluator.HasPaymentInFlight(current))),
             CanResumeCheckout: canResumeCheckout,
             // "Cancelar" on a pending row means "olvidate de este pago", which is worth
             // offering: otherwise an abandoned checkout blocks the screen forever.
@@ -663,3 +793,109 @@ public sealed record SubscriptionOverviewResponse(
     string? Warning,
     // Present only on the response to a cancellation.
     CancellationResponse? Cancellation);
+
+/// <summary>
+/// The configuration that decides whether payments can complete, next to what has
+/// actually reached the webhook. Admin-only: it names no customer, but it does describe
+/// how the money side of the app is wired.
+/// </summary>
+public sealed record WebhookDiagnosticsResponse(
+    bool AccessTokenConfigured,
+    bool UsingTestCredentials,
+    bool WebhookSecretConfigured,
+    // The path Mercado Pago has to be pointed at, so the value in the panel can be
+    // compared against it without going to look for it in the code.
+    string WebhookPath,
+    string? ConfiguredWebhookUrl,
+    string BackUrl,
+    bool BackUrlIsPublic,
+    string CheckoutReturnUrl,
+    bool DirectPreapprovalEnabled,
+    int ReconcileIntervalMinutes,
+    DateTime InstanceStartedAtUtc,
+    long NotificationsReceived,
+    long NotificationsAccepted,
+    long NotificationsRejected,
+    DateTime? LastNotificationAtUtc,
+    DateTime? LastAcceptedNotificationAtUtc,
+    IReadOnlyList<WebhookDelivery> Recent,
+    // What is wrong, in the order worth fixing it. Empty means the settings this endpoint
+    // can see are sound and notifications are being accepted.
+    IReadOnlyList<string> Findings)
+{
+    public static WebhookDiagnosticsResponse Build(MercadoPagoOptions options, WebhookLogSnapshot log)
+    {
+        var findings = new List<string>();
+
+        if (!options.IsConfigured)
+        {
+            findings.Add("MercadoPago:AccessToken is empty — checkout cannot even open.");
+        }
+        else if (options.IsTestCredential)
+        {
+            findings.Add(
+                "The access token is a TEST credential. Real payments made against production Mercado Pago " +
+                "will not be visible to it, so nothing will ever move off 'pendiente'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.WebhookSecret))
+        {
+            if (log.Received == 0)
+            {
+                findings.Add(
+                    "No notification has reached this instance since it started. Check that the URL registered in " +
+                    "the Mercado Pago panel ends in /api/webhooks/mercadopago and points at THIS API, not at the " +
+                    "site's own domain — a static host that rewrites unknown paths to index.html answers 200, so " +
+                    "the panel reports every delivery as successful while nothing is ever processed.");
+            }
+            else if (log.Accepted == 0)
+            {
+                findings.Add(
+                    "Notifications are arriving but every one of them is being rejected. The usual cause is a " +
+                    "MercadoPago:WebhookSecret that is not the secret shown for this webhook in the panel " +
+                    "(they are per-integration, and the test and production ones differ).");
+            }
+        }
+        else
+        {
+            findings.Add(
+                "MercadoPago:WebhookSecret is empty — every notification is answered with 401 and discarded, so " +
+                "no subscription can activate on its own.");
+        }
+
+        if (!options.HasPublicBackUrl)
+        {
+            findings.Add(
+                $"MercadoPago:BackUrl is '{options.BackUrl}', which Mercado Pago will not redirect back to. The " +
+                "payer never lands on /suscripcion after paying, so the immediate re-check does not run and the " +
+                "screen keeps whatever it had until the reconciler catches up.");
+        }
+
+        if (options.ReconcileIntervalMinutes <= 0)
+        {
+            findings.Add(
+                "Reconciliation is off (MercadoPago:ReconcileIntervalMinutes = 0), so a lost notification stays " +
+                "lost until someone presses 'Actualizar estado'.");
+        }
+
+        return new WebhookDiagnosticsResponse(
+            options.IsConfigured,
+            options.IsTestCredential,
+            !string.IsNullOrWhiteSpace(options.WebhookSecret),
+            "/api/webhooks/mercadopago",
+            string.IsNullOrWhiteSpace(options.WebhookUrl) ? null : options.WebhookUrl,
+            options.BackUrl,
+            options.HasPublicBackUrl,
+            options.CheckoutReturnUrl,
+            options.UseDirectPreapproval,
+            options.ReconcileIntervalMinutes,
+            log.StartedAtUtc,
+            log.Received,
+            log.Accepted,
+            log.Rejected,
+            log.LastReceivedAtUtc,
+            log.LastAcceptedAtUtc,
+            log.Recent,
+            findings);
+    }
+}

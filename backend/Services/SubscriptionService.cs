@@ -233,6 +233,26 @@ public sealed class SubscriptionService(
         }
 
         subscription.ExternalPlanId = planId;
+
+        // Loud on purpose. This path still takes the payment, so nothing looks broken —
+        // but the row it produces has no preapproval id, which puts it outside everything
+        // that heals a stranded subscription: the webhook can only match it by payer
+        // email, and the reconciler skips it entirely. A warning in a log nobody is
+        // watching is how that turns into "pagué y sigue en pendiente" with no explanation
+        // on the screen, so it goes into the account's own event trail as well.
+        logger.LogWarning(
+            "Checkout for subscription {SubscriptionId} fell back to the shared plan link ({PlanId}); it has no " +
+            "preapproval id, so only the payer's Mercado Pago email can link it back.",
+            subscription.Id,
+            planId);
+
+        RecordEvent(
+            subscription,
+            "checkout",
+            "fallback_plan_link",
+            externalEventId: null,
+            notes: "POST /preapproval was unavailable; the checkout went through the shared plan link, which cannot be linked back by id.");
+
         return plan.InitPoint;
     }
 

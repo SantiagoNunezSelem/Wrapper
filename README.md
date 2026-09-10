@@ -218,8 +218,16 @@ apenas se resuelva — vos tendrías que activarlo a mano por cada pago. En el
 → **Webhooks**, registrá la URL pública:
 
 ```
-https://TU-DOMINIO/api/webhooks/mercadopago
+https://TU-DOMINIO-DE-LA-API/api/webhooks/mercadopago
 ```
+
+> ⚠️ **Tiene que ser el dominio de la API, no el del sitio.** El frontend está en Vercel
+> con un rewrite que manda *cualquier* ruta desconocida a `index.html`, así que
+> `https://vistazo.app/api/webhooks/mercadopago` contesta **200 con el HTML de la app**.
+> Mercado Pago ve un 200, marca la entrega como exitosa y no reintenta nunca — el panel
+> queda todo en verde mientras del otro lado no se procesa nada. Es la forma más
+> silenciosa que tiene esto de fallar. Para descartarla en dos segundos está
+> `GET /api/subscription/diagnostics` (ver abajo).
 
 Suscribite a **los tres** eventos:
 
@@ -246,17 +254,57 @@ Copiá la **clave secreta** que muestra el panel y guardala como
 Para probar en local, exponé el puerto 5175 con un túnel (ngrok, Cloudflare Tunnel) y usá
 esa URL.
 
-**Aun así el webhook no es un punto único de falla.** Tres cosas lo cubren, de más rápida a
-más lenta:
+**Aun así el webhook no es un punto único de falla.** Cuatro cosas lo cubren, de más rápida
+a más lenta:
 
 1. Al volver del checkout, `/suscripcion` re-consulta sola unas cinco veces (3 s, 6 s, 12 s,
    24 s, 48 s) hasta que el estado deja de ser "pendiente".
-2. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
-3. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
+2. **Abrir la pantalla de cuenta con un pago pendiente vuelve a preguntarle a Mercado
+   Pago** si la última consulta tiene más de 20 segundos. Es la red que faltaba: quien pagó
+   y no volvió por el `back_url` entra a la app y lo primero que hace la app es ir a
+   fijarse, en vez de mostrarle un "pendiente" guardado de antes.
+3. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
+4. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
    15 minutos las suscripciones que están en movimiento —pendientes recientes, cobros
    rechazados, renovaciones vencidas— y aplica lo que Mercado Pago diga. Una notificación
    perdida (topic sin habilitar, secreto rotado, deploy que se comió la entrega) se
    resuelve sola dentro de ese intervalo en vez de convertirse en un ticket.
+
+> Ojo con el punto 4: el reconciliador sólo mira filas que tengan el `preapproval_id`
+> guardado. Un checkout que cayó al link compartido del plan (ver `UseDirectPreapproval`)
+> no lo tiene, y queda afuera de esa red. Cuando pasa, ahora queda anotado como evento
+> `checkout / fallback_plan_link` en la propia cuenta, así que se ve en "Actividad de la
+> cuenta" en vez de sólo en un log.
+
+### 3.1. Cuando igual queda en "pendiente": `GET /api/subscription/diagnostics`
+
+Todas las formas de romper esto terminan en el mismo síntoma —una suscripción que se queda
+en "pendiente"— y desde afuera son indistinguibles: la URL apunta a otro lado, falta un
+topic, el secreto no es el de este webhook, el pagador nunca volvió. Peor: **una
+notificación rechazada por firma no llega a escribir ningún evento**, porque primero hay
+que verificarla, así que "no llega nada" y "llega todo y rebota" se ven igual.
+
+Ese endpoint (sólo para la cuenta admin) pone las dos mitades juntas:
+
+| Campo | Para qué |
+| --- | --- |
+| `webhookSecretConfigured`, `accessTokenConfigured`, `usingTestCredentials` | Si falta algo de esto, no hay nada más que investigar. |
+| `webhookPath` | La ruta exacta que hay que tener cargada en el panel. |
+| `backUrl`, `backUrlIsPublic`, `checkoutReturnUrl` | Si el pagador vuelve o no a `/suscripcion` después de pagar. |
+| `notificationsReceived` / `Accepted` / `Rejected` + `recent` | **Lo que de verdad llegó** desde que arrancó la instancia, con el motivo de cada rechazo. |
+| `findings` | El diagnóstico ya escrito: qué está mal y por qué importa. |
+
+Leerlo en orden resuelve casi todo:
+
+- `notificationsReceived: 0` → **no está llegando nada**. La URL del panel no apunta a esta
+  API (el caso del dominio del frontend, arriba), o el topic no está tildado.
+- `received > 0` pero `accepted: 0` → **llegan y rebotan**: el `WebhookSecret` no es el de
+  esta integración. Los de prueba y producción son distintos.
+- `accepted > 0` → el webhook anda; el problema está en otro lado (mirá "Actividad de la
+  cuenta" en `/suscripcion`).
+
+Es memoria del proceso, no auditoría: se reinicia en cada deploy y es por instancia. El
+registro que sí persiste es la tabla de eventos, que sólo guarda lo que pasó la firma.
 
 ### 4. Ajustes
 
@@ -303,6 +351,25 @@ Dos detalles que valen por sí solos:
   ("tu banco pide una confirmación extra", "la tarjeta no tenía saldo suficiente", "Mercado
   Pago lo está procesando, hasta 2 días hábiles"). Un código que no conocemos cae en un
   texto genérico — nunca se muestra el código crudo.
+- **"Pendiente" se reserva para cuando hay plata en juego.** Adentro, `pendiente` cubre dos
+  situaciones opuestas: un cobro que Mercado Pago está procesando, y un checkout que
+  alguien abrió y cerró sin pagar. Decirle "Pendiente de pago" al segundo lo preocupa por
+  algo que nunca ocurrió, y era lo que pasaba con sólo entrar y salir del checkout. La
+  diferencia la marca `paymentInProgress` (`SubscriptionAccessEvaluator.HasPaymentInFlight`):
+  hay cobro en curso sólo si Mercado Pago reportó uno que todavía va a algún lado. Una
+  tarjeta rechazada **no** cuenta —el intento terminó y no se cobró nada, así que
+  corresponde ofrecer reintentar, no prometer que Pro se prende solo— y un `status_detail`
+  que no conocemos sí cuenta, porque equivocarse para el lado de "lo estamos siguiendo" es
+  mucho más barato. Se aplica en los tres lugares que muestran estado:
+
+  | | Cobro en proceso | Checkout sin terminar |
+  | --- | --- | --- |
+  | Panel de `/suscripcion` | "Procesando el pago", en ámbar | "Pago sin terminar", neutro, y **dice que no se cobró nada** |
+  | Chip del menú de cuenta / mobile | "Procesando el pago" | "Sin suscripción" (`GetVisibleState` no lo reporta como pendiente) |
+  | Acciones | Terminar el pago · Actualizar estado | …y además vuelve a ofrecer el plan, para que la pantalla no sea un callejón sin salida |
+
+  Las dos siguen ofreciendo retomar el checkout guardado y "Actualizar estado": si alguien
+  pagó y todavía no nos enteramos, la salida está a un toque.
 
 Qué botones existen lo decide el **backend** (`overview.actions`), no la pantalla: si no,
 las reglas se separan entre el shell de escritorio y el móvil, y la UI termina ofreciendo

@@ -23,7 +23,9 @@ export interface UserProfile {
 
 /**
  * Subscription lifecycle, mirroring the backend's Spanish status vocabulary:
- * - `pendiente`: checkout opened, the payer has not authorized it yet.
+ * - `pendiente`: not authorized yet. Two very different situations wear this one label —
+ *   Mercado Pago processing a charge, and a checkout that was opened and abandoned — so
+ *   read `paymentInProgress` before writing a word about it on screen.
  * - `trial`: inside the free week; nothing charged.
  * - `activa`: paid and current.
  * - `pago_fallido`: a charge was rejected; access survives the grace window.
@@ -85,6 +87,12 @@ export interface SubscriptionRecord {
   /** Mercado Pago's `status_detail` for a charge that has not settled — `pending_contingency`,
    * `pending_challenge`, `cc_rejected_insufficient_amount`… See `pendingReasons` in the copy. */
   pendingReason: string | null
+  /** Whether Mercado Pago has a charge for this subscription that has not settled yet.
+   * `pendiente` covers two opposite situations — a payment being processed and a checkout
+   * the payer opened and walked away from — and this is what tells them apart. Without it
+   * the screen greets someone who never paid with "Pendiente de pago", which reads as
+   * "your money is somewhere in the system" when nothing ever left their account. */
+  paymentInProgress: boolean
   createdAtUtc: string
 }
 
