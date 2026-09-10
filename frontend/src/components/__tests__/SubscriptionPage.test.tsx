@@ -131,6 +131,31 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
 }
 
 describe('SubscriptionPage', () => {
+  describe('actividad de la cuenta', () => {
+    // Tópicos de webhook y transiciones de estado: un diagnóstico para quien administra la
+    // facturación, no algo que un cliente pueda leer.
+    const event = {
+      id: 'e1',
+      topic: 'subscription_preapproval',
+      action: 'updated',
+      resultingStatus: 'activa',
+      notes: 'activa → activa',
+      createdAtUtc: '2026-09-10T03:16:00Z',
+    }
+
+    it('no se le muestra a un usuario común', () => {
+      renderPage({ ...overview(record()), events: [event] })
+
+      expect(screen.queryByText(copy.eventsTitle)).not.toBeInTheDocument()
+    })
+
+    it('sí se le muestra a un admin', () => {
+      renderPage({ ...overview(record()), isAdmin: true, events: [event] })
+
+      expect(screen.getByText(copy.eventsTitle)).toBeInTheDocument()
+    })
+  })
+
   describe('pago en proceso', () => {
     it('explica POR QUÉ está pendiente en vez de repetir la palabra', () => {
       renderPage(

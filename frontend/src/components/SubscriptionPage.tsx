@@ -251,7 +251,7 @@ export function SubscriptionPage({
               )}
             </section>
 
-            <EventsSection overview={overview} copy={copy} locale={locale} />
+            {overview?.isAdmin ? <EventsSection overview={overview} copy={copy} locale={locale} /> : null}
           </>
         ) : null}
       </main>

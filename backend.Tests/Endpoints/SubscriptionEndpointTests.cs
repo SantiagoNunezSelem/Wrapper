@@ -109,6 +109,30 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task La_actividad_tecnica_solo_se_le_manda_a_un_admin()
+    {
+        // Tópicos de webhook, transiciones de estado y notas internas: sirven para
+        // diagnosticar la facturación, no para que un cliente las lea. Se siguen guardando
+        // para todas las cuentas; lo único que cambia es a quién se le mandan.
+        var (customerClient, customer) = factory.CreateAuthenticatedClient();
+        var (adminClient, admin) = factory.CreateAuthenticatedClient(isAdmin: true);
+
+        using (var db = factory.NewDbContext())
+        {
+            db.SubscriptionEvents.AddRange(
+                new backend.Models.SubscriptionEvent { UserId = customer.Id, Topic = "subscription_preapproval", Action = "updated" },
+                new backend.Models.SubscriptionEvent { UserId = admin.Id, Topic = "subscription_preapproval", Action = "updated" });
+            await db.SaveChangesAsync();
+        }
+
+        var customerBody = await ReadJson(await customerClient.GetAsync("/api/subscription"));
+        var adminBody = await ReadJson(await adminClient.GetAsync("/api/subscription"));
+
+        Assert.Equal(0, customerBody.GetProperty("events").GetArrayLength());
+        Assert.Equal(1, adminBody.GetProperty("events").GetArrayLength());
+    }
+
+    [Fact]
     public async Task La_vista_general_trae_las_listas_vacias_en_vez_de_nulls()
     {
         var (client, _) = factory.CreateAuthenticatedClient();

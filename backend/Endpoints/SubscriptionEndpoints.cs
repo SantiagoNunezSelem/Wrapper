@@ -542,7 +542,13 @@ public static class SubscriptionEndpoints
     {
         var current = SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
         var invoices = await subscriptions.GetInvoicesAsync(user.Id, cancellationToken);
-        var events = await subscriptions.GetEventsAsync(user.Id, cancellationToken);
+
+        // The provider trail — webhook topics, status transitions, internal notes — is a
+        // diagnostic for whoever runs billing, not something a customer can read. Still
+        // recorded for every account; only sent to admins.
+        IReadOnlyList<SubscriptionEvent> events = user.IsAdmin
+            ? await subscriptions.GetEventsAsync(user.Id, cancellationToken)
+            : [];
 
         // The admin override is real access, but it is not a purchase, so the screen must
         // not offer to cancel, pause or resume it.
