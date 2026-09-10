@@ -3,6 +3,7 @@ import { useVistazo } from './app/useVistazo'
 import { DesktopShell } from './shells/desktop/DesktopShell'
 import { MobileShell } from './shells/mobile/MobileShell'
 import { lazyPanel } from './components/lazyPanel'
+import { TestPayerBanner } from './components/TestPayerBanner'
 
 // La página pública de un recorrido compartido: la ve quien abre un link `/s/{slug}`,
 // que no es el recorrido normal de nadie que ya está usando la app. Cargarla aparte
@@ -40,7 +41,19 @@ function App() {
     return <SharedStoryView slug={vistazo.shareSlug} />
   }
 
-  return isMobile ? <MobileShell vistazo={vistazo} /> : <DesktopShell vistazo={vistazo} />
+  // Above the shell choice so it shows on both, and outside either one so neither can
+  // scroll it away: while checkout is pinned to a test payer, that fact outranks whatever
+  // screen you happen to be on.
+  return (
+    <>
+      <TestPayerBanner
+        email={vistazo.user?.checkoutTestPayerEmail ?? null}
+        title={vistazo.copy.testPayerBannerTitle}
+        body={vistazo.copy.testPayerBannerBody}
+      />
+      {isMobile ? <MobileShell vistazo={vistazo} /> : <DesktopShell vistazo={vistazo} />}
+    </>
+  )
 }
 
 export default App

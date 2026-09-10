@@ -293,6 +293,15 @@ export const shellCopy = {
       checkoutOpenHint: 'Abriste el pago en Mercado Pago y no llegaste a completarlo. No se te cobró nada.',
       checkoutOpenNext: 'Podés retomarlo donde lo dejaste o empezar de nuevo cuando quieras.',
       checkoutOpenPaidNote: 'Si en realidad ya pagaste, tocá "Actualizar estado" y lo buscamos en Mercado Pago.',
+      /**
+       * El cartel de `MercadoPago:TestPayerEmail`. No se puede cerrar a propósito: existe
+       * justamente para que no se olvide puesto, y un aviso que se descarta es un aviso
+       * que se olvida. Nombra el mail porque es el dato con el que se verifica que sea el
+       * comprador de prueba y no el de alguien real.
+       */
+      testPayerBannerTitle: 'Modo de prueba: los pagos no son reales',
+      testPayerBannerBody:
+        'Todos los checkouts se abren a nombre de {email}, no de quien esté usando la app. Sacá MercadoPago__TestPayerEmail antes de cobrar de verdad.',
       resumeCheckoutCta: 'Terminar el pago',
       resumeCheckoutHint: 'Te llevamos a la misma página de Mercado Pago donde lo dejaste.',
       alreadyPaidNote:
@@ -787,6 +796,9 @@ export const shellCopy = {
       checkoutOpenHint: 'You opened the payment on Mercado Pago but never completed it. Nothing was charged.',
       checkoutOpenNext: 'Pick it up where you left it, or start over whenever you like.',
       checkoutOpenPaidNote: 'If you did pay after all, hit "Check again" and we will look it up on Mercado Pago.',
+      testPayerBannerTitle: 'Test mode: payments are not real',
+      testPayerBannerBody:
+        'Every checkout opens as {email}, not as whoever is using the app. Clear MercadoPago__TestPayerEmail before taking real payments.',
       resumeCheckoutCta: 'Finish the payment',
       resumeCheckoutHint: 'We take you back to the same Mercado Pago page you left.',
       alreadyPaidNote:

@@ -16,6 +16,10 @@ export interface UserProfile {
   /** Whether the backend has Mercado Pago credentials. Without them the upsell says so
    * instead of opening a checkout that cannot complete. */
   paymentsEnabled: boolean
+  /** The forced test payer address, when `MercadoPago:TestPayerEmail` is set — otherwise
+   * null. While it has a value, every checkout opens as that payer instead of the person
+   * clicking, so the app says so on screen: nothing else about the UI would look wrong. */
+  checkoutTestPayerEmail: string | null
   /** The language this user last chose, persisted server-side so it survives a
    * refresh or a login from another device instead of falling back to the browser's. */
   preferredLanguage: Language

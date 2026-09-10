@@ -226,8 +226,11 @@ checkout desde el propio sitio de Mercado Pago en vez de por API):
 > `curl -s https://api.mercadopago.com/users/test_user -H "Authorization: Bearer ..."`.
 >
 > **Vaciala antes de cobrar de verdad.** Mientras esté puesta, *todos* los checkouts se
-> abren a nombre de ese pagador, no del cliente. El backend lo grita al arrancar, pero
-> nada más en la app se vería raro.
+> abren a nombre de ese pagador, no del cliente. Para que no se olvide, mientras tenga
+> valor la app muestra un cartel ámbar fijo arriba de todas las pantallas, con el mail que
+> está recibiendo los checkouts y **sin forma de cerrarlo** — un aviso que se descarta es
+> un aviso que se olvida, que es justo lo que hay que evitar acá. El backend además lo
+> grita al arrancar.
 
 Tarjetas de prueba (Argentina):
 
