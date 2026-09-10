@@ -316,43 +316,6 @@ public sealed class SubscriptionService(
         return CancellationOutcome.From(subscription, wasInTrial, alreadyCancelled: false);
     }
 
-    /// <summary>
-    /// Suspends debits without giving up the subscription: the card stays on file and
-    /// <see cref="ResumeAsync"/> puts it back. Offered because the alternative most people
-    /// reach for — cancelling because this month is tight — costs them their price and
-    /// their history, and costs us the customer.
-    /// </summary>
-    public async Task<Subscription> PauseAsync(User user, CancellationToken cancellationToken)
-    {
-        var subscription = RequireLinkedSubscription(user, "pause");
-
-        if (subscription.Status is "pausada")
-        {
-            return subscription;
-        }
-
-        if (subscription.Status is not ("activa" or "trial" or "pago_fallido"))
-        {
-            throw new SubscriptionConflictException("not_pausable", "Only a running subscription can be paused.");
-        }
-
-        var updated = await client.PauseSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
-
-        if (updated is not null)
-        {
-            ApplyPreapproval(subscription, updated);
-        }
-
-        subscription.Status = "pausada";
-        subscription.PausedAtUtc ??= DateTime.UtcNow;
-        subscription.UpdatedAtUtc = DateTime.UtcNow;
-
-        RecordEvent(subscription, "pause", "user_requested", null, null);
-        await db.SaveChangesAsync(cancellationToken);
-
-        return subscription;
-    }
-
     /// <summary>Puts a paused subscription back on its schedule.</summary>
     public async Task<Subscription> ResumeAsync(User user, CancellationToken cancellationToken)
     {

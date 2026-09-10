@@ -18,7 +18,6 @@ import {
   grantAiConsent,
   listAnalyses,
   loginWithGoogle,
-  pauseSubscription,
   resetDevFreeUnlocks,
   resumeSubscription,
   retryAiMetrics,
@@ -632,7 +631,7 @@ export function useVistazo() {
   }, [token, route])
 
   /**
-   * Cancel, pause, resume and refresh differ only in which call they make: each one
+   * Cancel, resume and refresh differ only in which call they make: each one
    * answers with the whole refreshed overview, and each one can change whether this
    * account still has Pro, so the user profile is re-read afterwards too. Written once so
    * a new action cannot forget the profile refresh and leave the rest of the app showing
@@ -662,10 +661,6 @@ export function useVistazo() {
 
   function handleCancelSubscription() {
     return runSubscriptionAction('cancel', cancelSubscription)
-  }
-
-  function handlePauseSubscription() {
-    return runSubscriptionAction('pause', pauseSubscription)
   }
 
   function handleResumeSubscription() {
@@ -1576,7 +1571,6 @@ export function useVistazo() {
     handleRecaptchaChallengeSuccess,
     handleLogout,
     handleCancelSubscription,
-    handlePauseSubscription,
     handleResumeSubscription,
     handleRefreshSubscription,
     handleAiRetry,

@@ -1284,40 +1284,6 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Pausar_suspende_los_cobros_y_conserva_el_acceso()
-    {
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"paused"}""");
-        var user = CreateUser(subscriptions: new Subscription
-        {
-            Status = "activa",
-            ExternalSubscriptionId = "pre-1",
-            NextBillingAtUtc = DateTime.UtcNow.AddDays(12),
-        });
-
-        var result = await Service().PauseAsync(user, default);
-
-        Assert.Equal("pausada", result.Status);
-        Assert.NotNull(result.PausedAtUtc);
-        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(result));
-        Assert.Contains(_http.Requests, request => request.Method == HttpMethod.Put && request.Body!.Contains("paused"));
-    }
-
-    [Fact]
-    public async Task No_se_puede_pausar_algo_que_ya_esta_cancelado()
-    {
-        var user = CreateUser(subscriptions: new Subscription
-        {
-            Status = "cancelada",
-            ExternalSubscriptionId = "pre-1",
-            NextBillingAtUtc = DateTime.UtcNow.AddDays(5),
-        });
-
-        var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() => Service().PauseAsync(user, default));
-
-        Assert.Equal("not_pausable", error.Code);
-    }
-
-    [Fact]
     public async Task Reanudar_vuelve_a_poner_la_suscripcion_en_marcha()
     {
         RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");

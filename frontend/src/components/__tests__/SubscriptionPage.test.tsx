@@ -33,7 +33,6 @@ const noActions: SubscriptionActions = {
   canSubscribe: false,
   canResumeCheckout: false,
   canCancel: false,
-  canPause: false,
   canResume: false,
 }
 
@@ -105,7 +104,6 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
     onBack: vi.fn(),
     onLanguageToggle: vi.fn(),
     onCancel: vi.fn(),
-    onPause: vi.fn(),
     onResume: vi.fn(),
     onRefresh: vi.fn(),
     onSignIn: vi.fn(),
@@ -131,6 +129,14 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
 }
 
 describe('SubscriptionPage', () => {
+  describe('encabezado', () => {
+    it('muestra la inicial en el mismo círculo que el resto de la app, no el nombre escrito', () => {
+      renderPage(overview(record()))
+
+      expect(screen.getByRole('img', { name: user.displayName })).toHaveTextContent(/^S$/)
+    })
+  })
+
   describe('actividad de la cuenta', () => {
     // Tópicos de webhook y transiciones de estado: un diagnóstico para quien administra la
     // facturación, no algo que un cliente pueda leer.
@@ -333,18 +339,7 @@ describe('SubscriptionPage', () => {
       renderPage(overview(record({ status: 'pausada', autoRenewEnabled: false }), { canResume: true }))
 
       expect(screen.getByRole('button', { name: copy.resumeCta })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: copy.pauseCta })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: copy.cancelCta })).not.toBeInTheDocument()
-    })
-
-    it('pausar pide confirmación antes de tocar nada', async () => {
-      const handlers = renderPage(overview(record(), { canPause: true }))
-
-      await userEvent.click(screen.getByRole('button', { name: copy.pauseCta }))
-      expect(handlers.onPause).not.toHaveBeenCalled()
-
-      await userEvent.click(screen.getByRole('button', { name: copy.pauseConfirmYes }))
-      expect(handlers.onPause).toHaveBeenCalledTimes(1)
     })
 
     it('el link para cambiar la tarjeta abre Mercado Pago, que es donde se cambia', () => {

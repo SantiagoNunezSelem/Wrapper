@@ -1983,13 +1983,16 @@ button.chat-bubble-divider.is-expandable:active {
   gap: 10px;
 }
 
-.subpage-account-chip {
-  padding: 6px 14px;
+/* Same circle as the shells' account avatar, without hover: here it opens nothing. */
+.subpage-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   border-radius: var(--vz-radius-pill);
-  background: var(--vz-surface-3);
-  border: 1px solid var(--vz-hairline);
-  font-size: 0.82rem;
-  color: var(--vz-text-soft);
+  background: rgba(var(--vz-brand-violet-rgb), 0.2);
+  color: var(--vz-text-strong);
+  font-weight: 700;
 }
 
 .subpage-content {

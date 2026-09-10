@@ -106,7 +106,6 @@ export interface SubscriptionActions {
   canSubscribe: boolean
   canResumeCheckout: boolean
   canCancel: boolean
-  canPause: boolean
   canResume: boolean
 }
 
