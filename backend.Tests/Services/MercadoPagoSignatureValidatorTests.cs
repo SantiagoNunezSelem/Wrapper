@@ -27,7 +27,7 @@ public class MercadoPagoSignatureValidatorTests
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(manifest)))
             .ToLowerInvariant();
 
-    private static HttpRequest Request(string? signature, string? requestId = "req-1")
+    private static HttpRequest Request(string? signature, string? requestId = "req-1", string? query = null)
     {
         var context = new DefaultHttpContext();
         if (signature is not null)
@@ -37,6 +37,10 @@ public class MercadoPagoSignatureValidatorTests
         if (requestId is not null)
         {
             context.Request.Headers["x-request-id"] = requestId;
+        }
+        if (query is not null)
+        {
+            context.Request.QueryString = new QueryString(query);
         }
         return context.Request;
     }
@@ -227,6 +231,80 @@ public class MercadoPagoSignatureValidatorTests
         var hash = Sign($"id:12345;request-id:req-1;ts:{ts};");
 
         Assert.True(Validator().Validate(Request($"TS={ts},V1={hash}"), "12345").IsValid);
+    }
+
+    // -----------------------------------------------------------------------
+    // De dónde sale el id del manifiesto
+    //
+    // Mercado Pago firma el id TAL COMO VIAJA EN LA QUERY (su plantilla dice
+    // literalmente `id:[data.id_url]`), no el que va adentro del JSON. Casi siempre son
+    // el mismo valor, pero cuando no lo son la diferencia no es cosmética: el hash no
+    // coincide, la notificación se contesta 401, Mercado Pago la reintenta hasta
+    // rendirse, y una suscripción realmente pagada se queda en "pendiente" para siempre.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Firma_contra_el_data_id_de_la_query_y_no_contra_el_del_cuerpo()
+    {
+        var ts = NowTs();
+        var hash = Sign($"id:12345;request-id:req-1;ts:{ts};");
+
+        // El cuerpo dice otra cosa; manda la query, que es lo que ellos firmaron.
+        var result = Validator().Validate(Request($"ts={ts},v1={hash}", query: "?data.id=12345&type=payment"), "99999");
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Acepta_la_forma_IPN_en_la_que_Mercado_Pago_no_manda_data_id()
+    {
+        // `?topic=…&id=…` sin `data.id`: la plantilla documentada se queda SIN la parte
+        // `id:`. Firmar igual con el id del cuerpo es rechazar una notificación legítima.
+        var ts = NowTs();
+        var hash = Sign($"request-id:req-1;ts:{ts};");
+
+        var result = Validator().Validate(
+            Request($"ts={ts},v1={hash}", query: "?topic=preapproval&id=pre-1"),
+            "pre-1");
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Toma_el_id_suelto_de_la_query_cuando_no_hay_data_id()
+    {
+        var ts = NowTs();
+        var hash = Sign($"id:pre-1;request-id:req-1;ts:{ts};");
+
+        var result = Validator().Validate(
+            Request($"ts={ts},v1={hash}", query: "?topic=preapproval&id=pre-1"),
+            "pre-1");
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Con_id_en_la_query_no_acepta_un_manifiesto_sin_id()
+    {
+        // La tolerancia con el manifiesto sin `id:` es sólo para cuando Mercado Pago
+        // tampoco lo manda. Si viaja en la query, omitirlo sería aflojar la firma.
+        var ts = NowTs();
+        var hash = Sign($"request-id:req-1;ts:{ts};");
+
+        var result = Validator().Validate(Request($"ts={ts},v1={hash}", query: "?data.id=12345"), "12345");
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Sigue_rechazando_la_firma_de_otro_recurso_aunque_venga_por_query()
+    {
+        var ts = NowTs();
+        var hash = Sign($"id:12345;request-id:req-1;ts:{ts};");
+
+        var result = Validator().Validate(Request($"ts={ts},v1={hash}", query: "?data.id=99999"), "99999");
+
+        Assert.False(result.IsValid);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using backend.Models;
 using backend.Options;
@@ -77,9 +77,8 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     /// <summary>Responde según la ruta, que es lo que hace falta cuando un solo flujo
-    /// pega a `/preapproval_plan`, `/preapproval` y `/authorized_payments`.</summary>
+    /// pega a `/preapproval` y `/authorized_payments`.</summary>
     private void RouteMercadoPago(
-        string? plan = null,
         string? preapproval = null,
         string? createdPreapproval = null,
         string? preapprovalSearch = null,
@@ -97,7 +96,6 @@ public class SubscriptionServiceTests : IDisposable
 
             var body = path switch
             {
-                var p when p.Contains("preapproval_plan") => plan ?? """{"id":"plan-1","init_point":"https://mp.test/checkout"}""",
                 var p when p.Contains("/preapproval/search") => preapprovalSearch ?? """{"results":[]}""",
                 _ when isCreate => createdPreapproval ?? """{"id":"pre-1","status":"pending","init_point":"https://mp.test/subscribe/pre-1"}""",
                 var p when p.Contains("/preapproval") => preapproval ?? """{"id":"pre-1","status":"pending"}""",
@@ -111,18 +109,6 @@ public class SubscriptionServiceTests : IDisposable
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
         });
-    }
-
-    /// <summary>
-    /// El camino viejo: mandar a todos al init_point compartido del plan en vez de crear
-    /// un preapproval por pagador. Sigue existiendo como fallback (hay cuentas donde
-    /// <c>POST /preapproval</c> es rechazado), asi que se prueba explicitamente.
-    /// </summary>
-    private static MercadoPagoOptions PlanCheckout(Action<MercadoPagoOptions>? configure = null)
-    {
-        var options = new MercadoPagoOptions { AccessToken = "TEST-1", UseDirectPreapproval = false };
-        configure?.Invoke(options);
-        return options;
     }
 
     // =======================================================================
@@ -289,96 +275,34 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Un_plan_sin_init_point_es_un_error_explicito()
+    public async Task Un_preapproval_sin_init_point_es_un_error_explicito()
     {
-        RouteMercadoPago(plan: """{"id":"plan-1"}""");
-        var user = CreateUser();
+        RouteMercadoPago(createdPreapproval: """{"id":"pre-1","status":"pending"}""");
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service(PlanCheckout()).StartCheckoutAsync(user, Context(), null, default));
-    }
-
-    // =======================================================================
-    // Resolución del plan
-    // =======================================================================
-
-    [Fact]
-    public async Task Usa_el_plan_configurado_sin_crear_ninguno()
-    {
-        RouteMercadoPago();
-        var options = PlanCheckout(item => item.PreapprovalPlanId = "plan-configurado");
-
-        await Service(options).StartCheckoutAsync(CreateUser(), Context(), null, default);
-
-        Assert.DoesNotContain(_http.Requests, request => request.Method == HttpMethod.Post);
-        Assert.Contains(_http.Requests, request => request.Uri.AbsolutePath.EndsWith("plan-configurado"));
+            Service().StartCheckoutAsync(CreateUser(), Context(), null, default));
     }
 
     [Fact]
-    public async Task Una_cuenta_sin_trial_usa_el_plan_sin_prueba_gratis()
+    public async Task Un_preapproval_rechazado_no_abre_el_checkout_ni_deja_fila()
     {
-        RouteMercadoPago();
-        var options = PlanCheckout(item =>
+        // El desvío al link compartido del plan se sacó a propósito. Cobraba igual, pero la
+        // fila que dejaba no tenía preapproval id: nada la vinculaba de vuelta, el
+        // reconciliador la salteaba, y el pagador quedaba mirando "pendiente" mientras le
+        // debitaban todos los meses. Que el checkout no abra es recuperable; un cobro que
+        // nadie puede matchear, no.
+        _http.Route(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
-            item.PreapprovalPlanId = "plan-con-trial";
-            item.PreapprovalPlanIdNoTrial = "plan-sin-trial";
+            Content = new StringContent(
+                """{"message":"Both payer and collector must be real or test users","status":400}""",
+                Encoding.UTF8,
+                "application/json"),
         });
 
-        await Service(options).StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
-
-        Assert.Contains(_http.Requests, request => request.Uri.AbsolutePath.EndsWith("plan-sin-trial"));
-    }
-
-    [Fact]
-    public async Task Sin_plan_configurado_lo_crea_y_lo_guarda()
-    {
-        RouteMercadoPago();
-
-        await Service(PlanCheckout()).StartCheckoutAsync(CreateUser(), Context(), null, default);
-
-        var setting = await _db.NewContext().AppSettings.SingleAsync();
-        Assert.StartsWith("mercadopago.plan.trial.", setting.Key);
-        Assert.Equal("plan-1", setting.Value);
-    }
-
-    [Fact]
-    public async Task El_plan_creado_se_reusa_en_el_siguiente_checkout()
-    {
-        RouteMercadoPago();
-        var service = Service(PlanCheckout());
-        // Las dos cuentas ya usaron su trial, así que ambas resuelven el MISMO plan (el
-        // que no tiene prueba gratis). Con una elegible y otra no, cada una resolvería un
-        // plan distinto y el test no probaría nada sobre la caché.
-        await service.StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
-        var creations = _http.Requests.Count(request => request.Method == HttpMethod.Post);
-        Assert.Equal(1, creations);
-
-        await service.StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
-
-        Assert.Equal(creations, _http.Requests.Count(request => request.Method == HttpMethod.Post));
-    }
-
-    [Fact]
-    public async Task Cambiar_el_precio_produce_un_plan_nuevo_en_vez_de_cobrar_el_viejo()
-    {
-        RouteMercadoPago();
-        await Service(PlanCheckout(item => item.TransactionAmount = 7900m))
-            .StartCheckoutAsync(CreateUser(), Context(), null, default);
-
-        await Service(PlanCheckout(item => item.TransactionAmount = 9900m))
-            .StartCheckoutAsync(CreateUser(), Context(), null, default);
-
-        Assert.Equal(2, await _db.NewContext().AppSettings.CountAsync());
-    }
-
-    [Fact]
-    public async Task Con_la_creacion_automatica_apagada_y_sin_plan_falla()
-    {
-        RouteMercadoPago();
-        var options = PlanCheckout(item => item.AutoCreatePlan = false);
-
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service(options).StartCheckoutAsync(CreateUser(), Context(), null, default));
+            Service().StartCheckoutAsync(CreateUser(), Context(), null, default));
+
+        Assert.Empty(await _db.NewContext().Subscriptions.ToListAsync());
     }
 
     // =======================================================================
@@ -937,6 +861,35 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TestPayerEmail_reemplaza_al_mail_del_usuario_sin_romper_el_vinculo()
+    {
+        // Mercado Pago rechaza un preapproval cuyo pagador y cobrador no sean los dos
+        // reales o los dos de prueba, y el mail de un comprador de prueba es un
+        // @testuser.com con el que no se puede entrar por Google. Sin esta opción el
+        // checkout no se puede ejercitar entero contra un vendedor de prueba.
+        RouteMercadoPago();
+        var options = new MercadoPagoOptions
+        {
+            AccessToken = "TEST-1",
+            TestPayerEmail = "test_user_9999@testuser.com",
+        };
+        var user = CreateUser();
+
+        var result = await Service(options).StartCheckoutAsync(user, Context(), null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+        Assert.Contains("test_user_9999@testuser.com", create.Body);
+        Assert.DoesNotContain(user.Email, create.Body);
+
+        // Lo que importa: cambiar el mail no desengancha nada. El vínculo real es el
+        // external_reference y el id que vuelve, los dos guardados antes del redirect.
+        Assert.Contains(result.SubscriptionId.ToString(), create.Body);
+        Assert.Equal("pre-1", (await _db.NewContext().Subscriptions.SingleAsync()).ExternalSubscriptionId);
+    }
+
+    [Fact]
     public async Task El_trial_viaja_en_el_preapproval_de_cada_pagador()
     {
         RouteMercadoPago();
@@ -962,38 +915,6 @@ public class SubscriptionServiceTests : IDisposable
         // Nunca en null: un "free_trial": null se serializaría igual y Mercado Pago lo
         // rechaza. La clave directamente no está.
         Assert.DoesNotContain("free_trial", create.Body);
-    }
-
-    [Fact]
-    public async Task Si_Mercado_Pago_rechaza_el_preapproval_el_checkout_cae_al_plan()
-    {
-        // Hay cuentas donde POST /preapproval no está habilitado. Perder el id de arranque
-        // es malo; perder el checkout entero es peor.
-        _http.Route(request =>
-        {
-            var path = request.RequestUri!.AbsolutePath;
-
-            if (path.TrimEnd('/').EndsWith("/preapproval") && request.Method == HttpMethod.Post)
-            {
-                return new HttpResponseMessage(HttpStatusCode.NotFound)
-                {
-                    Content = new StringContent("""{"message":"not found"}""", Encoding.UTF8, "application/json"),
-                };
-            }
-
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(
-                    """{"id":"plan-1","init_point":"https://mp.test/checkout"}""",
-                    Encoding.UTF8,
-                    "application/json"),
-            };
-        });
-
-        var result = await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
-
-        Assert.Equal("https://mp.test/checkout", result.RedirectUrl);
-        Assert.Null((await _db.NewContext().Subscriptions.SingleAsync()).ExternalSubscriptionId);
     }
 
     [Fact]

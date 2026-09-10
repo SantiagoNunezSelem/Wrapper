@@ -140,10 +140,21 @@ cobra y la app dice "pendiente" para siempre.
 > `card_token_id` + `status: "authorized"`, y por eso el trial va declarado por
 > suscripción en vez de por plan.
 
-Si `POST /preapproval` fuera rechazado (hay cuentas y países donde no está habilitado), el
-checkout **cae automáticamente** al link del plan compartido: se pierde el id de arranque,
-pero no se pierde la venta. Queda anotado en el log con nivel `Warning`. Se puede forzar
-ese camino con `MercadoPago:UseDirectPreapproval: false`.
+Si `POST /preapproval` es rechazado, **el checkout no abre** y el pagador no es cobrado. No
+hay segundo camino a propósito: antes caía al link del plan compartido, que es anónimo —
+Mercado Pago cobraba igual y creaba la suscripción del lado suyo con un id que nunca
+veíamos y sin `external_reference`, así que nada la vinculaba de vuelta. El pagador miraba
+"pendiente" mientras le debitaban todos los meses, y desde acá no se podía ni cancelar. El
+motivo exacto del rechazo queda en el log:
+
+```
+Mercado Pago POST /preapproval failed with 400: {"message":"...","status":400}
+```
+
+Los dos que se ven en la práctica: `Both payer and collector must be real or test users`
+—el mail del pagador y la cuenta vendedora son uno real y otro de prueba, o son la misma
+cuenta, que es lo que pasa al probar con el mail propio— y un `back_url` que Mercado Pago
+no acepta.
 
 ### 1. Credenciales (ya cargadas para pruebas)
 
@@ -175,6 +186,20 @@ Apenas el backend arranca, avisa qué credenciales está usando:
 info: Payments[0] Mercado Pago ready (test credentials): 7800 ARS every 1 months, 7 days free trial.
 ```
 
+> **No te fíes de ese "test/production": `APP_USR-` no distingue nada.** Un usuario de
+> prueba creado en el panel tiene su propia aplicación, y su access token empieza con
+> `APP_USR-` igual que uno de producción. Sólo las credenciales de *tu propia app* en modo
+> prueba empiezan con `TEST-`, y es lo único que ese cartel detecta. Para saber de verdad
+> de quién es un token:
+>
+> ```bash
+> curl -s https://api.mercadopago.com/users/me -H "Authorization: Bearer TU_TOKEN" | grep -o '"nickname":"[^"]*"'
+> ```
+>
+> Un nickname `TESTUSER…` es un usuario de prueba. Esto importa porque un vendedor de
+> prueba **rechaza todo pagador real** con `400 Both payer and collector must be real or
+> test users`, y el error no dice cuál de los dos está mal.
+
 ### 2. Cuentas y tarjetas de prueba
 
 Para simular compradores reales en el sandbox de Mercado Pago (por ejemplo, si probás el
@@ -184,6 +209,28 @@ checkout desde el propio sitio de Mercado Pago en vez de por API):
 | --- | --- | --- | --- | --- |
 | Comprador | `3587267080` | `TESTUSER3495729252306500887` | `avlnIQqBTf` | `267080` |
 | Vendedor | `3587267082` | `TESTUSER4000554943837637660` | `eiukCdxpbt` | `267082` |
+
+> **Para ejercitar el checkout entero contra el vendedor de prueba hace falta
+> `MercadoPago:TestPayerEmail`.** El `payer_email` que manda el checkout es el mail de
+> Google del que está logueado, y ése es un pagador *real*: contra un vendedor de prueba
+> Mercado Pago lo rechaza con `400 Both payer and collector must be real or test users`.
+> El mail del comprador de prueba es un `@testuser.com` generado, con el que no se puede
+> entrar por Google, así que se pasa por configuración:
+>
+> ```bash
+> dotnet user-secrets set "MercadoPago:TestPayerEmail" "test_user_...@testuser.com"
+> ```
+>
+> El mail exacto está en el panel de Mercado Pago (Tus integraciones → tu app → Cuentas de
+> prueba), o pidiéndolo por API con el token del vendedor:
+> `curl -s https://api.mercadopago.com/users/test_user -H "Authorization: Bearer ..."`.
+>
+> **Vaciala antes de cobrar de verdad.** Mientras esté puesta, *todos* los checkouts se
+> abren a nombre de ese pagador, no del cliente. Para que no se olvide, mientras tenga
+> valor la app muestra un cartel ámbar fijo arriba de todas las pantallas, con el mail que
+> está recibiendo los checkouts y **sin forma de cerrarlo** — un aviso que se descarta es
+> un aviso que se olvida, que es justo lo que hay que evitar acá. El backend además lo
+> grita al arrancar.
 
 Tarjetas de prueba (Argentina):
 
@@ -218,8 +265,16 @@ apenas se resuelva — vos tendrías que activarlo a mano por cada pago. En el
 → **Webhooks**, registrá la URL pública:
 
 ```
-https://TU-DOMINIO/api/webhooks/mercadopago
+https://TU-DOMINIO-DE-LA-API/api/webhooks/mercadopago
 ```
+
+> ⚠️ **Tiene que ser el dominio de la API, no el del sitio.** El frontend está en Vercel
+> con un rewrite que manda *cualquier* ruta desconocida a `index.html`, así que
+> `https://vistazo.app/api/webhooks/mercadopago` contesta **200 con el HTML de la app**.
+> Mercado Pago ve un 200, marca la entrega como exitosa y no reintenta nunca — el panel
+> queda todo en verde mientras del otro lado no se procesa nada. Es la forma más
+> silenciosa que tiene esto de fallar. Para descartarla en dos segundos está
+> `GET /api/subscription/diagnostics` (ver abajo).
 
 Suscribite a **los tres** eventos:
 
@@ -246,17 +301,57 @@ Copiá la **clave secreta** que muestra el panel y guardala como
 Para probar en local, exponé el puerto 5175 con un túnel (ngrok, Cloudflare Tunnel) y usá
 esa URL.
 
-**Aun así el webhook no es un punto único de falla.** Tres cosas lo cubren, de más rápida a
-más lenta:
+**Aun así el webhook no es un punto único de falla.** Cuatro cosas lo cubren, de más rápida
+a más lenta:
 
 1. Al volver del checkout, `/suscripcion` re-consulta sola unas cinco veces (3 s, 6 s, 12 s,
    24 s, 48 s) hasta que el estado deja de ser "pendiente".
-2. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
-3. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
+2. **Abrir la pantalla de cuenta con un pago pendiente vuelve a preguntarle a Mercado
+   Pago** si la última consulta tiene más de 20 segundos. Es la red que faltaba: quien pagó
+   y no volvió por el `back_url` entra a la app y lo primero que hace la app es ir a
+   fijarse, en vez de mostrarle un "pendiente" guardado de antes.
+3. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
+4. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
    15 minutos las suscripciones que están en movimiento —pendientes recientes, cobros
    rechazados, renovaciones vencidas— y aplica lo que Mercado Pago diga. Una notificación
    perdida (topic sin habilitar, secreto rotado, deploy que se comió la entrega) se
    resuelve sola dentro de ese intervalo en vez de convertirse en un ticket.
+
+> Ojo con el punto 4: el reconciliador sólo mira filas que tengan el `preapproval_id`
+> guardado. Todo checkout que abre lo tiene —se guarda antes del redirect— así que la red
+> cubre todo lo que se abre hoy. Lo que queda afuera son las filas viejas creadas por el
+> link compartido del plan, de cuando existía ese camino: no tienen id, y sólo se pueden
+> vincular buscando por el mail del pagador (**Actualizar estado** lo intenta).
+
+### 3.1. Cuando igual queda en "pendiente": `GET /api/subscription/diagnostics`
+
+Todas las formas de romper esto terminan en el mismo síntoma —una suscripción que se queda
+en "pendiente"— y desde afuera son indistinguibles: la URL apunta a otro lado, falta un
+topic, el secreto no es el de este webhook, el pagador nunca volvió. Peor: **una
+notificación rechazada por firma no llega a escribir ningún evento**, porque primero hay
+que verificarla, así que "no llega nada" y "llega todo y rebota" se ven igual.
+
+Ese endpoint (sólo para la cuenta admin) pone las dos mitades juntas:
+
+| Campo | Para qué |
+| --- | --- |
+| `webhookSecretConfigured`, `accessTokenConfigured`, `usingTestCredentials` | Si falta algo de esto, no hay nada más que investigar. |
+| `webhookPath` | La ruta exacta que hay que tener cargada en el panel. |
+| `backUrl`, `backUrlIsPublic`, `checkoutReturnUrl` | Si el pagador vuelve o no a `/suscripcion` después de pagar. |
+| `notificationsReceived` / `Accepted` / `Rejected` + `recent` | **Lo que de verdad llegó** desde que arrancó la instancia, con el motivo de cada rechazo. |
+| `findings` | El diagnóstico ya escrito: qué está mal y por qué importa. |
+
+Leerlo en orden resuelve casi todo:
+
+- `notificationsReceived: 0` → **no está llegando nada**. La URL del panel no apunta a esta
+  API (el caso del dominio del frontend, arriba), o el topic no está tildado.
+- `received > 0` pero `accepted: 0` → **llegan y rebotan**: el `WebhookSecret` no es el de
+  esta integración. Los de prueba y producción son distintos.
+- `accepted > 0` → el webhook anda; el problema está en otro lado (mirá "Actividad de la
+  cuenta" en `/suscripcion`).
+
+Es memoria del proceso, no auditoría: se reinicia en cada deploy y es por instancia. El
+registro que sí persiste es la tabla de eventos, que sólo guarda lo que pasó la firma.
 
 ### 4. Ajustes
 
@@ -269,10 +364,8 @@ Todo en `backend\appsettings.json`, bajo `MercadoPago`:
 | `Frequency` / `FrequencyType` | `1` / `months` | Ciclo de facturación. |
 | `TrialFrequency` / `TrialFrequencyType` | `7` / `days` | Duración del trial. |
 | `FailedPaymentGraceDays` | `3` | Días de acceso tras un cobro rechazado, mientras Mercado Pago reintenta. |
-| `PreapprovalPlanId` | tu plan real (`36559e9e0fe24550a71ca3c4d58c8add`) | Solo se usa en el camino de fallback (ver arriba). |
-| `AutoCreatePlan` | `true` | Si `PreapprovalPlanId` estuviera vacío, crea uno solo la primera vez. |
-| `UseDirectPreapproval` | `true` | Crear un `preapproval` por pagador en vez de mandar al link del plan. **Es el arreglo del "pago pendiente"**; ponelo en `false` solo para volver al camino viejo. |
 | `BackUrl` | `http://localhost:5173` | **En producción tiene que ser el origen real del sitio** (`https://vistazo.app`). Mercado Pago rechaza un `back_url` que apunte a localhost, así que con el default el pagador termina en mercadopago.com y nunca vuelve a `/suscripcion` — con lo cual la re-consulta inmediata post-pago no corre. El backend lo avisa al arrancar. |
+| `TestPayerEmail` | *(vacío)* | **Solo para pruebas.** Manda este mail como `payer_email` en vez del usuario logueado, que es la única forma de ejercitar el checkout contra un vendedor de prueba (ver arriba). **En producción tiene que estar vacío**: si no, todos los checkouts se abren a nombre de esa persona. |
 | `ReconcileIntervalMinutes` | `15` | Cada cuánto corre el reconciliador. `0` lo apaga. |
 | `PendingCheckoutHours` | `48` | Cuánto tiempo un checkout sin terminar se sigue ofreciendo para retomar (y se sigue consultando). Después se da por abandonado. |
 | `ManageUrl` | `https://www.mercadopago.com.ar/subscriptions` | Adónde manda "Cambiar la tarjeta". Mercado Pago **no tiene API** para reemplazar la tarjeta de un preapproval existente: se hace desde la cuenta del pagador, así que la app linkea en vez de fingir un formulario que no puede guardar. |
@@ -303,6 +396,25 @@ Dos detalles que valen por sí solos:
   ("tu banco pide una confirmación extra", "la tarjeta no tenía saldo suficiente", "Mercado
   Pago lo está procesando, hasta 2 días hábiles"). Un código que no conocemos cae en un
   texto genérico — nunca se muestra el código crudo.
+- **"Pendiente" se reserva para cuando hay plata en juego.** Adentro, `pendiente` cubre dos
+  situaciones opuestas: un cobro que Mercado Pago está procesando, y un checkout que
+  alguien abrió y cerró sin pagar. Decirle "Pendiente de pago" al segundo lo preocupa por
+  algo que nunca ocurrió, y era lo que pasaba con sólo entrar y salir del checkout. La
+  diferencia la marca `paymentInProgress` (`SubscriptionAccessEvaluator.HasPaymentInFlight`):
+  hay cobro en curso sólo si Mercado Pago reportó uno que todavía va a algún lado. Una
+  tarjeta rechazada **no** cuenta —el intento terminó y no se cobró nada, así que
+  corresponde ofrecer reintentar, no prometer que Pro se prende solo— y un `status_detail`
+  que no conocemos sí cuenta, porque equivocarse para el lado de "lo estamos siguiendo" es
+  mucho más barato. Se aplica en los tres lugares que muestran estado:
+
+  | | Cobro en proceso | Checkout sin terminar |
+  | --- | --- | --- |
+  | Panel de `/suscripcion` | "Procesando el pago", en ámbar | "Pago sin terminar", neutro, y **dice que no se cobró nada** |
+  | Chip del menú de cuenta / mobile | "Procesando el pago" | "Sin suscripción" (`GetVisibleState` no lo reporta como pendiente) |
+  | Acciones | Terminar el pago · Actualizar estado | …y además vuelve a ofrecer el plan, para que la pantalla no sea un callejón sin salida |
+
+  Las dos siguen ofreciendo retomar el checkout guardado y "Actualizar estado": si alguien
+  pagó y todavía no nos enteramos, la salida está a un toque.
 
 Qué botones existen lo decide el **backend** (`overview.actions`), no la pantalla: si no,
 las reglas se separan entre el shell de escritorio y el móvil, y la UI termina ofreciendo

@@ -122,6 +122,119 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     // -----------------------------------------------------------------------
+    // "pendiente" son dos cosas distintas
+    // -----------------------------------------------------------------------
+
+    private static Subscription PendingCheckout(string? statusDetail = null) => new()
+    {
+        Status = "pendiente",
+        PlanType = "mensual",
+        PaymentProvider = "mercadopago",
+        CheckoutUrl = "https://mp.test/subscribe/pre-1",
+        LastPaymentStatusDetail = statusDetail,
+        // Ya consultado hace un rato: sin esto la vista general saldría a reconsultarlo a
+        // Mercado Pago, y estos tests corren sin credenciales.
+        LastSyncedAtUtc = DateTime.UtcNow,
+    };
+
+    [Fact]
+    public async Task Un_checkout_abandonado_no_se_reporta_como_pago_en_curso()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: PendingCheckout());
+
+        var current = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("current");
+
+        Assert.Equal("pendiente", current.GetProperty("status").GetString());
+        Assert.False(current.GetProperty("paymentInProgress").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, current.GetProperty("pendingReason").ValueKind);
+    }
+
+    [Fact]
+    public async Task Un_checkout_abandonado_deja_volver_a_contratar_el_plan()
+    {
+        // Si no, la pantalla queda tomada de rehén por un pago que nunca empezó: la única
+        // salida sería "cancelar" algo que no existe.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: PendingCheckout());
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.True(actions.GetProperty("canSubscribe").GetBoolean());
+        Assert.True(actions.GetProperty("canResumeCheckout").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Un_cobro_que_Mercado_Pago_esta_procesando_SI_se_reporta_en_curso()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: PendingCheckout("pending_contingency"));
+
+        var body = await ReadJson(await client.GetAsync("/api/subscription"));
+        var current = body.GetProperty("current");
+
+        Assert.True(current.GetProperty("paymentInProgress").GetBoolean());
+        Assert.Equal("pending_contingency", current.GetProperty("pendingReason").GetString());
+        // Acá sí queda retomar o esperar: ofrecer el plan de nuevo invitaría a pagar dos veces.
+        Assert.False(body.GetProperty("actions").GetProperty("canSubscribe").GetBoolean());
+    }
+
+    // -----------------------------------------------------------------------
+    // Diagnóstico del webhook
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task El_diagnostico_no_existe_para_una_cuenta_comun()
+    {
+        // 404 y no 403: describe cómo está cableada la plata, no confirma ni su existencia.
+        var (client, _) = factory.CreateAuthenticatedClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/subscription/diagnostics")).StatusCode);
+    }
+
+    [Fact]
+    public async Task El_diagnostico_exige_sesion()
+    {
+        var response = await factory.CreateClient().GetAsync("/api/subscription/diagnostics");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task El_diagnostico_dice_que_sin_secreto_no_se_activa_nada()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(isAdmin: true);
+
+        var body = await ReadJson(await client.GetAsync("/api/subscription/diagnostics"));
+
+        Assert.False(body.GetProperty("webhookSecretConfigured").GetBoolean());
+        Assert.Equal("/api/webhooks/mercadopago", body.GetProperty("webhookPath").GetString());
+
+        var findings = body.GetProperty("findings").EnumerateArray().Select(item => item.GetString()!).ToList();
+        Assert.Contains(findings, finding => finding.Contains("WebhookSecret"));
+    }
+
+    [Fact]
+    public async Task El_diagnostico_cuenta_las_notificaciones_que_rebotaron()
+    {
+        // Es la razón de ser del endpoint: una notificación rechazada no llega a
+        // SubscriptionService y no deja evento, así que sin esto "no llega nada" y "llega
+        // todo y rebota" se ven exactamente igual desde afuera.
+        using var isolated = new ApiFactory();
+        var (client, _) = isolated.CreateAuthenticatedClient(isAdmin: true);
+
+        await isolated.CreateClient().PostAsync("/api/webhooks/mercadopago", Notification());
+
+        var body = await ReadJson(await client.GetAsync("/api/subscription/diagnostics"));
+
+        Assert.Equal(1, body.GetProperty("notificationsReceived").GetInt64());
+        Assert.Equal(1, body.GetProperty("notificationsRejected").GetInt64());
+        Assert.Equal(0, body.GetProperty("notificationsAccepted").GetInt64());
+
+        var last = body.GetProperty("recent")[0];
+        Assert.Equal("rejected", last.GetProperty("outcome").GetString());
+        Assert.Equal("preapproval", last.GetProperty("topic").GetString());
+        Assert.Equal("pre-1", last.GetProperty("dataId").GetString());
+    }
+
+    // -----------------------------------------------------------------------
     // Checkout
     // -----------------------------------------------------------------------
 

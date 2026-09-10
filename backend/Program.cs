@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using backend.Data;
@@ -83,6 +83,11 @@ builder.Services.AddHttpClient<GoogleAiClient>();
 builder.Services.AddScoped<AiMetricService>();
 builder.Services.AddHttpClient<MercadoPagoClient>();
 builder.Services.AddSingleton<MercadoPagoSignatureValidator>();
+// Remembers what has actually reached the webhook, including the notifications the
+// signature check throws away — those never reach SubscriptionService and so leave no
+// event behind, which is what makes "nothing is arriving" and "everything is bouncing"
+// look identical from the outside. Read through /api/subscription/diagnostics.
+builder.Services.AddSingleton<MercadoPagoWebhookLog>();
 builder.Services.AddSingleton<ClientFingerprint>();
 builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
@@ -350,7 +355,7 @@ app.MapPost("/api/auth/google", async (
 
     var aiOptions = configuration.GetSection(GoogleAiOptions.SectionName).Get<GoogleAiOptions>() ?? new GoogleAiOptions();
     var paymentOptions = configuration.GetSection(MercadoPagoOptions.SectionName).Get<MercadoPagoOptions>() ?? new MercadoPagoOptions();
-    var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured, paymentOptions.IsConfigured);
+    var response = AuthResponse.Create(tokenService.Create(user), user, aiOptions.IsConfigured, paymentOptions);
     return Results.Ok(response);
 }).RequireRateLimiting("auth");
 
@@ -368,7 +373,7 @@ app.MapGet("/api/auth/me", [Authorize] async (
 
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
+        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
 });
 
 app.MapGet("/api/analyses", [Authorize] async (ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken) =>
@@ -526,7 +531,7 @@ app.MapPost("/api/ai/consent", [Authorize] async (
     user.UpdatedAtUtc = DateTime.UtcNow;
     await db.SaveChangesAsync(cancellationToken);
 
-    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
 });
 
 app.MapPost("/api/user/language", [Authorize] async (
@@ -559,7 +564,7 @@ app.MapPost("/api/user/language", [Authorize] async (
     user.UpdatedAtUtc = DateTime.UtcNow;
     await db.SaveChangesAsync(cancellationToken);
 
-    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value.IsConfigured));
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
 });
 
 app.MapGet("/api/ai/metrics", [Authorize] async (
@@ -717,6 +722,17 @@ static void LogPaymentsConfiguration(WebApplication app)
             "lands on mercadopago.com instead of /suscripcion, so nothing re-syncs right after paying. " +
             "Expected in development; in production set it to the site's own origin.",
             mercadoPago.BackUrl);
+    }
+
+    if (!string.IsNullOrWhiteSpace(mercadoPago.TestPayerEmail))
+    {
+        // Deliberately alarming. On a real deployment this bills every customer's checkout
+        // to one address, and nothing else in the app would look wrong while it happened.
+        logger.LogWarning(
+            "MercadoPago:TestPayerEmail is set to {Email} — EVERY checkout will be opened as that payer " +
+            "instead of the signed-in customer. This is a testing-only switch; clear it before taking " +
+            "real payments.",
+            mercadoPago.TestPayerEmail);
     }
 
     logger.LogInformation(
@@ -1059,6 +1075,7 @@ record CurrentUserResponse(
     bool HasAiConsent,
     bool AiEnabled,
     bool PaymentsEnabled,
+    string? CheckoutTestPayerEmail,
     string PreferredLanguage)
 {
     /// <param name="aiEnabled">
@@ -1066,11 +1083,16 @@ record CurrentUserResponse(
     /// the AI flow entirely instead of showing a retry button for what is really a
     /// server-side misconfiguration.
     /// </param>
-    /// <param name="paymentsEnabled">
-    /// Whether Mercado Pago credentials are present. Same idea: without them the upsell
-    /// explains that checkout is not available yet rather than opening a doomed flow.
+    /// <param name="mercadoPago">
+    /// Read for two things. Whether credentials are present at all — without them the
+    /// upsell explains that checkout is not available yet rather than opening a doomed
+    /// flow. And whether the testing-only payer override is set, which the app has to
+    /// show on screen: while it is, every checkout opens as that payer instead of the
+    /// customer, and nothing else in the UI would look the slightest bit wrong. The
+    /// address is sent so the banner can name it — it is a test account's, never a
+    /// customer's.
     /// </param>
-    public static CurrentUserResponse FromUser(User user, bool aiEnabled, bool paymentsEnabled) =>
+    public static CurrentUserResponse FromUser(User user, bool aiEnabled, MercadoPagoOptions mercadoPago) =>
         new(
             user.Id,
             user.Email,
@@ -1082,7 +1104,8 @@ record CurrentUserResponse(
             SubscriptionAccessEvaluator.GetVisibleState(user),
             user.AiConsentAtUtc is not null,
             aiEnabled,
-            paymentsEnabled,
+            mercadoPago.IsConfigured,
+            string.IsNullOrWhiteSpace(mercadoPago.TestPayerEmail) ? null : mercadoPago.TestPayerEmail,
             user.PreferredLanguage);
 }
 
@@ -1090,8 +1113,8 @@ record UpdateLanguageRequest(string Language);
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {
-    public static AuthResponse Create(string token, User user, bool aiEnabled, bool paymentsEnabled) =>
-        new(token, CurrentUserResponse.FromUser(user, aiEnabled, paymentsEnabled));
+    public static AuthResponse Create(string token, User user, bool aiEnabled, MercadoPagoOptions mercadoPago) =>
+        new(token, CurrentUserResponse.FromUser(user, aiEnabled, mercadoPago));
 }
 
 static class ClaimsPrincipalExtensions

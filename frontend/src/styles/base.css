@@ -2811,3 +2811,32 @@ button.chat-bubble-divider.is-expandable:active {
   font-weight: 600;
   color: var(--vz-text-dim);
 }
+/* El cartel de MercadoPago:TestPayerEmail. Pegado arriba de todo y sin forma de
+   cerrarlo: existe para que no se olvide puesto, y algo que se descarta se olvida. */
+.test-payer-banner {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--vz-warning-bg);
+  border-bottom: 1px solid var(--vz-warning-text);
+  color: var(--vz-warning-text);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.test-payer-banner-mark {
+  flex: none;
+  font-size: 1rem;
+}
+
+.test-payer-banner-text {
+  margin: 0;
+}
+
+.test-payer-banner-text strong {
+  font-weight: 700;
+}

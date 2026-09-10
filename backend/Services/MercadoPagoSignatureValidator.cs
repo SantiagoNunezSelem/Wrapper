@@ -76,9 +76,89 @@ public sealed class MercadoPagoSignatureValidator(
             return SignatureCheck.Fail("Notification timestamp is outside the accepted window.");
         }
 
-        // Documented manifest: id:{data.id};request-id:{x-request-id};ts:{ts};
-        // Pairs whose value is absent are left out entirely rather than sent empty.
+        foreach (var candidate in BuildIdCandidates(request, dataId))
+        {
+            if (Matches(BuildManifest(candidate, requestId, timestamp), hash))
+            {
+                return SignatureCheck.Ok();
+            }
+        }
+
+        logger.LogWarning(
+            "Rejected a Mercado Pago webhook: signature mismatch. Tried the manifest with query data.id={QueryDataId}, query id={QueryId} and body data.id={BodyDataId}.",
+            request.Query["data.id"].ToString(),
+            request.Query["id"].ToString(),
+            dataId);
+
+        return SignatureCheck.Fail("Signature mismatch.");
+    }
+
+    /// <summary>
+    /// Which value to put in the manifest's <c>id:</c> slot, best first.
+    ///
+    /// Mercado Pago signs the id <b>as it travels in the query string</b> — their template
+    /// is literally <c>id:[data.id_url]</c> — not the one inside the JSON body. The two
+    /// usually carry the same value, but not always: some notifications still arrive in
+    /// the older IPN shape, whose query is <c>?topic=…&amp;id=…</c> with no <c>data.id</c>
+    /// at all, and there the documented manifest has <b>no id part whatsoever</b>. Signing
+    /// over the body's id in that case yields a hash that can never match, so every
+    /// delivery comes back 401, Mercado Pago eventually stops retrying, and a subscription
+    /// that was genuinely paid sits on "pendiente" forever. That is why each shape they
+    /// actually send is tried rather than assuming one.
+    ///
+    /// The body's id is kept as a tolerance, and the id-less manifest is offered only when
+    /// the query carries no <c>data.id</c> — precisely the case where Mercado Pago's own
+    /// template drops it. Every candidate is still HMAC'd with our own secret, so none of
+    /// this widens what an outsider can forge.
+    /// </summary>
+    private static List<string?> BuildIdCandidates(HttpRequest request, string? bodyDataId)
+    {
+        var queryDataId = request.Query["data.id"].ToString();
+        var queryId = request.Query["id"].ToString();
+
+        var candidates = new List<string?>(4);
+
+        void Offer(string? value)
+        {
+            if (!candidates.Contains(value))
+            {
+                candidates.Add(value);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryDataId))
+        {
+            Offer(queryDataId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryId))
+        {
+            Offer(queryId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(bodyDataId))
+        {
+            Offer(bodyDataId);
+        }
+
+        // The template keys on `data.id` specifically, so its absence — not the absence of
+        // any id at all — is what makes the id-less manifest the right one to try.
+        if (string.IsNullOrWhiteSpace(queryDataId))
+        {
+            Offer(null);
+        }
+
+        return candidates;
+    }
+
+    /// <summary>
+    /// The documented manifest: <c>id:{data.id};request-id:{x-request-id};ts:{ts};</c>.
+    /// Pairs whose value is absent are left out entirely rather than sent empty.
+    /// </summary>
+    private static string BuildManifest(string? dataId, string? requestId, string timestamp)
+    {
         var manifest = new StringBuilder();
+
         if (!string.IsNullOrWhiteSpace(dataId))
         {
             manifest.Append("id:").Append(dataId.ToLowerInvariant()).Append(';');
@@ -89,27 +169,22 @@ public sealed class MercadoPagoSignatureValidator(
             manifest.Append("request-id:").Append(requestId).Append(';');
         }
 
-        manifest.Append("ts:").Append(timestamp).Append(';');
+        return manifest.Append("ts:").Append(timestamp).Append(';').ToString();
+    }
 
+    private bool Matches(string manifest, string hash)
+    {
         var expected = Convert.ToHexString(
                 HMACSHA256.HashData(
                     Encoding.UTF8.GetBytes(_options.WebhookSecret),
-                    Encoding.UTF8.GetBytes(manifest.ToString())))
+                    Encoding.UTF8.GetBytes(manifest)))
             .ToLowerInvariant();
 
         // Constant-time: a length-or-content-dependent comparison leaks the expected
         // digest one byte at a time to anyone willing to measure.
-        var matches = CryptographicOperations.FixedTimeEquals(
+        return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected),
             Encoding.UTF8.GetBytes(hash.ToLowerInvariant()));
-
-        if (!matches)
-        {
-            logger.LogWarning("Rejected a Mercado Pago webhook: signature mismatch for data.id {DataId}.", dataId);
-            return SignatureCheck.Fail("Signature mismatch.");
-        }
-
-        return SignatureCheck.Ok();
     }
 
     private static bool IsFresh(string timestamp)

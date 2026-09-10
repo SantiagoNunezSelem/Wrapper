@@ -35,49 +35,6 @@ public sealed class MercadoPagoClient(
     public bool IsConfigured => _options.IsConfigured;
 
     /// <summary>
-    /// Creates the recurring plan every subscriber attaches to: monthly, in the
-    /// configured currency, with the free trial declared natively so Mercado Pago itself
-    /// charges $0 for the first week and converts to a real debit on day 8. Simulating
-    /// the trial locally would break exactly that automatic conversion.
-    /// </summary>
-    public async Task<PreapprovalPlan> CreatePlanAsync(bool includeFreeTrial, CancellationToken cancellationToken)
-    {
-        var autoRecurring = new Dictionary<string, object?>
-        {
-            ["frequency"] = _options.Frequency,
-            ["frequency_type"] = _options.FrequencyType,
-            ["transaction_amount"] = _options.TransactionAmount,
-            ["currency_id"] = _options.CurrencyId,
-        };
-
-        // La clave se agrega sólo cuando corresponde, nunca en null: el
-        // DefaultIgnoreCondition de JsonOptions no alcanza a los valores de un Dictionary
-        // (ver la nota allá), así que un "free_trial": null viajaría tal cual — la misma
-        // clase de envío que GoogleAiClient documenta como rechazada por su API.
-        if (includeFreeTrial)
-        {
-            autoRecurring["free_trial"] = new Dictionary<string, object?>
-            {
-                ["frequency"] = _options.TrialFrequency,
-                ["frequency_type"] = _options.TrialFrequencyType,
-            };
-        }
-
-        var body = new Dictionary<string, object?>
-        {
-            ["reason"] = includeFreeTrial ? _options.Reason : $"{_options.Reason} (sin prueba gratis)",
-            ["auto_recurring"] = autoRecurring,
-            ["back_url"] = _options.CheckoutReturnUrl,
-        };
-
-        return await SendAsync<PreapprovalPlan>(HttpMethod.Post, "/preapproval_plan", body, cancellationToken)
-            ?? throw new MercadoPagoException("Mercado Pago returned an empty plan.");
-    }
-
-    public Task<PreapprovalPlan?> GetPlanAsync(string planId, CancellationToken cancellationToken) =>
-        SendAsync<PreapprovalPlan>(HttpMethod.Get, $"/preapproval_plan/{planId}", null, cancellationToken);
-
-    /// <summary>
     /// Opens one subscription for one payer and hands back both its id and the checkout
     /// URL to send them to — the "suscripción sin plan asociado, con pago pendiente"
     /// flow: <c>POST /preapproval</c> with <c>status: "pending"</c> and <b>no</b>
@@ -348,13 +305,6 @@ public sealed class MercadoPagoException : Exception
 // Response shapes. Only the fields this app reads are declared; Mercado Pago sends
 // considerably more.
 // --------------------------------------------------------------------------------
-
-public sealed record PreapprovalPlan(
-    string? Id,
-    string? Status,
-    string? Reason,
-    [property: JsonPropertyName("init_point")] string? InitPoint,
-    [property: JsonPropertyName("auto_recurring")] AutoRecurring? AutoRecurring);
 
 public sealed record Preapproval(
     string? Id,

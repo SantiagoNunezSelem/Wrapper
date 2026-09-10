@@ -211,7 +211,9 @@ export const shellCopy = {
       signInCta: 'Iniciar sesión',
       close: 'Cerrar',
       statuses: {
-        pendiente: 'Pendiente de pago',
+        // Reservado para cuando Mercado Pago tiene de verdad un cobro en curso. El
+        // checkout que se abrió y se abandonó no llega acá: ver `checkoutOpen*`.
+        pendiente: 'Procesando el pago',
         trial: 'Prueba gratis',
         activa: 'Activa',
         pago_fallido: 'Pago rechazado',
@@ -220,7 +222,7 @@ export const shellCopy = {
         inactiva: 'Sin suscripción',
       },
       statusHints: {
-        pendiente: 'Falta completar el pago en Mercado Pago. Podés retomarlo cuando quieras.',
+        pendiente: 'Mercado Pago todavía está procesando tu pago. Ya lo tienen: falta que lo confirmen.',
         trial: 'Tenés acceso Pro completo. Si cancelás antes de que termine, no se te cobra nada.',
         activa: 'Se renueva sola todos los meses. La podés cancelar cuando quieras.',
         pago_fallido: 'No pudimos cobrar tu tarjeta. Mercado Pago va a reintentar; mientras tanto mantenés el acceso.',
@@ -230,7 +232,7 @@ export const shellCopy = {
       },
       // Qué pasa a continuación, sin que el usuario tenga que deducirlo del estado.
       statusNext: {
-        pendiente: 'Apenas Mercado Pago confirme el pago te activamos Pro solo, sin que hagas nada.',
+        pendiente: 'Apenas lo confirmen te activamos Pro solo, sin que hagas nada.',
         trial: 'El {date} se hace el primer cobro de {amount}. Si cancelás antes, no se cobra nada.',
         activa: 'El próximo cobro de {amount} es el {date}.',
         pago_fallido: 'Mercado Pago reintenta el cobro durante unos días. Si querés adelantarlo, revisá la tarjeta.',
@@ -280,6 +282,26 @@ export const shellCopy = {
       },
       pendingReasonFallback: 'Mercado Pago todavía no confirmó el pago.',
       pendingReasonLabel: 'Motivo',
+      /**
+       * El checkout que se abrió y nunca se terminó. Por dentro es el mismo `pendiente`
+       * que un cobro en curso, pero para el que lo lee no se parecen en nada: uno es
+       * "tu plata está en camino" y el otro es "no pasó nada". Decirle a alguien que
+       * dejó una pestaña abierta que tiene un pago pendiente lo preocupa por algo que
+       * nunca ocurrió — y era, textualmente, lo molesto de la pantalla anterior.
+       */
+      checkoutOpenStatus: 'Pago sin terminar',
+      checkoutOpenHint: 'Abriste el pago en Mercado Pago y no llegaste a completarlo. No se te cobró nada.',
+      checkoutOpenNext: 'Podés retomarlo donde lo dejaste o empezar de nuevo cuando quieras.',
+      checkoutOpenPaidNote: 'Si en realidad ya pagaste, tocá "Actualizar estado" y lo buscamos en Mercado Pago.',
+      /**
+       * El cartel de `MercadoPago:TestPayerEmail`. No se puede cerrar a propósito: existe
+       * justamente para que no se olvide puesto, y un aviso que se descarta es un aviso
+       * que se olvida. Nombra el mail porque es el dato con el que se verifica que sea el
+       * comprador de prueba y no el de alguien real.
+       */
+      testPayerBannerTitle: 'Modo de prueba: los pagos no son reales',
+      testPayerBannerBody:
+        'Todos los checkouts se abren a nombre de {email}, no de quien esté usando la app. Sacá MercadoPago__TestPayerEmail antes de cobrar de verdad.',
       resumeCheckoutCta: 'Terminar el pago',
       resumeCheckoutHint: 'Te llevamos a la misma página de Mercado Pago donde lo dejaste.',
       alreadyPaidNote:
@@ -702,7 +724,9 @@ export const shellCopy = {
       signInCta: 'Sign in',
       close: 'Close',
       statuses: {
-        pendiente: 'Payment pending',
+        // Reserved for a charge Mercado Pago genuinely has in flight; an abandoned
+        // checkout never reaches this label. See `checkoutOpen*`.
+        pendiente: 'Processing payment',
         trial: 'Free trial',
         activa: 'Active',
         pago_fallido: 'Payment declined',
@@ -711,7 +735,7 @@ export const shellCopy = {
         inactiva: 'No subscription',
       },
       statusHints: {
-        pendiente: 'The payment has not been completed on Mercado Pago yet. You can pick it up any time.',
+        pendiente: 'Mercado Pago is still processing your payment. They have it — it just has to clear.',
         trial: "You have full Pro access. Cancel before it ends and you won't be charged a thing.",
         activa: 'It renews automatically every month. You can cancel whenever you want.',
         pago_fallido: "We couldn't charge your card. Mercado Pago will retry; you keep access meanwhile.",
@@ -720,7 +744,7 @@ export const shellCopy = {
         inactiva: "You don't have an active subscription.",
       },
       statusNext: {
-        pendiente: 'As soon as Mercado Pago confirms the payment we turn Pro on for you — nothing else to do.',
+        pendiente: 'As soon as they confirm it we turn Pro on for you — nothing else to do.',
         trial: "The first {amount} charge happens on {date}. Cancel before then and nothing is charged.",
         activa: 'The next {amount} charge is on {date}.',
         pago_fallido: 'Mercado Pago retries the charge for a few days. To speed it up, check the card.',
@@ -764,6 +788,17 @@ export const shellCopy = {
       },
       pendingReasonFallback: 'Mercado Pago has not confirmed the payment yet.',
       pendingReasonLabel: 'Reason',
+      // A checkout that was opened and never finished. Stored as the same `pendiente` as
+      // a charge in flight, but they are opposite messages — "your money is on its way"
+      // versus "nothing happened" — and telling someone who only closed a tab that they
+      // have a payment pending worries them about something that never took place.
+      checkoutOpenStatus: 'Payment not finished',
+      checkoutOpenHint: 'You opened the payment on Mercado Pago but never completed it. Nothing was charged.',
+      checkoutOpenNext: 'Pick it up where you left it, or start over whenever you like.',
+      checkoutOpenPaidNote: 'If you did pay after all, hit "Check again" and we will look it up on Mercado Pago.',
+      testPayerBannerTitle: 'Test mode: payments are not real',
+      testPayerBannerBody:
+        'Every checkout opens as {email}, not as whoever is using the app. Clear MercadoPago__TestPayerEmail before taking real payments.',
       resumeCheckoutCta: 'Finish the payment',
       resumeCheckoutHint: 'We take you back to the same Mercado Pago page you left.',
       alreadyPaidNote:

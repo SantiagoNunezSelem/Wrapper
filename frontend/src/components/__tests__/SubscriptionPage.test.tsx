@@ -25,6 +25,7 @@ const user: UserProfile = {
   hasAiConsent: false,
   aiEnabled: true,
   paymentsEnabled: true,
+  checkoutTestPayerEmail: null,
   preferredLanguage: 'es',
 }
 
@@ -62,6 +63,7 @@ function record(overrides: Partial<SubscriptionRecord> = {}): SubscriptionRecord
     accessUntilUtc: '2026-09-01T00:00:00Z',
     checkoutUrl: null,
     pendingReason: null,
+    paymentInProgress: false,
     createdAtUtc: '2026-07-01T00:00:00Z',
     ...overrides,
   }
@@ -129,11 +131,17 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
 }
 
 describe('SubscriptionPage', () => {
-  describe('pago pendiente', () => {
+  describe('pago en proceso', () => {
     it('explica POR QUÉ está pendiente en vez de repetir la palabra', () => {
       renderPage(
         overview(
-          record({ status: 'pendiente', hasAccess: false, autoRenewEnabled: false, pendingReason: 'pending_contingency' }),
+          record({
+            status: 'pendiente',
+            hasAccess: false,
+            autoRenewEnabled: false,
+            paymentInProgress: true,
+            pendingReason: 'pending_contingency',
+          }),
         ),
       )
 
@@ -142,34 +150,95 @@ describe('SubscriptionPage', () => {
 
     it('un status_detail que no conocemos cae en el texto genérico, nunca en el código crudo', () => {
       renderPage(
-        overview(record({ status: 'pendiente', hasAccess: false, pendingReason: 'algo_que_mercado_pago_agregue' })),
+        overview(
+          record({
+            status: 'pendiente',
+            hasAccess: false,
+            paymentInProgress: true,
+            pendingReason: 'algo_que_mercado_pago_agregue',
+          }),
+        ),
       )
 
       expect(screen.getByText(copy.pendingReasonFallback, { exact: false })).toBeInTheDocument()
       expect(screen.queryByText(/algo_que_mercado_pago_agregue/)).not.toBeInTheDocument()
     })
 
-    it('ofrece terminar el pago que quedó a medias, apuntando al checkout guardado', () => {
-      renderPage(
-        overview(
-          record({ status: 'pendiente', hasAccess: false, checkoutUrl: 'https://mp.test/subscribe/pre-1' }),
-          { canResumeCheckout: true },
-        ),
-      )
-
-      expect(screen.getByRole('link', { name: copy.resumeCheckoutCta })).toHaveAttribute(
-        'href',
-        'https://mp.test/subscribe/pre-1',
-      )
-    })
-
     it('sin checkout para retomar no inventa un link muerto', () => {
-      renderPage(overview(record({ status: 'pendiente', hasAccess: false, checkoutUrl: null })))
+      renderPage(
+        overview(record({ status: 'pendiente', hasAccess: false, paymentInProgress: true, checkoutUrl: null })),
+      )
 
       expect(screen.queryByRole('link', { name: copy.resumeCheckoutCta })).not.toBeInTheDocument()
       // Pero sí sigue diciendo que lo estamos mirando solos, que es la parte que evita
       // que alguien que ya pagó crea que se perdió la plata.
       expect(screen.getByText(copy.alreadyPaidNote)).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * El caso que motivó la separación: alguien abre el checkout, se arrepiente y cierra la
+   * pestaña. Por dentro queda igual de `pendiente` que un cobro en curso, pero no se
+   * intentó cobrar nada — y decirle "Pendiente de pago" lo hace pensar que tiene plata
+   * dando vueltas.
+   */
+  describe('checkout que se abrió y no se terminó', () => {
+    const abandoned = () =>
+      record({
+        status: 'pendiente',
+        hasAccess: false,
+        autoRenewEnabled: false,
+        paymentInProgress: false,
+        pendingReason: null,
+        checkoutUrl: 'https://mp.test/subscribe/pre-1',
+      })
+
+    it('no lo llama pago pendiente ni lo pinta como algo que atender', () => {
+      renderPage(overview(abandoned(), { canResumeCheckout: true }))
+
+      // Dos veces: el panel de arriba y la fila del historial. Las dos tienen que contar
+      // la misma historia, o el historial desmiente al panel.
+      expect(screen.getAllByText(copy.checkoutOpenStatus)).toHaveLength(2)
+      expect(screen.queryByText(copy.statuses.pendiente)).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.statusHints.pendiente)).not.toBeInTheDocument()
+    })
+
+    it('dice explícitamente que no se cobró nada', () => {
+      renderPage(overview(abandoned(), { canResumeCheckout: true }))
+
+      expect(screen.getByText(copy.checkoutOpenHint)).toBeInTheDocument()
+      expect(screen.getByText(copy.checkoutOpenPaidNote)).toBeInTheDocument()
+      expect(screen.queryByText(copy.alreadyPaidNote)).not.toBeInTheDocument()
+    })
+
+    it('con la tarjeta rechazada dice el motivo sin llamarlo pago en curso', () => {
+      // El intento terminó: no hay nada procesándose, pero sí algo que contar.
+      renderPage(
+        overview(
+          record({
+            status: 'pendiente',
+            hasAccess: false,
+            paymentInProgress: false,
+            pendingReason: 'cc_rejected_insufficient_amount',
+            checkoutUrl: 'https://mp.test/subscribe/pre-1',
+          }),
+          { canResumeCheckout: true },
+        ),
+      )
+
+      expect(screen.getByText(copy.checkoutOpenHint)).toBeInTheDocument()
+      expect(
+        screen.getByText(copy.pendingReasons.cc_rejected_insufficient_amount, { exact: false }),
+      ).toBeInTheDocument()
+    })
+
+    it('igual ofrece retomarlo donde quedó', () => {
+      renderPage(overview(abandoned(), { canResumeCheckout: true }))
+
+      expect(screen.getByRole('link', { name: copy.resumeCheckoutCta })).toHaveAttribute(
+        'href',
+        'https://mp.test/subscribe/pre-1',
+      )
     })
   })
 

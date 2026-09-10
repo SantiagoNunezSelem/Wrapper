@@ -28,6 +28,10 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   pendingReasons: Record<string, string>
   pendingReasonFallback: string
   pendingReasonLabel: string
+  checkoutOpenStatus: string
+  checkoutOpenHint: string
+  checkoutOpenNext: string
+  checkoutOpenPaidNote: string
   resumeCheckoutCta: string
   resumeCheckoutHint: string
   alreadyPaidNote: string
@@ -278,24 +282,36 @@ function StatusBanner({
   canResumeCheckout: boolean
   onRefresh: () => void
 }) {
-  const needsAttention = current.status === 'pendiente' || current.status === 'pago_fallido'
-  const nextStep = fillTokens(copy.statusNext[current.status] ?? '', {
-    date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
-    amount: formatMoney(current.amount, current.currencyId, locale),
-  })
+  // `pendiente` covers two opposite things, and the screen must not say the same words
+  // for both: a charge Mercado Pago is genuinely working on, and a checkout that was
+  // opened and abandoned — where nothing was authorised and nothing will be charged.
+  // Only the first one is news worth a warning colour; the second is closer to having no
+  // subscription at all, with a link back to where it was left.
+  const isUnfinishedCheckout = current.status === 'pendiente' && !current.paymentInProgress
+  const needsAttention = current.status === 'pago_fallido' || (current.status === 'pendiente' && current.paymentInProgress)
+  const variant = isUnfinishedCheckout ? 'checkout_abierto' : current.status
+
+  const nextStep = isUnfinishedCheckout
+    ? copy.checkoutOpenNext
+    : fillTokens(copy.statusNext[current.status] ?? '', {
+        date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
+        amount: formatMoney(current.amount, current.currencyId, locale),
+      })
+
+  const hint = isUnfinishedCheckout ? copy.checkoutOpenHint : copy.statusHints[current.status]
 
   return (
-    <section className={`subpage-banner ${needsAttention ? 'is-attention' : 'is-calm'} banner-${current.status}`}>
+    <section className={`subpage-banner ${needsAttention ? 'is-attention' : 'is-calm'} banner-${variant}`}>
       <div className="subpage-banner-head">
-        <span className={`subpage-status status-${current.status}`}>
-          {copy.statuses[current.status] ?? current.status}
+        <span className={`subpage-status status-${variant}`}>
+          {isUnfinishedCheckout ? copy.checkoutOpenStatus : copy.statuses[current.status] ?? current.status}
         </span>
         {current.hasAccess && current.accessUntilUtc ? (
           <span className="subpage-banner-countdown">{formatRemaining(current.accessUntilUtc, copy)}</span>
         ) : null}
       </div>
 
-      {copy.statusHints[current.status] ? <p className="subpage-banner-body">{copy.statusHints[current.status]}</p> : null}
+      {hint ? <p className="subpage-banner-body">{hint}</p> : null}
       {nextStep ? <p className="subpage-banner-next">{nextStep}</p> : null}
 
       {/* Only ever shown with a real status_detail behind it: inventing a reason is worse
@@ -322,7 +338,9 @@ function StatusBanner({
           {canResumeCheckout && current.checkoutUrl ? (
             <p className="subpage-banner-fineprint">{copy.resumeCheckoutHint}</p>
           ) : null}
-          <p className="subpage-banner-fineprint">{copy.alreadyPaidNote}</p>
+          <p className="subpage-banner-fineprint">
+            {isUnfinishedCheckout ? copy.checkoutOpenPaidNote : copy.alreadyPaidNote}
+          </p>
         </>
       ) : null}
     </section>
@@ -702,10 +720,17 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
 }
 
 function HistoryRow({ record, copy, locale }: { record: SubscriptionRecord; copy: SubscriptionPageCopy; locale: string }) {
+  // Same split as the banner: an old row that never got past the checkout should read as
+  // the attempt it was, not as a payment that is still somewhere in the system.
+  const label =
+    record.status === 'pendiente' && !record.paymentInProgress
+      ? copy.checkoutOpenStatus
+      : copy.statuses[record.status] ?? record.status
+
   return (
     <li>
       <div>
-        <strong>{copy.statuses[record.status] ?? record.status}</strong>
+        <strong>{label}</strong>
         {record.trialWasApplied ? <span className="subpage-trial-badge">{copy.freeTrialBadge}</span> : null}
         <p className="subpage-muted">
           {formatMoney(record.amount, record.currencyId, locale)} · {record.planType}
