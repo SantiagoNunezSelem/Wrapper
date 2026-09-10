@@ -109,6 +109,30 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task La_actividad_tecnica_solo_se_le_manda_a_un_admin()
+    {
+        // Tópicos de webhook, transiciones de estado y notas internas: sirven para
+        // diagnosticar la facturación, no para que un cliente las lea. Se siguen guardando
+        // para todas las cuentas; lo único que cambia es a quién se le mandan.
+        var (customerClient, customer) = factory.CreateAuthenticatedClient();
+        var (adminClient, admin) = factory.CreateAuthenticatedClient(isAdmin: true);
+
+        using (var db = factory.NewDbContext())
+        {
+            db.SubscriptionEvents.AddRange(
+                new backend.Models.SubscriptionEvent { UserId = customer.Id, Topic = "subscription_preapproval", Action = "updated" },
+                new backend.Models.SubscriptionEvent { UserId = admin.Id, Topic = "subscription_preapproval", Action = "updated" });
+            await db.SaveChangesAsync();
+        }
+
+        var customerBody = await ReadJson(await customerClient.GetAsync("/api/subscription"));
+        var adminBody = await ReadJson(await adminClient.GetAsync("/api/subscription"));
+
+        Assert.Equal(0, customerBody.GetProperty("events").GetArrayLength());
+        Assert.Equal(1, adminBody.GetProperty("events").GetArrayLength());
+    }
+
+    [Fact]
     public async Task La_vista_general_trae_las_listas_vacias_en_vez_de_nulls()
     {
         var (client, _) = factory.CreateAuthenticatedClient();
@@ -350,22 +374,22 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
         var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
 
         Assert.True(actions.GetProperty("canSubscribe").GetBoolean());
-        foreach (var action in new[] { "canResumeCheckout", "canCancel", "canPause", "canResume" })
+        foreach (var action in new[] { "canResumeCheckout", "canCancel", "canResume" })
         {
             Assert.False(actions.GetProperty(action).GetBoolean());
         }
     }
 
     [Fact]
-    public async Task Una_suscripcion_vigente_y_vinculada_se_puede_cancelar_y_pausar_pero_no_reanudar()
+    public async Task Una_suscripcion_vigente_y_vinculada_se_puede_cancelar_pero_no_reanudar()
     {
         var (client, _) = factory.CreateAuthenticatedClient(subscriptions: ApiFactory.ActiveSubscription());
 
         var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
 
         Assert.True(actions.GetProperty("canCancel").GetBoolean());
-        Assert.True(actions.GetProperty("canPause").GetBoolean());
         Assert.False(actions.GetProperty("canResume").GetBoolean());
+        Assert.False(actions.TryGetProperty("canPause", out _));
         Assert.False(actions.GetProperty("canSubscribe").GetBoolean());
     }
 
@@ -400,37 +424,33 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     [Fact]
     public async Task El_acceso_de_admin_no_ofrece_ninguna_accion_de_facturacion()
     {
-        // No compró nada: no hay nada que cancelar, pausar ni reanudar.
+        // No compró nada: no hay nada que cancelar ni reanudar.
         var (client, _) = factory.CreateAuthenticatedClient(isAdmin: true);
 
         var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
 
-        foreach (var action in new[] { "canSubscribe", "canResumeCheckout", "canCancel", "canPause", "canResume" })
+        foreach (var action in new[] { "canSubscribe", "canResumeCheckout", "canCancel", "canResume" })
         {
             Assert.False(actions.GetProperty(action).GetBoolean());
         }
     }
 
     // -----------------------------------------------------------------------
-    // Pausar y reanudar
+    // Reanudar
     // -----------------------------------------------------------------------
 
-    [Theory]
-    [InlineData("/api/subscription/pause")]
-    [InlineData("/api/subscription/resume")]
-    public async Task Pausar_y_reanudar_exigen_sesion(string route)
+    [Fact]
+    public async Task Reanudar_exige_sesion()
     {
-        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsync(route, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsync("/api/subscription/resume", null)).StatusCode);
     }
 
-    [Theory]
-    [InlineData("/api/subscription/pause")]
-    [InlineData("/api/subscription/resume")]
-    public async Task Pausar_y_reanudar_sin_suscripcion_son_409_no_subscription(string route)
+    [Fact]
+    public async Task Reanudar_sin_suscripcion_es_409_no_subscription()
     {
         var (client, _) = factory.CreateAuthenticatedClient();
 
-        Assert.Equal("no_subscription", await CodeOf(await client.PostAsync(route, null)));
+        Assert.Equal("no_subscription", await CodeOf(await client.PostAsync("/api/subscription/resume", null)));
     }
 
     [Fact]
@@ -442,9 +462,9 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     [Fact]
-    public async Task Pausar_una_suscripcion_simulada_es_409_not_linked()
+    public async Task Reanudar_una_suscripcion_simulada_es_409_not_linked()
     {
-        // El interruptor local nunca tocó Mercado Pago, así que no hay nada que pausar allá.
+        // El interruptor local nunca tocó Mercado Pago: no hay nada que reanudar allá.
         var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
         {
             Status = "activa",
@@ -452,7 +472,7 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
             IsDevSimulated = true,
         });
 
-        Assert.Equal("not_linked", await CodeOf(await client.PostAsync("/api/subscription/pause", null)));
+        Assert.Equal("not_linked", await CodeOf(await client.PostAsync("/api/subscription/resume", null)));
     }
 
     // -----------------------------------------------------------------------

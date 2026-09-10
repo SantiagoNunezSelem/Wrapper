@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { formatMoney } from '../lib/format'
 import { ConfirmDialog } from './ConfirmDialog'
-import { ModalShell } from './ModalShell'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
@@ -12,7 +11,7 @@ import type {
 } from '../types'
 
 /** Every action the account screen can be waiting on. */
-export type SubscriptionBusyAction = 'cancel' | 'refresh' | 'pause' | 'resume'
+export type SubscriptionBusyAction = 'cancel' | 'refresh' | 'resume'
 
 export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   eyebrow: string
@@ -62,12 +61,6 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   cancelledNothingCharged: string
   cancelledKeepsAccess: string
   cancelledDone: string
-  pauseCta: string
-  pausing: string
-  pauseConfirmTitle: string
-  pauseConfirmBody: string
-  pauseConfirmYes: string
-  pauseHint: string
   resumeCta: string
   resuming: string
   refreshCta: string
@@ -123,7 +116,6 @@ export function SubscriptionPage({
   onBack,
   onLanguageToggle,
   onCancel,
-  onPause,
   onResume,
   onRefresh,
   onSignIn,
@@ -138,7 +130,6 @@ export function SubscriptionPage({
   onBack: () => void
   onLanguageToggle: () => void
   onCancel: () => void
-  onPause: () => void
   onResume: () => void
   onRefresh: () => void
   onSignIn: () => void
@@ -161,7 +152,11 @@ export function SubscriptionPage({
           <button type="button" className="ghost-button" onClick={onLanguageToggle}>
             {language === 'es' ? 'EN' : 'ES'}
           </button>
-          {user ? <span className="subpage-account-chip">{user.displayName}</span> : null}
+          {user ? (
+            <span className="subpage-account-avatar" role="img" aria-label={user.displayName} title={user.displayName}>
+              {user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+          ) : null}
         </div>
       </header>
 
@@ -206,7 +201,6 @@ export function SubscriptionPage({
               isBusy={isBusy}
               busyAction={busyAction}
               onCancel={onCancel}
-              onPause={onPause}
               onResume={onResume}
             />
           </>
@@ -251,7 +245,7 @@ export function SubscriptionPage({
               )}
             </section>
 
-            <EventsSection overview={overview} copy={copy} locale={locale} />
+            {overview?.isAdmin ? <EventsSection overview={overview} copy={copy} locale={locale} /> : null}
           </>
         ) : null}
       </main>
@@ -381,7 +375,6 @@ function CurrentPlanSection({
   isBusy,
   busyAction,
   onCancel,
-  onPause,
   onResume,
 }: {
   current: SubscriptionRecord
@@ -392,10 +385,9 @@ function CurrentPlanSection({
   isBusy: boolean
   busyAction: SubscriptionBusyAction | null
   onCancel: () => void
-  onPause: () => void
   onResume: () => void
 }) {
-  const [confirming, setConfirming] = useState<'cancel' | 'pause' | null>(null)
+  const [confirming, setConfirming] = useState<'cancel' | null>(null)
   const actions = overview?.actions ?? null
   const manageUrl = overview?.manageUrl ?? null
 
@@ -465,17 +457,11 @@ function CurrentPlanSection({
         </div>
       ) : null}
 
-      {actions && (actions.canResume || actions.canPause || actions.canCancel) ? (
+      {actions && (actions.canResume || actions.canCancel) ? (
         <div className="subpage-actions">
           {actions.canResume ? (
             <button type="button" className="primary-button" onClick={onResume} disabled={isBusy}>
               {busyAction === 'resume' ? copy.resuming : copy.resumeCta}
-            </button>
-          ) : null}
-
-          {actions.canPause ? (
-            <button type="button" className="ghost-button" onClick={() => setConfirming('pause')} disabled={isBusy}>
-              {busyAction === 'pause' ? copy.pausing : copy.pauseCta}
             </button>
           ) : null}
 
@@ -491,9 +477,6 @@ function CurrentPlanSection({
           ) : null}
         </div>
       ) : null}
-
-      {/* Offered next to "cancelar", where the decision is actually being made. */}
-      {actions?.canPause ? <p className="subpage-muted-copy">{copy.pauseHint}</p> : null}
 
       {confirming === 'cancel' ? (
         <ConfirmDialog
@@ -513,58 +496,7 @@ function CurrentPlanSection({
           onCancel={() => setConfirming(null)}
         />
       ) : null}
-
-      {confirming === 'pause' ? (
-        <PauseConfirmDialog
-          copy={copy}
-          body={fillTokens(copy.pauseConfirmBody, {
-            date: formatDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
-          })}
-          isBusy={isBusy}
-          onConfirm={() => {
-            setConfirming(null)
-            onPause()
-          }}
-          onDismiss={() => setConfirming(null)}
-        />
-      ) : null}
     </section>
-  )
-}
-
-/**
- * Pausing is not a destructive action — the shared `ConfirmDialog` always renders its
- * confirm button as `is-danger`, which would misrepresent it as one — so this builds
- * directly on `ModalShell` instead, the same way `FreeUnlockConfirm` does for its own
- * non-destructive confirm.
- */
-function PauseConfirmDialog({
-  copy,
-  body,
-  isBusy,
-  onConfirm,
-  onDismiss,
-}: {
-  copy: SubscriptionPageCopy
-  body: string
-  isBusy: boolean
-  onConfirm: () => void
-  onDismiss: () => void
-}) {
-  return (
-    <ModalShell onDismiss={onDismiss} label={copy.pauseConfirmTitle} className="confirm-modal" closeLabel={copy.close}>
-      <h2>{copy.pauseConfirmTitle}</h2>
-      <p className="panel-copy">{body}</p>
-
-      <div className="free-unlock-actions">
-        <button type="button" className="ghost-button" onClick={onDismiss} disabled={isBusy}>
-          {copy.cancelConfirmNo}
-        </button>
-        <button type="button" className="primary-button" onClick={onConfirm} disabled={isBusy}>
-          {isBusy ? copy.pausing : copy.pauseConfirmYes}
-        </button>
-      </div>
-    </ModalShell>
   )
 }
 

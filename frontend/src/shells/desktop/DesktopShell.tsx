@@ -114,7 +114,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     handleConsentAccept,
     handleLogout,
     handleCancelSubscription,
-    handlePauseSubscription,
     handleResumeSubscription,
     handleRefreshSubscription,
     handleToggleDevAi,
@@ -260,9 +259,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
           onCancel={() => {
             void handleCancelSubscription()
-          }}
-          onPause={() => {
-            void handlePauseSubscription()
           }}
           onResume={() => {
             void handleResumeSubscription()

@@ -312,7 +312,6 @@ public class MercadoPagoClientTests
 
     [Theory]
     [InlineData("cancel", "cancelled")]
-    [InlineData("pause", "paused")]
     [InlineData("resume", "authorized")]
     public async Task Cada_cambio_de_estado_manda_su_status(string action, string expected)
     {
@@ -321,7 +320,6 @@ public class MercadoPagoClientTests
         _ = action switch
         {
             "cancel" => await client.CancelSubscriptionAsync("pre-1", default),
-            "pause" => await client.PauseSubscriptionAsync("pre-1", default),
             _ => await client.ResumeSubscriptionAsync("pre-1", default),
         };
 

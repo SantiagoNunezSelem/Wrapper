@@ -217,11 +217,6 @@ export async function cancelSubscription(token: string): Promise<SubscriptionOve
   return request<SubscriptionOverview>('/api/subscription/cancel', { method: 'POST' }, token)
 }
 
-/** Suspends debits without giving up the subscription: same card, same price, resumable. */
-export async function pauseSubscription(token: string): Promise<SubscriptionOverview> {
-  return request<SubscriptionOverview>('/api/subscription/pause', { method: 'POST' }, token)
-}
-
 /** Puts a paused subscription back on its schedule. */
 export async function resumeSubscription(token: string): Promise<SubscriptionOverview> {
   return request<SubscriptionOverview>('/api/subscription/resume', { method: 'POST' }, token)

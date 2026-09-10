@@ -142,14 +142,6 @@ public sealed class MercadoPagoClient(
             new Dictionary<string, object?> { ["status"] = "cancelled" },
             cancellationToken);
 
-    /// <summary>Suspends debits while keeping the card on file, so it can be resumed.</summary>
-    public Task<Preapproval?> PauseSubscriptionAsync(string preapprovalId, CancellationToken cancellationToken) =>
-        SendAsync<Preapproval>(
-            HttpMethod.Put,
-            $"/preapproval/{preapprovalId}",
-            new Dictionary<string, object?> { ["status"] = "paused" },
-            cancellationToken);
-
     public Task<Preapproval?> ResumeSubscriptionAsync(string preapprovalId, CancellationToken cancellationToken) =>
         SendAsync<Preapproval>(
             HttpMethod.Put,

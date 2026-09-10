@@ -382,7 +382,7 @@ historial de cobros y la auditoría.
 | Terminar un pago a medias | — (link guardado) | Vuelve al mismo `init_point`. Abrir un checkout nuevo estando uno pendiente **no crea otro**: se retoma, porque dos suscripciones autorizables son dos cobros mensuales. |
 | Actualizar estado | `POST /api/subscription/sync` | Relee el preapproval, sus cobros y el `status_detail` del pago que no cerró. |
 | Cancelar renovación | `POST /api/subscription/cancel` | Cancela en Mercado Pago. **El acceso NO se corta**: se conserva hasta el final del período pago. |
-| Pausar / Reanudar | `POST /api/subscription/pause` · `/resume` | Suspende los débitos conservando tarjeta y precio. Existe para que "este mes viene difícil" no tenga que ser una cancelación. |
+| Reanudar | `POST /api/subscription/resume` | Vuelve a poner en marcha una suscripción pausada. La app no ofrece pausar, pero el pagador puede hacerlo desde su propia cuenta de Mercado Pago, y quien quedó pausado necesita una forma de volver. |
 | Cambiar la tarjeta | — (link externo) | Mercado Pago no expone API para reemplazar la tarjeta de un preapproval existente; se linkea a la cuenta del pagador. |
 
 Dos detalles que valen por sí solos:
