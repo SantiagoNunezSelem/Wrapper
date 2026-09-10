@@ -93,8 +93,35 @@ public sealed class MercadoPagoOptions
 
     public int TimeoutSeconds { get; set; } = 20;
 
+    /// <summary>
+    /// Sends this as the <c>payer_email</c> instead of the signed-in user's own address.
+    /// <b>For testing only — must be empty in production</b>, where it would bill every
+    /// checkout to one person.
+    ///
+    /// It exists because Mercado Pago refuses a preapproval whose payer and collector are
+    /// not <i>both</i> real or <i>both</i> test accounts, and a test buyer's address is a
+    /// generated <c>@testuser.com</c> one that nobody can sign into Google with. Without
+    /// this there is no way to exercise checkout end to end against a test seller: every
+    /// attempt arrives with a real payer and comes back
+    /// <c>400 Both payer and collector must be real or test users</c>.
+    ///
+    /// Nothing downstream depends on the address matching the account: a preapproval is
+    /// linked by its own id and by <c>external_reference</c>, both stored before the
+    /// redirect.
+    /// </summary>
+    public string TestPayerEmail { get; set; } = string.Empty;
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(AccessToken);
 
+    /// <summary>
+    /// Whether the access token is one of the app's own <c>TEST-</c> credentials.
+    ///
+    /// This does <b>not</b> catch every test setup, and the gap is worth knowing: a test
+    /// user created in the panel gets its own application, whose token starts with
+    /// <c>APP_USR-</c> exactly like a production one. Such a seller reads as production
+    /// here. Telling them apart needs <c>GET /users/me</c> — a test user's nickname is a
+    /// generated <c>TESTUSER…</c> — which is a network call, not a property.
+    /// </summary>
     public bool IsTestCredential => AccessToken.StartsWith("TEST-", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>

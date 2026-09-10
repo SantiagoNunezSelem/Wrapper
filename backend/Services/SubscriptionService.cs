@@ -193,7 +193,7 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken)
     {
         var preapproval = await client.CreateSubscriptionAsync(
-            user.Email,
+            string.IsNullOrWhiteSpace(_options.TestPayerEmail) ? user.Email : _options.TestPayerEmail,
             subscription.Id.ToString(),
             withTrial,
             cancellationToken);

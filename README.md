@@ -186,6 +186,20 @@ Apenas el backend arranca, avisa qué credenciales está usando:
 info: Payments[0] Mercado Pago ready (test credentials): 7800 ARS every 1 months, 7 days free trial.
 ```
 
+> **No te fíes de ese "test/production": `APP_USR-` no distingue nada.** Un usuario de
+> prueba creado en el panel tiene su propia aplicación, y su access token empieza con
+> `APP_USR-` igual que uno de producción. Sólo las credenciales de *tu propia app* en modo
+> prueba empiezan con `TEST-`, y es lo único que ese cartel detecta. Para saber de verdad
+> de quién es un token:
+>
+> ```bash
+> curl -s https://api.mercadopago.com/users/me -H "Authorization: Bearer TU_TOKEN" | grep -o '"nickname":"[^"]*"'
+> ```
+>
+> Un nickname `TESTUSER…` es un usuario de prueba. Esto importa porque un vendedor de
+> prueba **rechaza todo pagador real** con `400 Both payer and collector must be real or
+> test users`, y el error no dice cuál de los dos está mal.
+
 ### 2. Cuentas y tarjetas de prueba
 
 Para simular compradores reales en el sandbox de Mercado Pago (por ejemplo, si probás el
@@ -195,6 +209,25 @@ checkout desde el propio sitio de Mercado Pago en vez de por API):
 | --- | --- | --- | --- | --- |
 | Comprador | `3587267080` | `TESTUSER3495729252306500887` | `avlnIQqBTf` | `267080` |
 | Vendedor | `3587267082` | `TESTUSER4000554943837637660` | `eiukCdxpbt` | `267082` |
+
+> **Para ejercitar el checkout entero contra el vendedor de prueba hace falta
+> `MercadoPago:TestPayerEmail`.** El `payer_email` que manda el checkout es el mail de
+> Google del que está logueado, y ése es un pagador *real*: contra un vendedor de prueba
+> Mercado Pago lo rechaza con `400 Both payer and collector must be real or test users`.
+> El mail del comprador de prueba es un `@testuser.com` generado, con el que no se puede
+> entrar por Google, así que se pasa por configuración:
+>
+> ```bash
+> dotnet user-secrets set "MercadoPago:TestPayerEmail" "test_user_...@testuser.com"
+> ```
+>
+> El mail exacto está en el panel de Mercado Pago (Tus integraciones → tu app → Cuentas de
+> prueba), o pidiéndolo por API con el token del vendedor:
+> `curl -s https://api.mercadopago.com/users/test_user -H "Authorization: Bearer ..."`.
+>
+> **Vaciala antes de cobrar de verdad.** Mientras esté puesta, *todos* los checkouts se
+> abren a nombre de ese pagador, no del cliente. El backend lo grita al arrancar, pero
+> nada más en la app se vería raro.
 
 Tarjetas de prueba (Argentina):
 
@@ -329,6 +362,7 @@ Todo en `backend\appsettings.json`, bajo `MercadoPago`:
 | `TrialFrequency` / `TrialFrequencyType` | `7` / `days` | Duración del trial. |
 | `FailedPaymentGraceDays` | `3` | Días de acceso tras un cobro rechazado, mientras Mercado Pago reintenta. |
 | `BackUrl` | `http://localhost:5173` | **En producción tiene que ser el origen real del sitio** (`https://vistazo.app`). Mercado Pago rechaza un `back_url` que apunte a localhost, así que con el default el pagador termina en mercadopago.com y nunca vuelve a `/suscripcion` — con lo cual la re-consulta inmediata post-pago no corre. El backend lo avisa al arrancar. |
+| `TestPayerEmail` | *(vacío)* | **Solo para pruebas.** Manda este mail como `payer_email` en vez del usuario logueado, que es la única forma de ejercitar el checkout contra un vendedor de prueba (ver arriba). **En producción tiene que estar vacío**: si no, todos los checkouts se abren a nombre de esa persona. |
 | `ReconcileIntervalMinutes` | `15` | Cada cuánto corre el reconciliador. `0` lo apaga. |
 | `PendingCheckoutHours` | `48` | Cuánto tiempo un checkout sin terminar se sigue ofreciendo para retomar (y se sigue consultando). Después se da por abandonado. |
 | `ManageUrl` | `https://www.mercadopago.com.ar/subscriptions` | Adónde manda "Cambiar la tarjeta". Mercado Pago **no tiene API** para reemplazar la tarjeta de un preapproval existente: se hace desde la cuenta del pagador, así que la app linkea en vez de fingir un formulario que no puede guardar. |

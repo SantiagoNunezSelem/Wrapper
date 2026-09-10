@@ -861,6 +861,35 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TestPayerEmail_reemplaza_al_mail_del_usuario_sin_romper_el_vinculo()
+    {
+        // Mercado Pago rechaza un preapproval cuyo pagador y cobrador no sean los dos
+        // reales o los dos de prueba, y el mail de un comprador de prueba es un
+        // @testuser.com con el que no se puede entrar por Google. Sin esta opción el
+        // checkout no se puede ejercitar entero contra un vendedor de prueba.
+        RouteMercadoPago();
+        var options = new MercadoPagoOptions
+        {
+            AccessToken = "TEST-1",
+            TestPayerEmail = "test_user_9999@testuser.com",
+        };
+        var user = CreateUser();
+
+        var result = await Service(options).StartCheckoutAsync(user, Context(), null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+        Assert.Contains("test_user_9999@testuser.com", create.Body);
+        Assert.DoesNotContain(user.Email, create.Body);
+
+        // Lo que importa: cambiar el mail no desengancha nada. El vínculo real es el
+        // external_reference y el id que vuelve, los dos guardados antes del redirect.
+        Assert.Contains(result.SubscriptionId.ToString(), create.Body);
+        Assert.Equal("pre-1", (await _db.NewContext().Subscriptions.SingleAsync()).ExternalSubscriptionId);
+    }
+
+    [Fact]
     public async Task El_trial_viaja_en_el_preapproval_de_cada_pagador()
     {
         RouteMercadoPago();

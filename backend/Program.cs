@@ -724,6 +724,17 @@ static void LogPaymentsConfiguration(WebApplication app)
             mercadoPago.BackUrl);
     }
 
+    if (!string.IsNullOrWhiteSpace(mercadoPago.TestPayerEmail))
+    {
+        // Deliberately alarming. On a real deployment this bills every customer's checkout
+        // to one address, and nothing else in the app would look wrong while it happened.
+        logger.LogWarning(
+            "MercadoPago:TestPayerEmail is set to {Email} — EVERY checkout will be opened as that payer " +
+            "instead of the signed-in customer. This is a testing-only switch; clear it before taking " +
+            "real payments.",
+            mercadoPago.TestPayerEmail);
+    }
+
     logger.LogInformation(
         mercadoPago.ReconcileIntervalMinutes > 0
             ? "Subscription reconciliation runs every {Interval} min, so a lost webhook self-heals."
