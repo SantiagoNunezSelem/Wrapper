@@ -92,6 +92,7 @@ builder.Services.AddSingleton<ClientFingerprint>();
 builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<AdminDashboardService>();
 // The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
 // notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
 // there are no credentials.
@@ -672,6 +673,7 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
 app.MapSubscriptionEndpoints();
 app.MapFreeUnlockEndpoints();
 app.MapShareEndpoints();
+app.MapAdminEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);

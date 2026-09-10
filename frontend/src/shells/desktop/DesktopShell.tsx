@@ -319,6 +319,12 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                     {copy.manageSubscription}
                   </button>
 
+                  {user.isAdmin ? (
+                    <button type="button" className="account-menu-action" onClick={() => window.location.assign('/admin')}>
+                      {copy.adminPanel}
+                    </button>
+                  ) : null}
+
                   {canInstallApp ? (
                     <button
                       type="button"

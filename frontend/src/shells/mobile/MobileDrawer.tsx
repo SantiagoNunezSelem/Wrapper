@@ -157,6 +157,9 @@ function DrawerPanel({
             highlight={Boolean(user?.hasVipAccess)}
             onClick={onManageSubscription}
           />
+          {user?.isAdmin ? (
+            <DrawerItem icon={<ShieldIcon size={17} />} label={copy.adminPanel} onClick={() => window.location.assign('/admin')} />
+          ) : null}
           <DrawerItem
             icon={<GlobeIcon size={17} />}
             label={m.drawer.language}

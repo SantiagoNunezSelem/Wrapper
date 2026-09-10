@@ -195,6 +195,7 @@ export const shellCopy = {
       installUnavailable: 'Buscá "Instalar app" o "Agregar a pantalla de inicio" en el menú ⋮ del navegador.',
     },
     manageSubscription: 'Gestionar suscripción',
+    adminPanel: 'Panel admin',
     vipPopover: {
       eyebrow: 'Métricas Pro',
       title: 'Desbloqueá VIP',
@@ -708,6 +709,7 @@ export const shellCopy = {
       installUnavailable: 'Look for "Install app" or "Add to Home screen" in the browser\'s ⋮ menu.',
     },
     manageSubscription: 'Manage subscription',
+    adminPanel: 'Admin panel',
     vipPopover: {
       eyebrow: 'Pro metrics',
       title: 'Unlock VIP',

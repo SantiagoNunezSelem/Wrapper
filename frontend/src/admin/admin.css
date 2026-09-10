@@ -1,0 +1,543 @@
+/* ==========================================================================
+   Panel admin — sobre los mismos tokens de Vistazo (styles/tokens.css).
+   Sólo lo carga el chunk del panel.
+   ========================================================================== */
+
+.adm-app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  background: var(--vz-app-background);
+  color: var(--vz-text-muted);
+  font: 14px/1.5 var(--vz-font-sans);
+}
+
+.adm-side {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 14px;
+  border-right: 1px solid var(--vz-hairline);
+}
+
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  color: var(--vz-text-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.adm-orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vz-brand-sweep);
+  box-shadow: var(--vz-shadow-brand);
+}
+
+.adm-tag {
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-pill);
+  padding: 0 7px;
+  color: var(--vz-text-dim);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.adm-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.adm-nav-item {
+  text-align: left;
+  border: 0;
+  border-radius: var(--vz-radius-xs);
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--vz-text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.adm-nav-item:hover {
+  background: var(--vz-surface-2);
+  color: var(--vz-text);
+}
+
+.adm-nav-item.is-on {
+  background: var(--vz-surface-4);
+  color: var(--vz-text-strong);
+  font-weight: 600;
+}
+
+.adm-side-foot {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.adm-side-links {
+  display: flex;
+  gap: 14px;
+}
+
+.adm-main {
+  min-width: 0;
+  padding: 26px clamp(16px, 3vw, 36px) 48px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.adm-title {
+  margin: 0;
+  color: var(--vz-text-strong);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.adm-stack {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.adm-stack.is-refreshing,
+.adm-grid-inbox.is-refreshing {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.adm-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.adm-grid-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.adm-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.adm-grid-inbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 14px;
+  align-items: start;
+}
+
+.adm-grid-users {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+/* --- Tarjetas y cifras ---------------------------------------------------- */
+
+.adm-card {
+  min-width: 0;
+  background: var(--vz-surface-2);
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-sm);
+  padding: 16px 18px;
+}
+
+.adm-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.adm-card-head h3 {
+  margin: 0;
+  color: var(--vz-text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.adm-tile {
+  display: grid;
+  gap: 4px;
+}
+
+.adm-tile-label {
+  color: var(--vz-text-dim);
+  font-size: 12.5px;
+}
+
+.adm-tile-value {
+  color: var(--vz-text-strong);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.adm-tile-sub {
+  color: var(--vz-text-faint);
+  font-size: 12px;
+}
+
+.adm-tile.is-pending {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--vz-hairline-strong);
+}
+
+.adm-tile.is-pending .adm-tile-value {
+  color: var(--vz-text-faint);
+}
+
+.adm-up { color: var(--vz-success-text); }
+.adm-down { color: var(--vz-danger-text); }
+.adm-muted { margin: 0; color: var(--vz-text-dim); }
+.adm-faint { margin: 0; color: var(--vz-text-faint); font-size: 12px; }
+
+.adm-eyebrow {
+  margin: 4px 0 0;
+  color: var(--vz-text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.adm-empty {
+  margin: 0;
+  color: var(--vz-text-dim);
+}
+
+/* --- Controles ------------------------------------------------------------ */
+
+.adm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adm-chip,
+.adm-button {
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-pill);
+  padding: 5px 13px;
+  background: var(--vz-surface-2);
+  color: var(--vz-text);
+  font: 500 12.5px var(--vz-font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.adm-chip.is-on {
+  background: var(--vz-text-strong);
+  color: var(--vz-on-brand);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.adm-button.is-primary {
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.adm-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.adm-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--vz-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.adm-app :focus-visible {
+  outline: 2px solid var(--vz-brand-cyan);
+  outline-offset: 2px;
+}
+
+/* --- Estados: forma + texto, nunca color solo ------------------------------ */
+
+.adm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--vz-radius-pill);
+  padding: 1px 9px;
+  background: var(--vz-surface-4);
+  color: var(--vz-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.adm-pill.is-ok { background: var(--vz-success-bg); color: var(--vz-success-text); }
+.adm-pill.is-bad { background: var(--vz-danger-bg); color: var(--vz-danger-text); }
+.adm-pill.is-warn { background: var(--vz-warning-bg); color: var(--vz-warning-text); }
+
+/* --- Tablas y datos ------------------------------------------------------- */
+
+.adm-table-scroll { overflow-x: auto; }
+
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-table th {
+  padding: 0 10px 8px 0;
+  border-bottom: 1px solid var(--vz-hairline);
+  color: var(--vz-text-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.adm-table td {
+  padding: 9px 10px 9px 0;
+  border-bottom: 1px solid var(--vz-hairline);
+  color: var(--vz-text-muted);
+}
+
+.adm-table tr:last-child td { border-bottom: 0; }
+.adm-num { text-align: right; padding-right: 0 !important; }
+
+.adm-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.adm-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adm-facts dt { color: var(--vz-text-faint); }
+
+.adm-facts dd {
+  margin: 0;
+  color: var(--vz-text-strong);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.adm-code {
+  font: 12px ui-monospace, Consolas, monospace;
+  color: var(--vz-text-muted);
+}
+
+/* --- Gráficos ------------------------------------------------------------- */
+
+.adm-chart { position: relative; }
+.adm-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.adm-grid { stroke: var(--vz-hairline); stroke-width: 1; }
+.adm-tick { fill: var(--vz-text-faint); font: 11px var(--vz-font-sans); }
+
+.adm-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  pointer-events: none;
+  padding: 6px 9px;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: 8px;
+  background: #020617;
+  color: var(--vz-text-strong);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* --- Urgencias ------------------------------------------------------------ */
+
+.adm-inbox {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.adm-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 16px 13px 20px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-surface-2);
+}
+
+/* La franja dice la gravedad; la píldora de al lado la dice con forma y texto. */
+.adm-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sev, var(--vz-text-faint));
+}
+
+.adm-item.is-critical { --sev: #ef4444; }
+.adm-item.is-warning { --sev: #f59e0b; }
+
+.adm-item-body { display: grid; gap: 2px; min-width: 0; }
+.adm-item-title { margin: 0; color: var(--vz-text-strong); font-weight: 600; }
+
+/* --- Usuarios ------------------------------------------------------------- */
+
+.adm-results { display: grid; gap: 10px; align-content: start; }
+
+.adm-search input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-pill);
+  padding: 9px 14px;
+  background: var(--vz-surface-2);
+  color: var(--vz-text-strong);
+  font: inherit;
+}
+
+.adm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.adm-result-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+
+.adm-result {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  border: 0;
+  border-radius: var(--vz-radius-xs);
+  padding: 9px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adm-result:hover { background: var(--vz-surface-2); }
+.adm-result.is-on { background: var(--vz-surface-4); }
+.adm-result-name { color: var(--vz-text-strong); font-weight: 600; }
+
+.adm-pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.adm-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adm-who h2 { margin: 0; color: var(--vz-text-strong); font-size: 18px; }
+
+.adm-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+.adm-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+.adm-timeline li {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.adm-timeline time { color: var(--vz-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.adm-raw {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--vz-hairline);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.6);
+  color: var(--vz-text-dim);
+  font: 12px ui-monospace, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.adm-plain { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+
+.adm-error-text { margin: 10px 0 0; color: var(--vz-danger-text); }
+.adm-error { display: grid; gap: 8px; justify-items: start; }
+
+.adm-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--vz-app-background);
+  color: var(--vz-text-muted);
+  font: 15px/1.5 var(--vz-font-sans);
+}
+
+.adm-gate-card { display: grid; gap: 14px; justify-items: start; max-width: 420px; }
+
+@media (max-width: 1100px) {
+  .adm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm-grid-charts, .adm-grid-inbox, .adm-grid-2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .adm-app { grid-template-columns: minmax(0, 1fr); }
+  .adm-side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .adm-nav { display: flex; }
+  .adm-side-foot { display: none; }
+  .adm-grid-users, .adm-grid-4 { grid-template-columns: minmax(0, 1fr); }
+  .adm-item { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-stack.is-refreshing, .adm-grid-inbox.is-refreshing { transition: none; }
+}

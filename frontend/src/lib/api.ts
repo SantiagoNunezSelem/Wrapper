@@ -55,7 +55,7 @@ function readErrorBody(text: string, status: number): { message: string; code?: 
   }
 }
 
-async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
