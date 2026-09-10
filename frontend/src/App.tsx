@@ -48,8 +48,8 @@ function App() {
     <>
       <TestPayerBanner
         email={vistazo.user?.checkoutTestPayerEmail ?? null}
-        title={vistazo.copy.testPayerBannerTitle}
-        body={vistazo.copy.testPayerBannerBody}
+        title={vistazo.copy.subscriptionPage.testPayerBannerTitle}
+        body={vistazo.copy.subscriptionPage.testPayerBannerBody}
       />
       {isMobile ? <MobileShell vistazo={vistazo} /> : <DesktopShell vistazo={vistazo} />}
     </>

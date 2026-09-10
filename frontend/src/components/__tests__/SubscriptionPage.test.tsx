@@ -25,6 +25,7 @@ const user: UserProfile = {
   hasAiConsent: false,
   aiEnabled: true,
   paymentsEnabled: true,
+  checkoutTestPayerEmail: null,
   preferredLanguage: 'es',
 }
 
