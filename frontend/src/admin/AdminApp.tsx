@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Language, UserProfile } from '../types'
 import { adminCopy, type AdminCopy } from '../copy/adminCopy'
+import { AdminErrorBoundary } from './AdminErrorBoundary'
 import { BusinessSection } from './BusinessSection'
 import { parseAdminPath, pathFor, type AdminRoute } from './route'
 import type { AdminSection } from './types'
@@ -99,11 +100,23 @@ export function AdminApp({
 
       <main className="adm-main">
         <h1 className="adm-title">{route.section === 'urgencias' ? copy.urgencies.title : copy.nav[route.section]}</h1>
-        {route.section === 'negocio' ? <BusinessSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
-        {route.section === 'urgencias' ? <UrgenciesSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
-        {route.section === 'usuarios' ? (
-          <UsersSection token={token} language={language} copy={copy} userId={route.userId} onSelectUser={openUser} />
-        ) : null}
+        <AdminErrorBoundary
+          resetKey={`${route.section}:${route.userId ?? ''}`}
+          fallback={(retry) => (
+            <div className="adm-card adm-error" role="alert">
+              <p>{copy.sectionCrashed}</p>
+              <button type="button" className="adm-button" onClick={retry}>
+                {copy.retry}
+              </button>
+            </div>
+          )}
+        >
+          {route.section === 'negocio' ? <BusinessSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
+          {route.section === 'urgencias' ? <UrgenciesSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
+          {route.section === 'usuarios' ? (
+            <UsersSection token={token} language={language} copy={copy} userId={route.userId} onSelectUser={openUser} />
+          ) : null}
+        </AdminErrorBoundary>
       </main>
     </div>
   )

@@ -34,6 +34,11 @@ export function BusinessSection({
       ? Math.round((data.trialConversion - data.trialConversionPrevious) * 100)
       : null
 
+  // Un gráfico entero en cero no informa nada y encima inventa un eje ("$ 1"): se dice en palabras.
+  const hasSignups = data.signupsByDay.some((value) => value > 0)
+  const hasCollected = data.collectedByMonth.some((item) => item.amount > 0)
+  const signupsTrend = data.newUsers > data.newUsersPrevious ? 'adm-up' : data.newUsers < data.newUsersPrevious ? 'adm-down' : undefined
+
   return (
     <div className={`adm-stack${loading ? ' is-refreshing' : ''}`}>
       <div className="adm-chips" role="group" aria-label={b.periods[days]}>
@@ -52,8 +57,8 @@ export function BusinessSection({
 
       <div className="adm-grid-4">
         <Tile label={b.registered} value={count(data.registeredUsers, language)}>
-          <span className={data.newUsers > 0 ? 'adm-up' : undefined}>
-            {fill(b.registeredDelta, { sign: data.newUsers > 0 ? '+' : '', n: count(data.newUsers, language), days: data.days })}
+          <span className={signupsTrend}>
+            {fill(b.registeredDelta, { n: count(data.newUsers, language), prev: count(data.newUsersPrevious, language), days: data.days })}
           </span>
         </Tile>
         <Tile label={b.pro} value={count(data.proActive, language)}>
@@ -79,16 +84,20 @@ export function BusinessSection({
             <h3 id="adm-signups">{b.signupsTitle}</h3>
             <span className="adm-muted">{fill(b.signupsSub, { n: data.newUsers, days: data.days })}</span>
           </header>
-          <ColumnChart
-            ariaLabel={`${b.signupsTitle}: ${fill(b.signupsSub, { n: data.newUsers, days: data.days })}`}
-            color="var(--vz-brand-violet)"
-            formatTick={(value) => count(value, language)}
-            data={data.signupsByDay.map((value, index) => {
-              const ago = data.signupsByDay.length - 1 - index
-              const when = ago === 0 ? b.today : fill(b.daysAgo, { n: ago })
-              return { value, label: when, tip: fill(b.signupsTip, { n: value, when }) }
-            })}
-          />
+          {hasSignups ? (
+            <ColumnChart
+              ariaLabel={`${b.signupsTitle}: ${fill(b.signupsSub, { n: data.newUsers, days: data.days })}`}
+              color="var(--vz-brand-violet)"
+              formatTick={(value) => count(value, language)}
+              data={data.signupsByDay.map((value, index) => {
+                const ago = data.signupsByDay.length - 1 - index
+                const when = ago === 0 ? b.today : fill(b.daysAgo, { n: ago })
+                return { value, label: when, tip: fill(b.signupsTip, { n: value, when }) }
+              })}
+            />
+          ) : (
+            <p className="adm-muted">{b.signupsEmpty}</p>
+          )}
         </section>
 
         <section className="adm-card" aria-labelledby="adm-collected">
@@ -96,17 +105,21 @@ export function BusinessSection({
             <h3 id="adm-collected">{b.collectedTitle}</h3>
             <span className="adm-muted">{b.collectedSub}</span>
           </header>
-          <ColumnChart
-            ariaLabel={b.collectedTitle}
-            color="var(--vz-brand-cyan)"
-            labels="all"
-            formatTick={(value) => money(value, 'ARS', language)}
-            data={data.collectedByMonth.map((item) => ({
-              value: item.amount,
-              label: monthLabel(item.month, language),
-              tip: `${monthLabel(item.month, language)} · ${money(item.amount, 'ARS', language)}`,
-            }))}
-          />
+          {hasCollected ? (
+            <ColumnChart
+              ariaLabel={b.collectedTitle}
+              color="var(--vz-brand-cyan)"
+              labels="all"
+              formatTick={(value) => money(value, 'ARS', language)}
+              data={data.collectedByMonth.map((item) => ({
+                value: item.amount,
+                label: monthLabel(item.month, language),
+                tip: `${monthLabel(item.month, language)} · ${money(item.amount, 'ARS', language)}`,
+              }))}
+            />
+          ) : (
+            <p className="adm-muted">{b.collectedEmpty}</p>
+          )}
         </section>
       </div>
 

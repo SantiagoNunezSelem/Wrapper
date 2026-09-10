@@ -214,6 +214,54 @@ describe('AdminApp · Urgencias', () => {
   })
 })
 
+describe('AdminApp · robustez', () => {
+  it('una ficha con la moneda en null se dibuja igual', async () => {
+    // Era la ficha del admin: su VIP sembrado es anterior a la columna de moneda, y la
+    // pantalla quedaba en blanco.
+    vi.mocked(api.getAdminUser).mockResolvedValueOnce({
+      ...detail,
+      current: { ...detail.current!, currencyId: null as unknown as string, amount: 0 },
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByRole('heading', { name: 'Martín Rodríguez' })).toBeInTheDocument()
+    expect(screen.getByText(/^mensual · \$\s?0$/)).toBeInTheDocument()
+  })
+
+  it('si una sección se rompe, avisa y el menú sigue andando', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(api.getAdminBusiness).mockResolvedValueOnce({ ...business, signupsByDay: null as unknown as number[] })
+    renderAdmin('/admin')
+
+    expect(await screen.findByText(copy.sectionCrashed)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: copy.nav.urgencias }))
+
+    expect(await screen.findByText(copy.urgencies.kinds.orphan_payment)).toBeInTheDocument()
+    quiet.mockRestore()
+  })
+
+  it('sin datos, los gráficos lo dicen en vez de dibujar ceros', async () => {
+    vi.mocked(api.getAdminBusiness).mockResolvedValueOnce({
+      ...business,
+      newUsers: 0,
+      signupsByDay: Array.from({ length: 30 }, () => 0),
+      collectedByMonth: business.collectedByMonth.map((item) => ({ ...item, amount: 0 })),
+    })
+    renderAdmin('/admin')
+
+    expect(await screen.findByText(copy.business.signupsEmpty)).toBeInTheDocument()
+    expect(screen.getByText(copy.business.collectedEmpty)).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: copy.business.collectedTitle })).not.toBeInTheDocument()
+  })
+
+  it('las altas se comparan con el período previo con los dos números a la vista', async () => {
+    renderAdmin('/admin')
+
+    expect(await screen.findByText('86 altas en 30 días · 70 en los 30 previos')).toBeInTheDocument()
+  })
+})
+
 describe('AdminApp · Usuarios', () => {
   it('busca mientras se escribe, sin una consulta por tecla', async () => {
     renderAdmin('/admin/usuarios')

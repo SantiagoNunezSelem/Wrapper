@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { adminCopy } from '../../copy/adminCopy'
-import { describeEvent, fill, monthLabel, paymentMethod, relative } from '../format'
+import { describeEvent, fill, money, monthLabel, paymentMethod, relative } from '../format'
 import { isAdminPath, parseAdminPath, pathFor } from '../route'
 import { niceMax } from '../scale'
 
 const copy = adminCopy.es
+
+describe('plata en el panel', () => {
+  it('una moneda nula se lee como pesos en vez de romper la pantalla', () => {
+    // Filas anteriores a la columna de moneda la traen en null, e Intl tira una excepción
+    // con eso: fue lo que dejaba en blanco la ficha del admin.
+    expect(money(7800, null, 'es')).toMatch(/\$\s?7\.800/)
+    expect(money(7800, undefined, 'es')).toMatch(/\$\s?7\.800/)
+  })
+
+  it('un código de moneda inválido cae a número y código, sin excepción', () => {
+    expect(money(7800, 'XXXX', 'es')).toBe('7.800 XXXX')
+  })
+})
 const event = { id: '1', action: null, resultingStatus: null, notes: null, createdAtUtc: '2026-09-10T00:00:00Z' }
 
 describe('formato del panel', () => {

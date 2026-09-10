@@ -174,7 +174,10 @@ function UserDetailPanel({
               <ul className="adm-plain">
                 {d.subscriptions.map((item) => (
                   <li key={item.id}>
-                    <StatusPill status={item.status} copy={copy} /> <span className="adm-faint">{dateShort(item.createdAtUtc, language)}</span>
+                    <StatusPill status={item.status} copy={copy} />{' '}
+                    <span className="adm-faint">
+                      {item.planType} · {money(item.amount, item.currencyId, language)} · {dateShort(item.createdAtUtc, language)}
+                    </span>
                   </li>
                 ))}
               </ul>

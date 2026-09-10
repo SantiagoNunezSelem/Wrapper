@@ -9,8 +9,18 @@ export function fill(template: string, values: Record<string, string | number>):
   return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template)
 }
 
-export function money(amount: number, currency: string, language: Language): string {
-  return new Intl.NumberFormat(locale(language), { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
+/**
+ * Filas anteriores a la columna de moneda la traen en null, y `Intl` con `currency: null`
+ * no devuelve un texto raro: tira una excepción que se lleva la pantalla entera. La app sólo
+ * cobra en pesos, así que ARS es la lectura correcta de ese null.
+ */
+export function money(amount: number, currency: string | null | undefined, language: Language): string {
+  const code = currency || 'ARS'
+  try {
+    return new Intl.NumberFormat(locale(language), { style: 'currency', currency: code, maximumFractionDigits: 0 }).format(amount)
+  } catch {
+    return `${new Intl.NumberFormat(locale(language)).format(amount)} ${code}`
+  }
 }
 
 export function count(value: number, language: Language): string {
@@ -21,8 +31,9 @@ export function percent(value: number, language: Language): string {
   return new Intl.NumberFormat(locale(language), { style: 'percent', maximumFractionDigits: 0 }).format(value)
 }
 
+/** Año con cuatro cifras: el VIP del admin vence en 2099, y "31/12/99" se leía como 1999. */
 export function dateShort(iso: string, language: Language): string {
-  return new Intl.DateTimeFormat(locale(language), { day: 'numeric', month: 'numeric', year: '2-digit' }).format(new Date(iso))
+  return new Intl.DateTimeFormat(locale(language), { day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date(iso))
 }
 
 export function dateTime(iso: string, language: Language): string {
