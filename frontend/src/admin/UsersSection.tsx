@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Language } from '../types'
 import type { AdminCopy } from '../copy/adminCopy'
-import { getAdminUser, searchAdminUsers, syncAdminUser } from './adminApi'
-import { count, dateShort, dateTime, describeEvent, fill, money, paymentMethod, relative } from './format'
-import { LoadError, StatusPill } from './parts'
-import type { AdminSubscription, AdminUserDetail } from './types'
+import { addAdminNote, getAdminUser, searchAdminUsers, syncAdminUser } from './adminApi'
+import { compact, count, dateShort, dateTime, describeEvent, fill, money, paymentMethod, relative } from './format'
+import { ExportButton, LoadError, StatusPill } from './parts'
+import type { AdminNote, AdminSubscription, AdminUserDetail } from './types'
 import { useAdminLoad } from './useAdminLoad'
 
 /** Usuarios: buscar una cuenta y verla entera. El soporte de "pagué y no tengo acceso". */
@@ -50,7 +50,10 @@ export function UsersSection({
 
         {list.data ? (
           <>
-            <p className="adm-faint">{fill(s.results, { n: count(list.data.total, language) })}</p>
+            <div className="adm-row">
+              <p className="adm-faint">{fill(s.results, { n: count(list.data.total, language) })}</p>
+              <ExportButton token={token} kind="users" copy={copy} />
+            </div>
             {list.data.items.length === 0 ? (
               <p className="adm-muted">{s.noResults}</p>
             ) : (
@@ -74,11 +77,11 @@ export function UsersSection({
             {pages > 1 ? (
               <div className="adm-pager">
                 <button type="button" className="adm-button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
-                  {s.prev}
+                  {copy.prev}
                 </button>
                 <span className="adm-faint">{page} / {pages}</span>
                 <button type="button" className="adm-button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>
-                  {s.next}
+                  {copy.next}
                 </button>
               </div>
             ) : null}
@@ -144,6 +147,7 @@ function UserDetailPanel({
           <p className="adm-muted">
             {d.email} · {fill(s.joined, { date: dateShort(d.createdAtUtc, language) })}
           </p>
+          <p className="adm-faint">{d.lastSeenAtUtc ? fill(s.lastSeen, { when: relative(d.lastSeenAtUtc, now, language) }) : s.lastSeenNever}</p>
         </div>
         <div className="adm-badges">
           <StatusPill status={d.state} copy={copy} />
@@ -257,6 +261,7 @@ function UserDetailPanel({
                 {d.usage.aiMetricsFailed > 0 ? <span className="adm-faint"> · {fill(s.aiFailed, { n: d.usage.aiMetricsFailed })}</span> : null}
               </dd>
             </div>
+            <div><dt>{s.aiTokens}</dt><dd>{compact(d.usage.aiTokens, language)}</dd></div>
             <div><dt>{s.freeUnlocks}</dt><dd>{d.usage.freeUnlocks}</dd></div>
             <div>
               <dt>{s.trialClaims}</dt>
@@ -268,7 +273,91 @@ function UserDetailPanel({
           </dl>
         </section>
       </div>
+
+      <NotesCard
+        token={token}
+        userId={userId}
+        notes={d.notes}
+        copy={copy}
+        language={language}
+        now={now}
+        onAdded={(note) => detail.update((current) => ({ ...current, notes: [note, ...current.notes] }))}
+      />
     </div>
+  )
+}
+
+/** Lo que el soporte sabe de la cuenta y no está en ningún otro lado. Se agrega, no se edita. */
+function NotesCard({
+  token,
+  userId,
+  notes,
+  copy,
+  language,
+  now,
+  onAdded,
+}: {
+  token: string
+  userId: string
+  notes: AdminNote[]
+  copy: AdminCopy
+  language: Language
+  now: number
+  onAdded: (note: AdminNote) => void
+}) {
+  const s = copy.users
+  const [text, setText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const clean = text.trim()
+    if (!clean) {
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    try {
+      onAdded(await addAdminNote(token, userId, clean))
+      setText('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="adm-card" aria-labelledby="adm-notes">
+      <header className="adm-card-head">
+        <h3 id="adm-notes">{s.notes}</h3>
+        <span className="adm-faint">{s.notesHint}</span>
+      </header>
+      {notes.length === 0 ? (
+        <p className="adm-muted adm-notes-empty">{s.noNotes}</p>
+      ) : (
+        <ul className="adm-notes">
+          {notes.map((note) => (
+            <li key={note.id}>
+              <p className="adm-note-text">{note.text}</p>
+              <p className="adm-faint">{fill(s.noteBy, { author: note.authorEmail, when: relative(note.createdAtUtc, now, language) })}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="adm-note-form" onSubmit={submit}>
+        <label>
+          <span className="adm-sr">{s.noteLabel}</span>
+          <textarea value={text} maxLength={2000} rows={2} placeholder={s.notePlaceholder} onChange={(event) => setText(event.target.value)} />
+        </label>
+        <button type="submit" className="adm-button" disabled={saving || !text.trim()}>
+          {saving ? s.savingNote : s.addNote}
+        </button>
+      </form>
+      {error ? <p className="adm-error-text" role="alert">{error}</p> : null}
+    </section>
   )
 }
 

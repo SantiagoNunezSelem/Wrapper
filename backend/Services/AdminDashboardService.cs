@@ -7,9 +7,9 @@ using Microsoft.Extensions.Options;
 namespace backend.Services;
 
 /// <summary>
-/// Everything the admin panel reads, in one place: the business numbers, what needs
-/// attention, and one account in full. Read-only by design — the only thing the panel
-/// can change is a re-read from Mercado Pago, which the endpoint does through
+/// What the three core sections of the admin panel read: the business numbers, what needs
+/// attention, and one account in full. Read-only by design — the only write the panel has
+/// is a re-read from Mercado Pago, which the endpoint does through
 /// <see cref="SubscriptionService.SyncAsync"/>.
 ///
 /// Lists are paginated and aggregates are computed here, never in the browser: the panel
@@ -18,6 +18,7 @@ namespace backend.Services;
 public sealed class AdminDashboardService(
     AppDbContext db,
     IOptions<MercadoPagoOptions> options,
+    IOptions<GoogleAiOptions> aiOptions,
     MercadoPagoWebhookLog webhookLog)
 {
     /// <summary>Days are cut in Argentina's time, where the customers are. It has had no
@@ -29,12 +30,29 @@ public sealed class AdminDashboardService(
     /// <summary>A charge Mercado Pago is working on counts as stuck after this long.</summary>
     public static readonly TimeSpan PendingTooLong = TimeSpan.FromHours(2);
 
+    /// <summary>How far ahead a free week ending counts as worth a look.</summary>
+    public static readonly TimeSpan TrialEndingSoon = TimeSpan.FromHours(48);
+
     private const string OrphanNote = "No matching local subscription";
     private const string TrialDeniedPrefix = "trial denied: ";
 
     private readonly MercadoPagoOptions _options = options.Value;
+    private readonly GoogleAiOptions _aiOptions = aiOptions.Value;
 
-    private static DateTime Local(DateTime utc) => utc + ReportingOffset;
+    public static DateTime Local(DateTime utc) => utc + ReportingOffset;
+
+    /// <summary>Start of the local calendar month that contains <paramref name="now"/>, in UTC.</summary>
+    public static DateTime MonthStartUtc(DateTime now)
+    {
+        var local = Local(now);
+        return new DateTime(local.Year, local.Month, 1) - ReportingOffset;
+    }
+
+    /// <summary>What the configured prices say those tokens cost. Null when no price is set.</summary>
+    public static decimal? CostUsd(long inputTokens, long outputTokens, GoogleAiOptions prices) =>
+        prices.InputPricePerMillionUsd <= 0 && prices.OutputPricePerMillionUsd <= 0
+            ? null
+            : (inputTokens * prices.InputPricePerMillionUsd + outputTokens * prices.OutputPricePerMillionUsd) / 1_000_000m;
 
     /// <summary>The seeded admin VIP and the dev toggle are not customers.</summary>
     private IQueryable<Subscription> RealSubscriptions() =>
@@ -55,10 +73,10 @@ public sealed class AdminDashboardService(
         // Bounded by the window, not by the size of the user table.
         var signups = await db.Users
             .Where(user => user.CreatedAtUtc >= previousFrom)
-            .Select(user => user.CreatedAtUtc)
+            .Select(user => new { user.Id, user.CreatedAtUtc })
             .ToListAsync(cancellationToken);
 
-        var newInPeriod = signups.Count(moment => moment >= from);
+        var cohort = signups.Where(item => item.CreatedAtUtc >= from).Select(item => item.Id).ToList();
 
         // SQLite cannot sum decimals in SQL, so the handful of active amounts come back
         // and are added up here.
@@ -68,14 +86,13 @@ public sealed class AdminDashboardService(
             .ToListAsync(cancellationToken);
 
         var inTrial = await RealSubscriptions().CountAsync(item => item.Status == "trial", cancellationToken);
-        var newPro = await RealSubscriptions()
-            .CountAsync(item => item.SubscriptionStartsAtUtc >= from, cancellationToken);
+        var newPro = await RealSubscriptions().CountAsync(item => item.SubscriptionStartsAtUtc >= from, cancellationToken);
 
         var today = Local(now).Date;
         var signupsByDay = new int[days];
-        foreach (var moment in signups)
+        foreach (var item in signups)
         {
-            var index = days - 1 - (today - Local(moment).Date).Days;
+            var index = days - 1 - (today - Local(item.CreatedAtUtc).Date).Days;
             if (index >= 0 && index < days)
             {
                 signupsByDay[index]++;
@@ -89,15 +106,24 @@ public sealed class AdminDashboardService(
             .Select(invoice => new { invoice.PaidAtUtc, invoice.Amount })
             .ToListAsync(cancellationToken);
 
-        var collectedByMonth = Enumerable.Range(0, 6)
-            .Select(offset =>
-            {
-                var month = firstMonth.AddMonths(offset);
-                var total = paid
-                    .Where(item => Local(item.PaidAtUtc!.Value) is var local && local.Year == month.Year && local.Month == month.Month)
-                    .Sum(item => item.Amount);
-                return new MonthTotal(month.ToString("yyyy-MM"), total);
-            })
+        var months = Enumerable.Range(0, 6).Select(offset => firstMonth.AddMonths(offset)).ToList();
+        static bool InMonth(DateTime? utc, DateTime month) =>
+            utc is { } value && Local(value) is var local && local.Year == month.Year && local.Month == month.Month;
+
+        var collectedByMonth = months
+            .Select(month => new MonthTotal(month.ToString("yyyy-MM"), paid.Where(item => InMonth(item.PaidAtUtc, month)).Sum(item => item.Amount)))
+            .ToList();
+
+        var movements = await RealSubscriptions()
+            .Where(item => item.SubscriptionStartsAtUtc >= firstMonthUtc || item.CancelledAtUtc >= firstMonthUtc)
+            .Select(item => new { item.SubscriptionStartsAtUtc, item.CancelledAtUtc })
+            .ToListAsync(cancellationToken);
+
+        var proMovements = months
+            .Select(month => new ProMovement(
+                month.ToString("yyyy-MM"),
+                movements.Count(item => InMonth(item.SubscriptionStartsAtUtc, month)),
+                movements.Count(item => InMonth(item.CancelledAtUtc, month))))
             .ToList();
 
         var latest = await RealSubscriptions()
@@ -106,11 +132,30 @@ public sealed class AdminDashboardService(
             .Select(item => new LatestSubscription(item.UserId, item.User!.Email, item.Status, item.Amount, item.CurrencyId, item.CreatedAtUtc))
             .ToListAsync(cancellationToken);
 
+        // Null until the first account is seen: "0 activos" would read as a dead app, when
+        // it only means nobody has opened it since the column existed.
+        var tracked = await db.Users.AnyAsync(user => user.LastSeenAtUtc != null, cancellationToken);
+        int? active7 = tracked ? await db.Users.CountAsync(user => user.LastSeenAtUtc >= now.AddDays(-7), cancellationToken) : null;
+        int? active30 = tracked ? await db.Users.CountAsync(user => user.LastSeenAtUtc >= now.AddDays(-30), cancellationToken) : null;
+
+        var monthStart = MonthStartUtc(now);
+        var tokens = await db.AiUsage
+            .Where(item => item.CreatedAtUtc >= monthStart)
+            .GroupBy(_ => 1)
+            .Select(group => new { Input = group.Sum(item => (long)item.InputTokens), Output = group.Sum(item => (long)item.OutputTokens) })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var funnel = new FunnelReport(
+            cohort.Count,
+            await db.Analyses.Where(item => cohort.Contains(item.UserId)).Select(item => item.UserId).Distinct().CountAsync(cancellationToken),
+            await RealSubscriptions().Where(item => cohort.Contains(item.UserId)).Select(item => item.UserId).Distinct().CountAsync(cancellationToken),
+            await db.SubscriptionInvoices.Where(item => cohort.Contains(item.UserId) && item.Status == "aprobado").Select(item => item.UserId).Distinct().CountAsync(cancellationToken));
+
         return new BusinessReport(
             days,
             registered,
-            newInPeriod,
-            signups.Count - newInPeriod,
+            cohort.Count,
+            signups.Count - cohort.Count,
             activeAmounts.Count,
             inTrial,
             newPro,
@@ -119,7 +164,14 @@ public sealed class AdminDashboardService(
             await ConversionAsync(previousFrom, from, cancellationToken),
             signupsByDay,
             collectedByMonth,
-            latest);
+            latest,
+            active7,
+            active30,
+            tokens?.Input ?? 0,
+            tokens?.Output ?? 0,
+            CostUsd(tokens?.Input ?? 0, tokens?.Output ?? 0, _aiOptions),
+            funnel,
+            proMovements);
     }
 
     /// <summary>
@@ -151,7 +203,11 @@ public sealed class AdminDashboardService(
     // Urgencias
     // ---------------------------------------------------------------------------
 
-    public async Task<UrgencyReport> GetUrgenciesAsync(DateTime now, CancellationToken cancellationToken)
+    /// <param name="seller">
+    /// Who the configured access token belongs to, when that could be asked — passed in
+    /// rather than fetched here, so this stays a query over the database.
+    /// </param>
+    public async Task<UrgencyReport> GetUrgenciesAsync(DateTime now, MercadoPagoAccount? seller, CancellationToken cancellationToken)
     {
         var items = new List<Urgency>();
         var dayAgo = now.AddDays(-1);
@@ -166,10 +222,13 @@ public sealed class AdminDashboardService(
         items.AddRange(orphans.Select(item => new Urgency(
             UrgencyKinds.OrphanPayment, UrgencySeverity.Critical, item.CreatedAtUtc, 1, null, null, item.ExternalSubscriptionId, item.Topic, null)));
 
-        var log = webhookLog.Snapshot();
-        var rejected = log.Recent
-            .Where(item => item.Outcome == WebhookOutcomes.Rejected && item.ReceivedAtUtc >= dayAgo)
-            .ToList();
+        // From the database, not the in-memory log: that one resets on deploy, which is
+        // exactly when a rotated secret starts bouncing everything.
+        var rejected = await db.WebhookRejections
+            .Where(item => item.ReceivedAtUtc >= dayAgo)
+            .OrderByDescending(item => item.ReceivedAtUtc)
+            .Select(item => new { item.ReceivedAtUtc, item.Reason })
+            .ToListAsync(cancellationToken);
         if (rejected.Count > 0)
         {
             items.Add(new Urgency(
@@ -192,6 +251,15 @@ public sealed class AdminDashboardService(
             .ToListAsync(cancellationToken);
         items.AddRange(failed.Select(item => new Urgency(
             UrgencyKinds.PaymentFailed, UrgencySeverity.Warning, item.UpdatedAtUtc, 1, item.UserId, item.User?.Email, item.ExternalSubscriptionId, item.LastPaymentStatusDetail, item.GraceEndsAtUtc)));
+
+        // Revenue about to be decided: the first real charge of these runs within two days.
+        var trialHorizon = now + TrialEndingSoon;
+        var endingTrials = await RealSubscriptions()
+            .Include(item => item.User)
+            .Where(item => item.Status == "trial" && item.TrialEndsAtUtc >= now && item.TrialEndsAtUtc <= trialHorizon)
+            .ToListAsync(cancellationToken);
+        items.AddRange(endingTrials.Select(item => new Urgency(
+            UrgencyKinds.TrialEnding, UrgencySeverity.Info, item.CreatedAtUtc, 1, item.UserId, item.User?.Email, item.ExternalSubscriptionId, null, item.TrialEndsAtUtc)));
 
         // "account_used" is someone asking for a second free week on the same account —
         // ordinary, and answered by the paid price. The other reasons are a new account
@@ -222,6 +290,7 @@ public sealed class AdminDashboardService(
             .ThenByDescending(item => item.AtUtc)
             .ToList();
 
+        var log = webhookLog.Snapshot();
         var health = new PaymentsHealth(
             log.StartedAtUtc,
             log.Received,
@@ -230,8 +299,10 @@ public sealed class AdminDashboardService(
             log.LastAcceptedAtUtc,
             _options.ReconcileIntervalMinutes,
             !string.IsNullOrWhiteSpace(_options.WebhookSecret),
-            _options.IsTestCredential,
-            string.IsNullOrWhiteSpace(_options.TestPayerEmail) ? null : _options.TestPayerEmail);
+            _options.IsTestCredential || seller?.IsTestUser == true,
+            string.IsNullOrWhiteSpace(_options.TestPayerEmail) ? null : _options.TestPayerEmail,
+            seller?.Nickname,
+            rejected.Count);
 
         return new UrgencyReport(ordered, health);
     }
@@ -308,6 +379,17 @@ public sealed class AdminDashboardService(
             .Select(item => item.CountryCode)
             .ToListAsync(cancellationToken);
 
+        var tokens = await db.AiUsage
+            .Where(item => item.UserId == id)
+            .Select(item => (long)item.InputTokens + item.OutputTokens)
+            .ToListAsync(cancellationToken);
+
+        var notes = await db.AdminNotes
+            .Where(item => item.UserId == id)
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .Select(item => new AdminNoteDto(item.Id, item.AuthorEmail, item.Text, item.CreatedAtUtc))
+            .ToListAsync(cancellationToken);
+
         var usage = new UserUsage(
             await db.Analyses.CountAsync(item => item.UserId == id, cancellationToken),
             await db.SharedStories.CountAsync(item => item.UserId == id, cancellationToken),
@@ -315,7 +397,8 @@ public sealed class AdminDashboardService(
             aiStatuses.Count(status => status == AiMetricStatus.Failed),
             await db.FreeMetricUnlocks.CountAsync(item => item.UserId == id, cancellationToken),
             trialCountries.Count,
-            [.. trialCountries.Where(code => code is not null).Select(code => code!).Distinct()]);
+            [.. trialCountries.Where(code => code is not null).Select(code => code!).Distinct()],
+            tokens.Sum());
 
         var current = SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user);
 
@@ -334,7 +417,9 @@ public sealed class AdminDashboardService(
             [.. user.Subscriptions.OrderByDescending(item => item.CreatedAtUtc).Select(AdminSubscription.From)],
             invoices,
             events,
-            usage);
+            usage,
+            user.LastSeenAtUtc,
+            notes);
     }
 }
 
@@ -344,6 +429,7 @@ public static class UrgencyKinds
     public const string WebhookRejected = "webhook_rejected";
     public const string PaymentPending = "payment_pending";
     public const string PaymentFailed = "payment_failed";
+    public const string TrialEnding = "trial_ending";
     public const string TrialBlocked = "trial_blocked";
     public const string AiFailing = "ai_failing";
 }
@@ -375,9 +461,21 @@ public sealed record BusinessReport(
     double? TrialConversionPrevious,
     IReadOnlyList<int> SignupsByDay,
     IReadOnlyList<MonthTotal> CollectedByMonth,
-    IReadOnlyList<LatestSubscription> LatestSubscriptions);
+    IReadOnlyList<LatestSubscription> LatestSubscriptions,
+    int? ActiveUsers7,
+    int? ActiveUsers30,
+    long AiInputTokensMonth,
+    long AiOutputTokensMonth,
+    decimal? AiCostMonthUsd,
+    FunnelReport Funnel,
+    IReadOnlyList<ProMovement> ProMovements);
 
 public sealed record MonthTotal(string Month, decimal Amount);
+
+public sealed record ProMovement(string Month, int Started, int Cancelled);
+
+/// <summary>Of the accounts created in the window: how many got to each step.</summary>
+public sealed record FunnelReport(int Registered, int SavedAnalysis, int OpenedCheckout, int Paid);
 
 public sealed record LatestSubscription(Guid UserId, string Email, string Status, decimal Amount, string CurrencyId, DateTime CreatedAtUtc);
 
@@ -406,7 +504,9 @@ public sealed record PaymentsHealth(
     int ReconcileIntervalMinutes,
     bool WebhookSecretConfigured,
     bool UsingTestCredentials,
-    string? TestPayerEmail);
+    string? TestPayerEmail,
+    string? SellerNickname,
+    int RejectedLastDay);
 
 public sealed record UrgencyReport(IReadOnlyList<Urgency> Items, PaymentsHealth Health);
 
@@ -453,6 +553,8 @@ public sealed record AdminInvoice(
 /// payer's details, and nothing on this screen needs it.</summary>
 public sealed record AdminEvent(Guid Id, string Topic, string? Action, string? ResultingStatus, string? Notes, DateTime CreatedAtUtc);
 
+public sealed record AdminNoteDto(Guid Id, string AuthorEmail, string Text, DateTime CreatedAtUtc);
+
 public sealed record UserUsage(
     int SavedAnalyses,
     int SharedStories,
@@ -460,7 +562,8 @@ public sealed record UserUsage(
     int AiMetricsFailed,
     int FreeUnlocks,
     int TrialClaims,
-    IReadOnlyList<string> TrialCountries);
+    IReadOnlyList<string> TrialCountries,
+    long AiTokens = 0);
 
 /// <summary>One account in full — never anything from inside a chat. The AI snippets
 /// (<c>AiMetricResult.InputJson</c>) are message text and are deliberately left out.</summary>
@@ -479,4 +582,6 @@ public sealed record UserDetail(
     IReadOnlyList<AdminSubscription> Subscriptions,
     IReadOnlyList<AdminInvoice> Invoices,
     IReadOnlyList<AdminEvent> Events,
-    UserUsage Usage);
+    UserUsage Usage,
+    DateTime? LastSeenAtUtc,
+    IReadOnlyList<AdminNoteDto> Notes);

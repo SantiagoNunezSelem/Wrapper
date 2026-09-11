@@ -6,9 +6,9 @@ using backend.Tests.Infrastructure;
 namespace backend.Tests.Services;
 
 /// <summary>
-/// Lo que lee el panel de administración. Todo con un "ahora" fijo, así que las ventanas
-/// de tiempo (30 días, 24 horas, el corte en hora argentina) se prueban sin depender del
-/// reloj de la máquina.
+/// Lo que leen las tres secciones principales del panel. Todo con un "ahora" fijo, así
+/// que las ventanas de tiempo (30 días, 24 horas, el corte en hora argentina) se prueban
+/// sin depender del reloj de la máquina.
 /// </summary>
 public class AdminDashboardServiceTests : IDisposable
 {
@@ -18,16 +18,17 @@ public class AdminDashboardServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private AdminDashboardService Service(MercadoPagoOptions? options = null, MercadoPagoWebhookLog? log = null) =>
-        new(_db.Context, Opt.Of(options ?? new MercadoPagoOptions()), log ?? new MercadoPagoWebhookLog());
+    private AdminDashboardService Service(MercadoPagoOptions? options = null, MercadoPagoWebhookLog? log = null, GoogleAiOptions? ai = null) =>
+        new(_db.Context, Opt.Of(options ?? new MercadoPagoOptions()), Opt.Of(ai ?? new GoogleAiOptions()), log ?? new MercadoPagoWebhookLog());
 
-    private User AddUser(DateTime? createdAt = null, string? email = null, string name = "Cuenta", params Subscription[] subscriptions)
+    private User AddUser(DateTime? createdAt = null, string? email = null, string name = "Cuenta", DateTime? lastSeen = null, params Subscription[] subscriptions)
     {
         var user = new User
         {
             Email = email ?? $"{Guid.NewGuid():N}@example.com",
             DisplayName = name,
             CreatedAtUtc = createdAt ?? Now.AddDays(-100),
+            LastSeenAtUtc = lastSeen,
         };
         user.Subscriptions.AddRange(subscriptions);
         _db.Context.Users.Add(user);
@@ -142,6 +143,90 @@ public class AdminDashboardServiceTests : IDisposable
         Assert.Equal("lucia@example.com", Assert.Single(latest).Email);
     }
 
+    [Fact]
+    public async Task Negocio_sin_ningun_ingreso_registrado_los_activos_son_nulos()
+    {
+        // La columna es nueva: "0 activos" diría que nadie usa la app, cuando sólo nadie
+        // la abrió desde que existe.
+        AddUser();
+
+        var report = await Service().GetBusinessAsync(30, Now, default);
+
+        Assert.Null(report.ActiveUsers7);
+        Assert.Null(report.ActiveUsers30);
+    }
+
+    [Fact]
+    public async Task Negocio_los_activos_se_cuentan_por_ultimo_ingreso()
+    {
+        AddUser(lastSeen: Now.AddDays(-2));
+        AddUser(lastSeen: Now.AddDays(-20));
+        AddUser(lastSeen: Now.AddDays(-60));
+
+        var report = await Service().GetBusinessAsync(30, Now, default);
+
+        Assert.Equal(1, report.ActiveUsers7);
+        Assert.Equal(2, report.ActiveUsers30);
+    }
+
+    [Fact]
+    public async Task Negocio_el_embudo_sigue_a_las_cuentas_nuevas_hasta_el_cobro()
+    {
+        var paying = new Subscription { Status = "activa" };
+        var payer = AddUser(Now.AddDays(-3), subscriptions: paying);
+        var browser = AddUser(Now.AddDays(-3));
+        AddUser(Now.AddDays(-3));
+        Save(new SavedAnalysis { UserId = payer.Id, ChatName = "a", SourceHash = "h1" });
+        Save(new SavedAnalysis { UserId = browser.Id, ChatName = "b", SourceHash = "h2" });
+        Save(new SubscriptionInvoice { SubscriptionId = paying.Id, UserId = payer.Id, ExternalPaymentId = "f1", Status = "aprobado", Amount = 7800 });
+
+        var funnel = (await Service().GetBusinessAsync(30, Now, default)).Funnel;
+
+        Assert.Equal(new FunnelReport(3, 2, 1, 1), funnel);
+    }
+
+    [Fact]
+    public async Task Negocio_las_altas_y_bajas_pro_se_agrupan_por_mes()
+    {
+        AddUser(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            SubscriptionStartsAtUtc = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc),
+            CancelledAtUtc = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc),
+        });
+
+        var movements = (await Service().GetBusinessAsync(30, Now, default)).ProMovements;
+
+        Assert.Equal(new ProMovement("2026-09", 1, 1), movements[^1]);
+        Assert.Equal(new ProMovement("2026-08", 0, 0), movements[^2]);
+    }
+
+    [Fact]
+    public async Task Negocio_los_tokens_del_mes_y_su_costo_salen_de_lo_registrado()
+    {
+        var user = AddUser();
+        Save(new AiUsage { UserId = user.Id, MetricId = "redflags", InputTokens = 1000, OutputTokens = 500, Succeeded = true, CreatedAtUtc = Now.AddDays(-1) });
+        Save(new AiUsage { UserId = user.Id, MetricId = "redflags", InputTokens = 9000, OutputTokens = 9000, Succeeded = true, CreatedAtUtc = Now.AddDays(-15) });
+        var prices = new GoogleAiOptions { InputPricePerMillionUsd = 0.1m, OutputPricePerMillionUsd = 0.4m };
+
+        var report = await Service(ai: prices).GetBusinessAsync(30, Now, default);
+
+        Assert.Equal(1000, report.AiInputTokensMonth);
+        Assert.Equal(500, report.AiOutputTokensMonth);
+        Assert.Equal(0.0003m, report.AiCostMonthUsd);
+    }
+
+    [Fact]
+    public async Task Negocio_sin_precios_configurados_no_inventa_un_costo()
+    {
+        var user = AddUser();
+        Save(new AiUsage { UserId = user.Id, MetricId = "redflags", InputTokens = 1000, OutputTokens = 500, CreatedAtUtc = Now.AddDays(-1) });
+
+        var report = await Service().GetBusinessAsync(30, Now, default);
+
+        Assert.Null(report.AiCostMonthUsd);
+    }
+
     // =======================================================================
     // Urgencias
     // =======================================================================
@@ -152,7 +237,7 @@ public class AdminDashboardServiceTests : IDisposable
         AddUser(subscriptions: new Subscription { Status = "pago_fallido", LastPaymentStatusDetail = "cc_rejected_insufficient_amount", GraceEndsAtUtc = Now.AddDays(2) });
         Save(new SubscriptionEvent { Topic = "subscription_preapproval", ExternalSubscriptionId = "pre-x", Notes = "No matching local subscription.", CreatedAtUtc = Now.AddHours(-1) });
 
-        var items = (await Service().GetUrgenciesAsync(Now, default)).Items;
+        var items = (await Service().GetUrgenciesAsync(Now, null, default)).Items;
 
         Assert.Equal(UrgencyKinds.OrphanPayment, items[0].Kind);
         Assert.Equal(UrgencySeverity.Critical, items[0].Severity);
@@ -169,11 +254,23 @@ public class AdminDashboardServiceTests : IDisposable
         AddUser(email: "reciente@example.com", subscriptions: new Subscription { Status = "pendiente", LastPaymentStatusDetail = "pending_contingency", CreatedAtUtc = Now.AddMinutes(-30) });
         AddUser(email: "rechazado@example.com", subscriptions: new Subscription { Status = "pendiente", LastPaymentStatusDetail = "cc_rejected_other_reason", CreatedAtUtc = Now.AddHours(-5) });
 
-        var pending = (await Service().GetUrgenciesAsync(Now, default)).Items
+        var pending = (await Service().GetUrgenciesAsync(Now, null, default)).Items
             .Where(item => item.Kind == UrgencyKinds.PaymentPending)
             .ToList();
 
         Assert.Equal("trabado@example.com", Assert.Single(pending).UserEmail);
+    }
+
+    [Fact]
+    public async Task Urgencias_un_trial_que_vence_en_dos_dias_avisa_y_uno_lejano_no()
+    {
+        AddUser(email: "vence@example.com", subscriptions: new Subscription { Status = "trial", TrialEndsAtUtc = Now.AddHours(20) });
+        AddUser(email: "lejos@example.com", subscriptions: new Subscription { Status = "trial", TrialEndsAtUtc = Now.AddDays(5) });
+
+        var ending = Assert.Single((await Service().GetUrgenciesAsync(Now, null, default)).Items, item => item.Kind == UrgencyKinds.TrialEnding);
+
+        Assert.Equal("vence@example.com", ending.UserEmail);
+        Assert.Equal(Now.AddHours(20), ending.DeadlineUtc);
     }
 
     [Fact]
@@ -184,7 +281,7 @@ public class AdminDashboardServiceTests : IDisposable
         Save(new SubscriptionEvent { Topic = "checkout", Action = "no_trial", Notes = "trial denied: device_used", CreatedAtUtc = Now.AddHours(-3) });
         Save(new SubscriptionEvent { Topic = "checkout", Action = "no_trial", Notes = "trial denied: ip_used", CreatedAtUtc = Now.AddDays(-3) });
 
-        var blocked = Assert.Single((await Service().GetUrgenciesAsync(Now, default)).Items, item => item.Kind == UrgencyKinds.TrialBlocked);
+        var blocked = Assert.Single((await Service().GetUrgenciesAsync(Now, null, default)).Items, item => item.Kind == UrgencyKinds.TrialBlocked);
 
         Assert.Equal("device_used", blocked.Detail);
         Assert.Equal(2, blocked.Count);
@@ -198,7 +295,7 @@ public class AdminDashboardServiceTests : IDisposable
         Save(new AiMetricResult { UserId = user.Id, SourceHash = "b", MetricId = "tonopicante", Status = AiMetricStatus.Failed, ErrorCode = AiErrorCode.Blocked, UpdatedAtUtc = Now.AddHours(-2) });
         Save(new AiMetricResult { UserId = user.Id, SourceHash = "c", MetricId = "redflags", Status = AiMetricStatus.Ready, UpdatedAtUtc = Now.AddHours(-1) });
 
-        var failing = Assert.Single((await Service().GetUrgenciesAsync(Now, default)).Items, item => item.Kind == UrgencyKinds.AiFailing);
+        var failing = Assert.Single((await Service().GetUrgenciesAsync(Now, null, default)).Items, item => item.Kind == UrgencyKinds.AiFailing);
 
         Assert.Equal("tonopicante", failing.Reference);
         Assert.Equal(AiErrorCode.Blocked, failing.Detail);
@@ -206,18 +303,22 @@ public class AdminDashboardServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Urgencias_los_avisos_rechazados_salen_del_registro_y_la_salud_lo_refleja()
+    public async Task Urgencias_los_avisos_rechazados_salen_de_la_base_y_sobreviven_a_un_deploy()
     {
+        // El registro en memoria se vacía en cada deploy; la tabla no. Uno de hace tres días
+        // ya no es urgente.
+        Save(new WebhookRejection { Topic = "payment", DataId = "1", Reason = "Signature mismatch.", ReceivedAtUtc = Now.AddHours(-1) });
+        Save(new WebhookRejection { Topic = "payment", DataId = "2", Reason = "Viejo.", ReceivedAtUtc = Now.AddDays(-3) });
         var log = new MercadoPagoWebhookLog();
-        log.Record(WebhookOutcomes.Rejected, "payment", "1", "Signature mismatch.");
-        log.Record(WebhookOutcomes.Accepted, "payment", "2", null);
+        log.Record(WebhookOutcomes.Accepted, "payment", "3", null);
         var options = new MercadoPagoOptions { AccessToken = "TEST-1", TestPayerEmail = "test_user_1@testuser.com", WebhookSecret = "s" };
 
-        var report = await Service(options, log).GetUrgenciesAsync(DateTime.UtcNow, default);
+        var report = await Service(options, log).GetUrgenciesAsync(Now, null, default);
 
         var rejected = Assert.Single(report.Items, item => item.Kind == UrgencyKinds.WebhookRejected);
         Assert.Equal("Signature mismatch.", rejected.Detail);
-        Assert.Equal(1, report.Health.NotificationsRejected);
+        Assert.Equal(1, rejected.Count);
+        Assert.Equal(1, report.Health.RejectedLastDay);
         Assert.Equal(1, report.Health.NotificationsAccepted);
         Assert.True(report.Health.UsingTestCredentials);
         Assert.True(report.Health.WebhookSecretConfigured);
@@ -225,14 +326,27 @@ public class AdminDashboardServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Urgencias_un_vendedor_de_prueba_con_token_APP_USR_se_marca_como_prueba()
+    {
+        // Exactamente la trampa de esta semana: el prefijo decía producción.
+        var options = new MercadoPagoOptions { AccessToken = "APP_USR-123" };
+
+        var health = (await Service(options).GetUrgenciesAsync(Now, new MercadoPagoAccount(1, "TESTUSER4000554943837637660"), default)).Health;
+
+        Assert.True(health.UsingTestCredentials);
+        Assert.Equal("TESTUSER4000554943837637660", health.SellerNickname);
+    }
+
+    [Fact]
     public async Task Urgencias_sin_nada_raro_la_bandeja_esta_vacia()
     {
         AddUser(subscriptions: new Subscription { Status = "activa" });
 
-        var report = await Service().GetUrgenciesAsync(Now, default);
+        var report = await Service().GetUrgenciesAsync(Now, null, default);
 
         Assert.Empty(report.Items);
         Assert.Null(report.Health.TestPayerEmail);
+        Assert.False(report.Health.UsingTestCredentials);
     }
 
     // =======================================================================
@@ -271,17 +385,19 @@ public class AdminDashboardServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Usuarios_la_ficha_trae_cobros_actividad_y_uso()
+    public async Task Usuarios_la_ficha_trae_cobros_actividad_uso_notas_e_ingreso()
     {
         var subscription = new Subscription { Status = "activa", Amount = 7800, ExternalSubscriptionId = "pre-1", NextBillingAtUtc = DateTime.UtcNow.AddDays(10) };
-        var user = AddUser(email: "martin@example.com", subscriptions: subscription);
+        var user = AddUser(email: "martin@example.com", lastSeen: Now.AddHours(-3), subscriptions: subscription);
         Save(new SubscriptionInvoice { SubscriptionId = subscription.Id, UserId = user.Id, ExternalPaymentId = "p1", Status = "aprobado", Amount = 7800 });
         Save(new SubscriptionEvent { UserId = user.Id, SubscriptionId = subscription.Id, Topic = "subscription_preapproval", Action = "updated", ResultingStatus = "activa" });
         Save(new SavedAnalysis { UserId = user.Id, ChatName = "Grupo", SourceHash = "h1" });
         Save(new SharedStory { UserId = user.Id, Slug = "abc123", SourceHash = "h1", ExpiresAtUtc = DateTime.UtcNow.AddDays(30) });
         Save(new AiMetricResult { UserId = user.Id, SourceHash = "h1", MetricId = "redflags", Status = AiMetricStatus.Ready });
         Save(new AiMetricResult { UserId = user.Id, SourceHash = "h1", MetricId = "tonopicante", Status = AiMetricStatus.Failed });
+        Save(new AiUsage { UserId = user.Id, MetricId = "redflags", InputTokens = 100, OutputTokens = 20 });
         Save(new TrialClaim { UserId = user.Id, CountryCode = "AR" });
+        Save(new AdminNote { UserId = user.Id, AuthorEmail = "admin@example.com", Text = "Pidió factura." });
 
         var detail = await Service().GetUserAsync(user.Id, default);
 
@@ -291,10 +407,13 @@ public class AdminDashboardServiceTests : IDisposable
         Assert.True(detail.HasProAccess);
         Assert.Single(detail.Invoices);
         Assert.Equal("subscription_preapproval", Assert.Single(detail.Events).Topic);
-        Assert.Equal(new UserUsage(1, 1, 2, 1, 0, 1, ["AR"]).SavedAnalyses, detail.Usage.SavedAnalyses);
+        Assert.Equal(1, detail.Usage.SavedAnalyses);
         Assert.Equal(2, detail.Usage.AiMetrics);
         Assert.Equal(1, detail.Usage.AiMetricsFailed);
+        Assert.Equal(120, detail.Usage.AiTokens);
         Assert.Equal(["AR"], detail.Usage.TrialCountries);
+        Assert.Equal(Now.AddHours(-3), detail.LastSeenAtUtc);
+        Assert.Equal("Pidió factura.", Assert.Single(detail.Notes).Text);
     }
 
     [Fact]

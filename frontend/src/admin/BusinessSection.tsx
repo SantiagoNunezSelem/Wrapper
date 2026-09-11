@@ -3,11 +3,10 @@ import type { Language } from '../types'
 import type { AdminCopy } from '../copy/adminCopy'
 import { getAdminBusiness } from './adminApi'
 import { ColumnChart } from './charts'
-import { count, dateShort, fill, money, monthLabel, percent } from './format'
+import { compact, count, dateShort, fill, money, monthLabel, percent, usd } from './format'
+import { LoadError, PeriodChips, StatusPill, Tile } from './parts'
+import type { AdminBusiness, AdminPeriod } from './types'
 import { useAdminLoad } from './useAdminLoad'
-import { LoadError, StatusPill } from './parts'
-
-const PERIODS = [7, 30, 90] as const
 
 /** Negocio: cómo va Vistazo en números. Lo que todavía no se registra se muestra como tal. */
 export function BusinessSection({
@@ -22,7 +21,7 @@ export function BusinessSection({
   onOpenUser: (id: string) => void
 }) {
   const b = copy.business
-  const [days, setDays] = useState<(typeof PERIODS)[number]>(30)
+  const [days, setDays] = useState<AdminPeriod>(30)
   const { data, error, loading, reload } = useAdminLoad(`business:${days}`, () => getAdminBusiness(token, days))
 
   if (!data) {
@@ -41,19 +40,7 @@ export function BusinessSection({
 
   return (
     <div className={`adm-stack${loading ? ' is-refreshing' : ''}`}>
-      <div className="adm-chips" role="group" aria-label={b.periods[days]}>
-        {PERIODS.map((period) => (
-          <button
-            key={period}
-            type="button"
-            className={`adm-chip${period === days ? ' is-on' : ''}`}
-            aria-pressed={period === days}
-            onClick={() => setDays(period)}
-          >
-            {b.periods[period]}
-          </button>
-        ))}
-      </div>
+      <PeriodChips days={days} onChange={setDays} copy={copy} />
 
       <div className="adm-grid-4">
         <Tile label={b.registered} value={count(data.registeredUsers, language)}>
@@ -67,7 +54,7 @@ export function BusinessSection({
         <Tile label={b.mrr} value={money(data.monthlyRecurringRevenue, 'ARS', language)}>
           {fill(b.mrrHint, { n: data.proActive })}
         </Tile>
-        <Tile label={b.conversion} value={data.trialConversion === null ? b.noData : percent(data.trialConversion, language)}>
+        <Tile label={b.conversion} value={data.trialConversion === null ? copy.noData : percent(data.trialConversion, language)}>
           {data.trialConversion === null ? (
             b.noConversion
           ) : conversionDelta === null ? null : (
@@ -77,6 +64,8 @@ export function BusinessSection({
           )}
         </Tile>
       </div>
+
+      <UsageTiles data={data} copy={copy} language={language} />
 
       <div className="adm-grid-charts">
         <section className="adm-card" aria-labelledby="adm-signups">
@@ -91,7 +80,7 @@ export function BusinessSection({
               formatTick={(value) => count(value, language)}
               data={data.signupsByDay.map((value, index) => {
                 const ago = data.signupsByDay.length - 1 - index
-                const when = ago === 0 ? b.today : fill(b.daysAgo, { n: ago })
+                const when = ago === 0 ? copy.today : fill(copy.daysAgo, { n: ago })
                 return { value, label: when, tip: fill(b.signupsTip, { n: value, when }) }
               })}
             />
@@ -123,59 +112,165 @@ export function BusinessSection({
         </section>
       </div>
 
-      <div className="adm-grid-charts">
-        <section className="adm-card" aria-labelledby="adm-latest">
-          <header className="adm-card-head">
-            <h3 id="adm-latest">{b.latestTitle}</h3>
-          </header>
-          {data.latestSubscriptions.length === 0 ? (
-            <p className="adm-muted">{b.latestEmpty}</p>
-          ) : (
-            <div className="adm-table-scroll">
-              <table className="adm-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{b.colUser}</th>
-                    <th scope="col">{b.colStatus}</th>
-                    <th scope="col" className="adm-num">{b.colAmount}</th>
-                    <th scope="col" className="adm-num">{b.colDate}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.latestSubscriptions.map((item) => (
-                    <tr key={`${item.userId}-${item.createdAtUtc}`}>
-                      <td>
-                        <button type="button" className="adm-link" onClick={() => onOpenUser(item.userId)}>
-                          {item.email}
-                        </button>
-                      </td>
-                      <td><StatusPill status={item.status} copy={copy} /></td>
-                      <td className="adm-num">{money(item.amount, item.currencyId, language)}</td>
-                      <td className="adm-num">{dateShort(item.createdAtUtc, language)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="adm-stack" aria-labelledby="adm-missing">
-          <h3 id="adm-missing" className="adm-eyebrow">{b.missingTitle}</h3>
-          <Tile label={b.activeUsers} value={b.noData} pending>{b.activeUsersWhy}</Tile>
-          <Tile label={b.aiSpend} value={b.noData} pending>{b.aiSpendWhy}</Tile>
-        </section>
+      <div className="adm-grid-2">
+        <Funnel data={data} copy={copy} language={language} />
+        <ProMovements data={data} copy={copy} language={language} />
       </div>
+
+      <section className="adm-card" aria-labelledby="adm-latest">
+        <header className="adm-card-head">
+          <h3 id="adm-latest">{b.latestTitle}</h3>
+        </header>
+        {data.latestSubscriptions.length === 0 ? (
+          <p className="adm-muted">{b.latestEmpty}</p>
+        ) : (
+          <div className="adm-table-scroll">
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th scope="col">{b.colUser}</th>
+                  <th scope="col">{b.colStatus}</th>
+                  <th scope="col" className="adm-num">{b.colAmount}</th>
+                  <th scope="col" className="adm-num">{b.colDate}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.latestSubscriptions.map((item) => (
+                  <tr key={`${item.userId}-${item.createdAtUtc}`}>
+                    <td>
+                      <button type="button" className="adm-link" onClick={() => onOpenUser(item.userId)}>
+                        {item.email}
+                      </button>
+                    </td>
+                    <td><StatusPill status={item.status} copy={copy} /></td>
+                    <td className="adm-num">{money(item.amount, item.currencyId, language)}</td>
+                    <td className="adm-num">{dateShort(item.createdAtUtc, language)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
 
-function Tile({ label, value, pending, children }: { label: string; value: string; pending?: boolean; children?: React.ReactNode }) {
+/** Uso y costo. Lo que empezó a registrarse con esta versión dice eso en vez de mostrar un cero. */
+function UsageTiles({ data, copy, language }: { data: AdminBusiness; copy: AdminCopy; language: Language }) {
+  const b = copy.business
+  const share = (n: number) => (data.registeredUsers > 0 ? fill(b.activeShare, { p: percent(n / data.registeredUsers, language) }) : null)
+  const tokens = data.aiInputTokensMonth + data.aiOutputTokensMonth
+
   return (
-    <div className={`adm-card adm-tile${pending ? ' is-pending' : ''}`}>
-      <span className="adm-tile-label">{label}</span>
-      <span className="adm-tile-value">{value}</span>
-      {children ? <span className="adm-tile-sub">{children}</span> : null}
+    <div className="adm-grid-4">
+      {data.activeUsers7 === null || data.activeUsers30 === null ? (
+        <>
+          <Tile label={b.activeUsers7} value={copy.noData} pending>{b.activeSince}</Tile>
+          <Tile label={b.activeUsers30} value={copy.noData} pending>{b.activeSince}</Tile>
+        </>
+      ) : (
+        <>
+          <Tile label={b.activeUsers7} value={count(data.activeUsers7, language)}>{share(data.activeUsers7)}</Tile>
+          <Tile label={b.activeUsers30} value={count(data.activeUsers30, language)}>{share(data.activeUsers30)}</Tile>
+        </>
+      )}
+      {tokens === 0 ? (
+        <Tile label={b.aiTokens} value={copy.noData} pending>{b.aiTokensNone}</Tile>
+      ) : (
+        <Tile label={b.aiTokens} value={compact(tokens, language)}>
+          {fill(b.aiTokensSub, { in: compact(data.aiInputTokensMonth, language), out: compact(data.aiOutputTokensMonth, language) })}
+        </Tile>
+      )}
+      {data.aiCostMonthUsd === null ? (
+        <Tile label={b.aiCost} value={copy.aiPrices.missing} pending>{copy.aiPrices.missingHint}</Tile>
+      ) : (
+        <Tile label={b.aiCost} value={usd(data.aiCostMonthUsd, language)}>{b.aiCostSub}</Tile>
+      )}
     </div>
+  )
+}
+
+/** De las cuentas creadas en el período, cuántas llegaron a cada paso: dónde se cae la gente. */
+function Funnel({ data, copy, language }: { data: AdminBusiness; copy: AdminCopy; language: Language }) {
+  const b = copy.business
+  const f = data.funnel
+  const steps: [string, number][] = [
+    [b.funnelSteps.registered, f.registered],
+    [b.funnelSteps.savedAnalysis, f.savedAnalysis],
+    [b.funnelSteps.openedCheckout, f.openedCheckout],
+    [b.funnelSteps.paid, f.paid],
+  ]
+
+  return (
+    <section className="adm-card" aria-labelledby="adm-funnel">
+      <header className="adm-card-head">
+        <h3 id="adm-funnel">{b.funnelTitle}</h3>
+        <span className="adm-muted">{fill(b.funnelSub, { days: data.days })}</span>
+      </header>
+      {f.registered === 0 ? (
+        <p className="adm-muted">{b.funnelEmpty}</p>
+      ) : (
+        <ol className="adm-funnel">
+          {steps.map(([label, value]) => (
+            <li key={label}>
+              <span className="adm-funnel-label">{label}</span>
+              <span className="adm-funnel-bar" aria-hidden="true">
+                <span style={{ width: `${(value / f.registered) * 100}%` }} />
+              </span>
+              <span className="adm-funnel-value">
+                {count(value, language)} · {percent(value / f.registered, language)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  )
+}
+
+/** Altas y bajas de Pro por mes, el más reciente arriba. */
+function ProMovements({ data, copy, language }: { data: AdminBusiness; copy: AdminCopy; language: Language }) {
+  const b = copy.business
+  const moved = data.proMovements.some((item) => item.started > 0 || item.cancelled > 0)
+
+  return (
+    <section className="adm-card" aria-labelledby="adm-movements">
+      <header className="adm-card-head">
+        <h3 id="adm-movements">{b.movementsTitle}</h3>
+        <span className="adm-muted">{b.movementsSub}</span>
+      </header>
+      {!moved ? (
+        <p className="adm-muted">{b.movementsEmpty}</p>
+      ) : (
+        <div className="adm-table-scroll">
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th scope="col">{b.colMonth}</th>
+                <th scope="col" className="adm-num">{b.colStarted}</th>
+                <th scope="col" className="adm-num">{b.colCancelled}</th>
+                <th scope="col" className="adm-num">{b.colNet}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...data.proMovements].reverse().map((item) => {
+                const net = item.started - item.cancelled
+                return (
+                  <tr key={item.month}>
+                    <td>{monthLabel(item.month, language)}</td>
+                    <td className="adm-num">{item.started}</td>
+                    <td className="adm-num">{item.cancelled}</td>
+                    <td className={`adm-num${net > 0 ? ' adm-up' : net < 0 ? ' adm-down' : ''}`}>
+                      {net > 0 ? `+${net}` : net < 0 ? `−${Math.abs(net)}` : '0'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }

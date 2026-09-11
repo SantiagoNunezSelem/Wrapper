@@ -105,6 +105,10 @@ public sealed class MercadoPagoClient(
     public Task<Preapproval?> GetSubscriptionAsync(string preapprovalId, CancellationToken cancellationToken) =>
         SendAsync<Preapproval>(HttpMethod.Get, $"/preapproval/{preapprovalId}", null, cancellationToken);
 
+    /// <summary>Who the configured access token belongs to — see <see cref="MercadoPagoAccount"/>.</summary>
+    public Task<MercadoPagoAccount?> GetAccountAsync(CancellationToken cancellationToken) =>
+        SendAsync<MercadoPagoAccount>(HttpMethod.Get, "/users/me", null, cancellationToken);
+
     /// <summary>
     /// Finds preapprovals Mercado Pago has on file for a payer. There is no card-token
     /// endpoint to create a subscription from a redirect checkout — the plan's own

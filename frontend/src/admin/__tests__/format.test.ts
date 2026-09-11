@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { adminCopy } from '../../copy/adminCopy'
-import { describeEvent, fill, money, monthLabel, paymentMethod, relative } from '../format'
-import { isAdminPath, parseAdminPath, pathFor } from '../route'
+import { compact, describeEvent, fill, money, monthLabel, paymentMethod, relative, usd } from '../format'
+import { ADMIN_SECTIONS, isAdminPath, parseAdminPath, pathFor } from '../route'
 import { niceMax } from '../scale'
 
 const copy = adminCopy.es
@@ -16,6 +16,20 @@ describe('plata en el panel', () => {
 
   it('un código de moneda inválido cae a número y código, sin excepción', () => {
     expect(money(7800, 'XXXX', 'es')).toBe('7.800 XXXX')
+  })
+
+  it('el gasto de IA muestra centavos en vez de redondearlos a cero', () => {
+    expect(usd(0.0003, 'en')).toBe('$0.0003')
+    expect(usd(0.24, 'en')).toBe('$0.24')
+    expect(usd(12.5, 'en')).toBe('$12.50')
+    expect(usd(0, 'en')).toBe('$0.00')
+  })
+
+  it('los tokens se abrevian', () => {
+    expect(compact(950, 'es')).toBe('950')
+    // Según la versión de ICU, en castellano sale "48 mil" o "48 k".
+    expect(compact(48_000, 'es')).toMatch(/^48\s?(mil|k)$/)
+    expect(compact(1_200_000, 'en')).toBe('1.2M')
   })
 })
 const event = { id: '1', action: null, resultingStatus: null, notes: null, createdAtUtc: '2026-09-10T00:00:00Z' }
@@ -81,15 +95,16 @@ describe('rutas del panel', () => {
     expect(isAdminPath('/')).toBe(false)
   })
 
-  it('ida y vuelta entre ruta y URL', () => {
-    for (const route of [
-      { section: 'negocio', userId: null },
-      { section: 'urgencias', userId: null },
-      { section: 'usuarios', userId: null },
-      { section: 'usuarios', userId: 'u 1' },
-    ] as const) {
-      expect(parseAdminPath(pathFor(route))).toEqual(route)
+  it('ida y vuelta entre ruta y URL, en cada sección', () => {
+    for (const section of ADMIN_SECTIONS) {
+      expect(parseAdminPath(pathFor({ section, userId: null }))).toEqual({ section, userId: null })
     }
+    expect(parseAdminPath(pathFor({ section: 'usuarios', userId: 'u 1' }))).toEqual({ section: 'usuarios', userId: 'u 1' })
     expect(parseAdminPath('/admin/cualquiera')).toEqual({ section: 'negocio', userId: null })
+  })
+
+  it('el id sólo cuenta en usuarios, y uno mal codificado no rompe el panel', () => {
+    expect(parseAdminPath('/admin/cobros/u-1')).toEqual({ section: 'cobros', userId: null })
+    expect(parseAdminPath('/admin/usuarios/%E0%A4%A')).toEqual({ section: 'usuarios', userId: '%E0%A4%A' })
   })
 })

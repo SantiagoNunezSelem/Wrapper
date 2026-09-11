@@ -1,5 +1,9 @@
-/** Las tres secciones del panel. El orden es el del menú. */
-export type AdminSection = 'negocio' | 'urgencias' | 'usuarios'
+/** Las secciones del panel. El orden es el del menú. */
+export type AdminSection = 'negocio' | 'urgencias' | 'usuarios' | 'cobros' | 'ia' | 'producto' | 'sistema'
+
+/** Las ventanas que se pueden elegir en las secciones que miran un período. */
+export const ADMIN_PERIODS = [7, 30, 90] as const
+export type AdminPeriod = (typeof ADMIN_PERIODS)[number]
 
 export interface AdminLatestSubscription {
   userId: string
@@ -8,6 +12,21 @@ export interface AdminLatestSubscription {
   amount: number
   currencyId: string
   createdAtUtc: string
+}
+
+/** De las cuentas creadas en el período, cuántas llegaron a cada paso. */
+export interface AdminFunnel {
+  registered: number
+  savedAnalysis: number
+  openedCheckout: number
+  paid: number
+}
+
+export interface AdminProMovement {
+  /** `yyyy-MM`. */
+  month: string
+  started: number
+  cancelled: number
 }
 
 export interface AdminBusiness {
@@ -27,6 +46,16 @@ export interface AdminBusiness {
   /** Seis meses, del más viejo al actual, como `yyyy-MM`. */
   collectedByMonth: { month: string; amount: number }[]
   latestSubscriptions: AdminLatestSubscription[]
+  /** Null hasta que alguna cuenta abra la app con esta versión: antes el ingreso no se registraba. */
+  activeUsers7: number | null
+  activeUsers30: number | null
+  aiInputTokensMonth: number
+  aiOutputTokensMonth: number
+  /** Null sin precios configurados: el panel no inventa un costo. */
+  aiCostMonthUsd: number | null
+  funnel: AdminFunnel
+  /** Seis meses, del más viejo al actual. */
+  proMovements: AdminProMovement[]
 }
 
 export type UrgencySeverity = 'critical' | 'warning' | 'info'
@@ -37,6 +66,7 @@ export type UrgencyKind =
   | 'payment_pending'
   | 'payment_failed'
   | 'trial_blocked'
+  | 'trial_ending'
   | 'ai_failing'
 
 /** `reference` y `detail` significan cosas distintas según `kind`; la pantalla redacta cada tipo. */
@@ -62,6 +92,10 @@ export interface AdminPaymentsHealth {
   webhookSecretConfigured: boolean
   usingTestCredentials: boolean
   testPayerEmail: string | null
+  /** El nickname de la cuenta que cobra, leído de Mercado Pago. Null si no se pudo consultar. */
+  sellerNickname: string | null
+  /** Avisos rechazados en las últimas 24 h, leídos de la base: sobreviven a un deploy. */
+  rejectedLastDay: number
 }
 
 export interface AdminUrgencies {
@@ -133,6 +167,16 @@ export interface AdminUsage {
   freeUnlocks: number
   trialClaims: number
   trialCountries: string[]
+  /** Entrada + salida, de todas sus llamadas registradas. */
+  aiTokens: number
+}
+
+/** Una nota interna sobre una cuenta. Sólo la ve el panel. */
+export interface AdminNote {
+  id: string
+  authorEmail: string
+  text: string
+  createdAtUtc: string
 }
 
 export interface AdminUserDetail {
@@ -151,4 +195,94 @@ export interface AdminUserDetail {
   invoices: AdminInvoice[]
   events: AdminEvent[]
   usage: AdminUsage
+  /** Última vez que abrió la app con la sesión iniciada. Null si no entró desde que se registra. */
+  lastSeenAtUtc: string | null
+  notes: AdminNote[]
+}
+
+export interface AdminInvoiceRow {
+  id: string
+  userId: string
+  email: string
+  status: string
+  statusDetail: string | null
+  amount: number
+  currencyId: string
+  paidAtUtc: string | null
+  debitScheduledAtUtc: string | null
+  createdAtUtc: string
+  attemptNumber: number
+}
+
+export interface AdminInvoicePage {
+  total: number
+  page: number
+  pageSize: number
+  items: AdminInvoiceRow[]
+  /** De todos los cobros, sin el filtro: de acá salen los chips de estado. */
+  countsByStatus: Record<string, number>
+  approvedThisMonth: number
+}
+
+export interface AdminCount {
+  key: string
+  count: number
+}
+
+export interface AdminAiMetricUsage {
+  metricId: string
+  calls: number
+  failedCalls: number
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface AdminAiReport {
+  days: number
+  /** False mientras no haya ninguna llamada registrada, en ningún período. */
+  tracked: boolean
+  model: string
+  pricesConfigured: boolean
+  inputTokens: number
+  outputTokens: number
+  costUsd: number | null
+  tokensByDay: number[]
+  byMetric: AdminAiMetricUsage[]
+  errorsByCode: AdminCount[]
+}
+
+export interface AdminProductReport {
+  days: number
+  analysesByDay: number[]
+  topUnlocked: AdminCount[]
+  topAiMetrics: AdminCount[]
+  sharedInPeriod: number
+  liveShares: number
+  liveShareViews: number
+}
+
+export type IntegrationState = 'ok' | 'warn' | 'bad' | 'off'
+
+export interface AdminIntegration {
+  key: string
+  state: IntegrationState
+  value: string | null
+}
+
+export interface AdminAuditEntry {
+  id: string
+  adminEmail: string
+  action: string
+  targetUserId: string | null
+  details: string | null
+  createdAtUtc: string
+}
+
+export interface AdminSystemReport {
+  environment: string
+  version: string | null
+  startedAtUtc: string
+  integrations: AdminIntegration[]
+  trialDenials30d: AdminCount[]
+  audit: AdminAuditEntry[]
 }

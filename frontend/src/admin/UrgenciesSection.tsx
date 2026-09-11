@@ -62,7 +62,7 @@ export function UrgenciesSection({
         ) : (
           <ul className="adm-inbox">
             {visible.map((item, index) => {
-              const detail = detailFor(item, copy, language)
+              const detail = detailFor(item, copy, language, now)
               return (
                 <li key={`${item.kind}-${item.reference ?? item.userId ?? index}-${item.atUtc}`} className={`adm-item is-${item.severity}`}>
                   <SeverityPill severity={item.severity} copy={copy} />
@@ -104,7 +104,7 @@ function titleFor(item: AdminUrgency, copy: AdminCopy): string {
   }
 }
 
-function detailFor(item: AdminUrgency, copy: AdminCopy, language: Language): string | null {
+function detailFor(item: AdminUrgency, copy: AdminCopy, language: Language, now: number): string | null {
   const u = copy.urgencies
   switch (item.kind) {
     case 'orphan_payment':
@@ -117,6 +117,11 @@ function detailFor(item: AdminUrgency, copy: AdminCopy, language: Language): str
       const base = fill(u.failedDetail, { email: item.userEmail ?? '—', reason: item.detail ?? '—' })
       return item.deadlineUtc ? `${base} · ${fill(u.graceLeft, { date: dateShort(item.deadlineUtc, language) })}` : base
     }
+    case 'trial_ending':
+      return fill(u.trialEndingDetail, {
+        email: item.userEmail ?? '—',
+        when: item.deadlineUtc ? relative(item.deadlineUtc, now, language) : '—',
+      })
     case 'ai_failing':
       return u.aiErrors[item.detail ?? ''] ?? item.detail
     default:
@@ -130,10 +135,21 @@ function Health({ health, copy, language, now }: { health: AdminPaymentsHealth; 
     [u.received, health.notificationsReceived],
     [u.accepted, health.notificationsAccepted],
     [u.rejected, health.notificationsRejected > 0 ? <span key="rejected" className="adm-pill is-bad">▲ {health.notificationsRejected}</span> : 0],
+    [u.rejectedDay, health.rejectedLastDay > 0 ? <span key="rejected-day" className="adm-pill is-bad">▲ {health.rejectedLastDay}</span> : 0],
     [u.lastAccepted, health.lastAcceptedAtUtc ? relative(health.lastAcceptedAtUtc, now, language) : u.never],
     [u.reconcile, health.reconcileIntervalMinutes > 0 ? fill(u.reconcileEvery, { n: health.reconcileIntervalMinutes }) : u.reconcileOff],
     [u.secret, health.webhookSecretConfigured ? u.secretOk : <span key="secret" className="adm-pill is-bad">{u.secretMissing}</span>],
     [u.credentials, health.usingTestCredentials ? <span key="credentials" className="adm-pill is-warn">{u.credentialsTest}</span> : u.credentialsLive],
+    [
+      u.seller,
+      health.sellerNickname === null ? (
+        u.sellerUnknown
+      ) : health.usingTestCredentials ? (
+        <span key="seller" className="adm-pill is-warn">{health.sellerNickname}</span>
+      ) : (
+        health.sellerNickname
+      ),
+    ],
     [u.testPayer, health.testPayerEmail ? <span key="payer" className="adm-pill is-warn">{health.testPayerEmail}</span> : u.testPayerNone],
   ]
 

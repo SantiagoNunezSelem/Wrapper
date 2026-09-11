@@ -238,7 +238,65 @@ public sealed class AiMetricService(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await SaveUsageAsync(userId, metricId, cancellationToken);
         return ToDto(row);
+    }
+
+    /// <summary>What each Gemini call of the metric being resolved cost; see <see cref="TrackUsage"/>.</summary>
+    private readonly List<AiUsage> _pendingUsage = [];
+
+    private void TrackUsage(string metricId, AiCallOutcome outcome)
+    {
+        if (outcome.InputTokens is null && outcome.OutputTokens is null)
+        {
+            return;
+        }
+
+        _pendingUsage.Add(new AiUsage
+        {
+            MetricId = metricId,
+            InputTokens = outcome.InputTokens ?? 0,
+            OutputTokens = outcome.OutputTokens ?? 0,
+            Succeeded = outcome.IsSuccess,
+        });
+    }
+
+    /// <summary>
+    /// Saved after the verdict and on its own, on purpose: what a call cost is bookkeeping,
+    /// and failing to write it must never cost the user the verdict those tokens paid for.
+    /// </summary>
+    private async Task SaveUsageAsync(Guid userId, string metricId, CancellationToken cancellationToken)
+    {
+        var entries = _pendingUsage.Where(item => item.MetricId == metricId).ToList();
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        _pendingUsage.RemoveAll(item => item.MetricId == metricId);
+
+        foreach (var entry in entries)
+        {
+            entry.UserId = userId;
+        }
+
+        db.AiUsage.AddRange(entries);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            logger.LogWarning(exception, "Could not record AI token usage for {MetricId}; the verdict itself was saved.", metricId);
+
+            // Left tracked, the failed rows would ride along with the next metric's save and
+            // take that verdict down with them.
+            foreach (var entry in entries)
+            {
+                db.Entry(entry).State = EntityState.Detached;
+            }
+        }
     }
 
     private async Task<ClassificationOutcome> ClassifyInBatchesAsync(
@@ -299,6 +357,7 @@ public sealed class AiMetricService(
         CancellationToken cancellationToken)
     {
         var outcome = await client.ClassifyAsync(instruction, AiMetricPrompts.RenderBatch(batch), cancellationToken);
+        TrackUsage(metricId, outcome);
 
         if (outcome.IsSuccess)
         {

@@ -50,5 +50,8 @@ export function useAdminLoad<T>(key: string, load: () => Promise<T>) {
     ...state,
     reload: () => setAttempt((value) => value + 1),
     replace: (data: T) => setState({ data, error: null, loading: false }),
+    /** Cambia el dato a partir del último que hay, para no pisar lo que llegó mientras tanto. */
+    update: (change: (data: T) => T) =>
+      setState((previous) => (previous.data === null ? previous : { ...previous, data: change(previous.data) })),
   }
 }

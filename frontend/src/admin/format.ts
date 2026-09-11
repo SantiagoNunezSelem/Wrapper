@@ -27,6 +27,21 @@ export function count(value: number, language: Language): string {
   return new Intl.NumberFormat(locale(language)).format(value)
 }
 
+/** "1,2 M", "48 mil": para tokens, donde la cifra exacta no se lee. */
+export function compact(value: number, language: Language): string {
+  return new Intl.NumberFormat(locale(language), { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+}
+
+/** Dólares con los decimales que hagan falta: la IA de un mes tranquilo cuesta centavos. */
+export function usd(amount: number, language: Language): string {
+  return new Intl.NumberFormat(locale(language), {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: amount > 0 && amount < 1 ? 4 : 2,
+  }).format(amount)
+}
+
 export function percent(value: number, language: Language): string {
   return new Intl.NumberFormat(locale(language), { style: 'percent', maximumFractionDigits: 0 }).format(value)
 }

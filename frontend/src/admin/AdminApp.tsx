@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react'
 import type { Language, UserProfile } from '../types'
 import { adminCopy, type AdminCopy } from '../copy/adminCopy'
 import { AdminErrorBoundary } from './AdminErrorBoundary'
+import { AiSection } from './AiSection'
 import { BusinessSection } from './BusinessSection'
-import { parseAdminPath, pathFor, type AdminRoute } from './route'
-import type { AdminSection } from './types'
+import { InvoicesSection } from './InvoicesSection'
+import { ProductSection } from './ProductSection'
+import { ADMIN_SECTIONS, parseAdminPath, pathFor, type AdminRoute } from './route'
+import { SystemSection } from './SystemSection'
 import { UrgenciesSection } from './UrgenciesSection'
 import { UsersSection } from './UsersSection'
 import './admin.css'
 
-const SECTIONS: AdminSection[] = ['negocio', 'urgencias', 'usuarios']
-
 /**
- * El panel de administración: tres secciones sobre un mismo esqueleto. Negocio para los
- * números, Urgencias para lo que se rompió, Usuarios para una cuenta en particular.
+ * El panel de administración: varias secciones sobre un mismo esqueleto. Negocio para los
+ * números, Urgencias para lo que se rompió, Usuarios para una cuenta en particular, y el
+ * detalle de cobros, IA, producto y sistema en las suyas.
  *
  * Mostrarlo sólo a un admin es comodidad, no seguridad: cada llamada de estas pantallas pasa
  * por el filtro del backend, que vuelve a leer `IsAdmin` de la base.
@@ -73,7 +75,7 @@ export function AdminApp({
           Vistazo <span className="adm-tag">admin</span>
         </a>
         <nav className="adm-nav" aria-label={copy.title}>
-          {SECTIONS.map((section) => (
+          {ADMIN_SECTIONS.map((section) => (
             <button
               key={section}
               type="button"
@@ -116,6 +118,10 @@ export function AdminApp({
           {route.section === 'usuarios' ? (
             <UsersSection token={token} language={language} copy={copy} userId={route.userId} onSelectUser={openUser} />
           ) : null}
+          {route.section === 'cobros' ? <InvoicesSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
+          {route.section === 'ia' ? <AiSection token={token} language={language} copy={copy} /> : null}
+          {route.section === 'producto' ? <ProductSection token={token} language={language} copy={copy} /> : null}
+          {route.section === 'sistema' ? <SystemSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
         </AdminErrorBoundary>
       </main>
     </div>

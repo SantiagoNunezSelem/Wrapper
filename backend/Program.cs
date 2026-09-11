@@ -93,6 +93,9 @@ builder.Services.AddHttpClient<RecaptchaClient>();
 builder.Services.AddScoped<TrialEligibilityService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<AdminDashboardService>();
+builder.Services.AddScoped<AdminReportsService>();
+builder.Services.AddScoped<AdminAuditService>();
+builder.Services.AddScoped<MercadoPagoAccountProbe>();
 // The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
 // notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
 // there are no credentials.
@@ -372,9 +375,20 @@ app.MapGet("/api/auth/me", [Authorize] async (
         .Include(candidate => candidate.Subscriptions)
         .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
 
-    return user is null
-        ? Results.Unauthorized()
-        : Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    // What "usuarios activos" in the admin panel counts. At most one write an hour per
+    // account: the app calls this on every load, and a write per load is a write per click.
+    if (user.LastSeenAtUtc is null || user.LastSeenAtUtc < DateTime.UtcNow.AddHours(-1))
+    {
+        user.LastSeenAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
 });
 
 app.MapGet("/api/analyses", [Authorize] async (ClaimsPrincipal principal, AppDbContext db, CancellationToken cancellationToken) =>
