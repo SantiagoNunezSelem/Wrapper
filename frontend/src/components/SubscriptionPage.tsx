@@ -31,6 +31,8 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   checkoutOpenHint: string
   checkoutOpenNext: string
   checkoutOpenPaidNote: string
+  checkoutRejectedStatus: string
+  checkoutRejectedHint: string
   resumeCheckoutCta: string
   resumeCheckoutHint: string
   alreadyPaidNote: string
@@ -282,8 +284,14 @@ function StatusBanner({
   // Only the first one is news worth a warning colour; the second is closer to having no
   // subscription at all, with a link back to where it was left.
   const isUnfinishedCheckout = current.status === 'pendiente' && !current.paymentInProgress
-  const needsAttention = current.status === 'pago_fallido' || (current.status === 'pendiente' && current.paymentInProgress)
-  const variant = isUnfinishedCheckout ? 'checkout_abierto' : current.status
+  // A card Mercado Pago refused is neither of those: the payer did finish, the charge
+  // bounced, and telling them they never completed it is plainly false. It borrows
+  // `pago_fallido`'s colours because that is what it is, while the wording stays its own —
+  // nothing here was ever paid for, so there is no access to keep.
+  const wasDeclined = isUnfinishedCheckout && /^(cc_)?rejected/.test(current.pendingReason ?? '')
+  const needsAttention =
+    wasDeclined || current.status === 'pago_fallido' || (current.status === 'pendiente' && current.paymentInProgress)
+  const variant = wasDeclined ? 'pago_fallido' : isUnfinishedCheckout ? 'checkout_abierto' : current.status
 
   const nextStep = isUnfinishedCheckout
     ? copy.checkoutOpenNext
@@ -292,13 +300,21 @@ function StatusBanner({
         amount: formatMoney(current.amount, current.currencyId, locale),
       })
 
-  const hint = isUnfinishedCheckout ? copy.checkoutOpenHint : copy.statusHints[current.status]
+  const hint = wasDeclined
+    ? copy.checkoutRejectedHint
+    : isUnfinishedCheckout
+      ? copy.checkoutOpenHint
+      : copy.statusHints[current.status]
 
   return (
     <section className={`subpage-banner ${needsAttention ? 'is-attention' : 'is-calm'} banner-${variant}`}>
       <div className="subpage-banner-head">
         <span className={`subpage-status status-${variant}`}>
-          {isUnfinishedCheckout ? copy.checkoutOpenStatus : copy.statuses[current.status] ?? current.status}
+          {wasDeclined
+            ? copy.checkoutRejectedStatus
+            : isUnfinishedCheckout
+              ? copy.checkoutOpenStatus
+              : copy.statuses[current.status] ?? current.status}
         </span>
         {current.hasAccess && current.accessUntilUtc ? (
           <span className="subpage-banner-countdown">{formatRemaining(current.accessUntilUtc, copy)}</span>

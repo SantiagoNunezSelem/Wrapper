@@ -394,6 +394,40 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task Una_cancelada_con_acceso_vigente_no_ofrece_volver_a_suscribirse()
+    {
+        // Cancelar apaga la renovación, no el mes que ya está pagado. Ofrecer el plan
+        // durante esos días es pedirle a alguien que todavía tiene Pro que lo compre de
+        // nuevo, y el checkout lo rechazaría con un 409.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            ExternalSubscriptionId = "pre-1",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(12),
+        });
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.False(actions.GetProperty("canSubscribe").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Una_cancelada_sin_acceso_vuelve_a_ofrecer_el_plan()
+    {
+        // Terminado el período pago no queda nada que proteger: es una cuenta sin
+        // suscripción y la pantalla tiene que dejar volver.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(-3),
+        });
+
+        var actions = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("actions");
+
+        Assert.True(actions.GetProperty("canSubscribe").GetBoolean());
+    }
+
+    [Fact]
     public async Task Un_checkout_a_medias_ofrece_retomarlo_y_devuelve_su_link()
     {
         var (client, _) = factory.CreateAuthenticatedClient(subscriptions: new Subscription

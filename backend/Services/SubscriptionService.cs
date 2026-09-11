@@ -93,9 +93,12 @@ public sealed class SubscriptionService(
             throw new MercadoPagoException("Mercado Pago is not configured: set MercadoPago:AccessToken.");
         }
 
+        // Anything still granting Pro blocks a second checkout, not only "activa" and
+        // "trial": a cancelled subscription keeps the period it already paid for, and
+        // buying again inside that window is paying twice over for the same days.
         if (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is { } current &&
-            current.Status is "activa" or "trial" &&
-            !current.IsDevSimulated)
+            !current.IsDevSimulated &&
+            SubscriptionAccessEvaluator.HasVipAccess(current))
         {
             throw new SubscriptionConflictException("already_active", "This account already has an active subscription.");
         }
@@ -714,10 +717,23 @@ public sealed class SubscriptionService(
         }
         else if (payment.Status is "rejected" && subscription.Status is "activa" or "trial")
         {
-            subscription.Status = "pago_fallido";
-            // Started on the first failure only, so Mercado Pago's own retries cannot keep
-            // extending the window indefinitely.
-            subscription.GraceEndsAtUtc ??= DateTime.UtcNow.AddDays(_options.FailedPaymentGraceDays);
+            // The grace window is there so a customer who has been paying does not see an
+            // outage while Mercado Pago retries a card that stopped working. A
+            // subscription that never collected anything has nothing to protect: its
+            // first charge being refused means it never started, and handing it days of
+            // Pro on the way out is the free account nobody paid for.
+            if (subscription.LastPaymentAtUtc is null)
+            {
+                subscription.Status = "pendiente";
+                subscription.TrialEndsAtUtc = null;
+            }
+            else
+            {
+                subscription.Status = "pago_fallido";
+                // Started on the first failure only, so Mercado Pago's own retries cannot
+                // keep extending the window indefinitely.
+                subscription.GraceEndsAtUtc ??= DateTime.UtcNow.AddDays(_options.FailedPaymentGraceDays);
+            }
         }
 
         subscription.UpdatedAtUtc = DateTime.UtcNow;
@@ -866,6 +882,14 @@ public sealed class SubscriptionService(
                 subscription.SubscriptionStartsAtUtc ??= invoice.PeriodStartUtc ?? DateTime.UtcNow;
                 break;
 
+            // A refused charge on a subscription that never collected anything means it
+            // never started: there is no paid period for a grace window to protect, and
+            // granting one is free Pro. Same split as HandlePaymentNotificationAsync.
+            case "rechazado" when subscription.LastPaymentAtUtc is null:
+                subscription.Status = "pendiente";
+                subscription.TrialEndsAtUtc = null;
+                break;
+
             case "rechazado":
                 subscription.Status = "pago_fallido";
                 // Started on the first failure only, so Mercado Pago's own retries
@@ -960,6 +984,21 @@ public sealed class SubscriptionService(
         var hasFreeTrial = preapproval.AutoRecurring?.FreeTrial is not null;
         var chargedCount = preapproval.Summarized?.ChargedQuantity ?? 0;
         var firstChargeAt = preapproval.NextPaymentDate;
+
+        // Mercado Pago authorises the preapproval as soon as the payer picks a card, well
+        // before anyone knows whether that card works. Reading "authorized" as proof of a
+        // customer is what handed the free week to a refused payment: the charge bounced,
+        // nothing was ever collected, and the account still switched itself to Pro. So
+        // while a charge of ours is refused or unsettled and none has ever been approved,
+        // the row stays where it was — waiting for money that has not moved.
+        if (subscription.LastPaymentAtUtc is null && subscription.LastPaymentStatusDetail is { Length: > 0 })
+        {
+            // Cleared, not just left unset: an earlier sync may have written a trial end
+            // from this same preapproval, and a date in the future keeps granting access
+            // on its own the moment the row is cancelled.
+            subscription.TrialEndsAtUtc = null;
+            return "pendiente";
+        }
 
         if (hasFreeTrial && chargedCount == 0 && firstChargeAt is { } trialEnd && trialEnd > DateTime.UtcNow)
         {
