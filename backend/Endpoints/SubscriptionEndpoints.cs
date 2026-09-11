@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using backend.Data;
 using backend.Models;
@@ -40,6 +40,24 @@ public static class SubscriptionEndpoints
     // rejected preapproval, which is a configuration fault that retrying never clears.
     // Sending the payer around that loop is how a broken setup looks like a flaky network.
     private const string ProviderErrorMessage = "No pudimos abrir el checkout de Mercado Pago. No se te cobró nada.";
+
+    /// <summary>
+    /// Shown when re-reading the state from Mercado Pago fails. Separate from
+    /// <see cref="ProviderErrorMessage"/> because nothing was being opened and nothing was
+    /// charged: the stored state is still on screen, and answering "no pudimos abrir el
+    /// checkout" to someone who pressed "Actualizar estado" describes an action they never
+    /// took — which sends them looking for a payment problem that is not there.
+    /// </summary>
+    private const string SyncErrorMessage =
+        "No pudimos consultar tu estado con Mercado Pago. No cambió nada: si el pago entra, la cuenta se actualiza sola.";
+
+    /// <summary>
+    /// Shown when an account-level action — cancelar, reanudar — could not be applied at
+    /// Mercado Pago. The customer asked for a change that did not happen, which is the one
+    /// thing they need to be told.
+    /// </summary>
+    private const string ActionErrorMessage =
+        "No pudimos aplicar el cambio en Mercado Pago. No se modificó nada; probá de nuevo en un rato.";
 
     public static void MapSubscriptionEndpoints(this WebApplication app)
     {
@@ -141,7 +159,7 @@ public static class SubscriptionEndpoints
             {
                 logger.LogError(exception, "Cancel failed for user {UserId}.", user.Id);
                 return Results.Json(
-                    new { message = ProviderErrorMessage, code = "provider_error" },
+                    new { message = ActionErrorMessage, code = "provider_error" },
                     statusCode: StatusCodes.Status502BadGateway);
             }
 
@@ -209,7 +227,7 @@ public static class SubscriptionEndpoints
                     subscriptions,
                     await trialEligibility.EvaluateAsync(user, http, null, cancellationToken),
                     cancellationToken,
-                    warning: ProviderErrorMessage));
+                    warning: SyncErrorMessage));
             }
 
             var eligibility = await trialEligibility.EvaluateAsync(user, http, null, cancellationToken);
@@ -485,7 +503,7 @@ public static class SubscriptionEndpoints
         {
             logger.LogError(exception, "Subscription action failed for user {UserId}.", user.Id);
             return Results.Json(
-                new { message = ProviderErrorMessage, code = "provider_error" },
+                new { message = ActionErrorMessage, code = "provider_error" },
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
