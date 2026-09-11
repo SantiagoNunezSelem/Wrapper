@@ -726,7 +726,12 @@ public sealed record SubscriptionActionsResponse(
             // started. A pending row with no link left to resume — a legacy checkout, or
             // one whose URL was cleared — needs the same, or it is a dead end: no way
             // forward and nothing to cancel that would help.
-            CanSubscribe: current.Status is "inactiva" or "cancelada" ||
+            //
+            // Cancelling only turns renewal off: the period already paid for runs to its
+            // end. Offering the plan during that window asks someone who still has Pro to
+            // buy a second subscription overlapping the one they are using.
+            CanSubscribe: current.Status == "inactiva" ||
+                          (current.Status == "cancelada" && !SubscriptionAccessEvaluator.HasVipAccess(current)) ||
                           (current.Status == "pendiente" &&
                            (!canResumeCheckout || !SubscriptionAccessEvaluator.HasPaymentInFlight(current))),
             CanResumeCheckout: canResumeCheckout,

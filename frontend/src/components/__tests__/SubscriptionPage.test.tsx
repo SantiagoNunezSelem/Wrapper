@@ -243,7 +243,9 @@ describe('SubscriptionPage', () => {
     })
 
     it('con la tarjeta rechazada dice el motivo sin llamarlo pago en curso', () => {
-      // El intento terminó: no hay nada procesándose, pero sí algo que contar.
+      // El intento terminó: no hay nada procesándose, pero sí algo que contar. Tampoco es
+      // un checkout abandonado: el pagador llegó hasta el final y la tarjeta lo rebotó,
+      // así que decirle que no llegó a completarlo sería falso.
       renderPage(
         overview(
           record({
@@ -257,7 +259,8 @@ describe('SubscriptionPage', () => {
         ),
       )
 
-      expect(screen.getByText(copy.checkoutOpenHint)).toBeInTheDocument()
+      expect(screen.getByText(copy.checkoutRejectedHint)).toBeInTheDocument()
+      expect(screen.queryByText(copy.checkoutOpenHint)).not.toBeInTheDocument()
       expect(
         screen.getByText(copy.pendingReasons.cc_rejected_insufficient_amount, { exact: false }),
       ).toBeInTheDocument()

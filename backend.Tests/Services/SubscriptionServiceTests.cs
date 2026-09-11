@@ -231,6 +231,9 @@ public class SubscriptionServiceTests : IDisposable
     [Theory]
     [InlineData("activa")]
     [InlineData("trial")]
+    // Cancelar apaga la renovación, no el período ya pagado: mientras ese acceso siga
+    // vivo, abrir otro checkout es pagar dos veces los mismos días.
+    [InlineData("cancelada")]
     public async Task No_se_puede_abrir_un_checkout_con_una_suscripcion_vigente(string status)
     {
         RouteMercadoPago();
@@ -720,7 +723,14 @@ public class SubscriptionServiceTests : IDisposable
     [Fact]
     public async Task Un_cobro_rechazado_abre_la_ventana_de_gracia()
     {
-        CreateUser(subscriptions: new Subscription { Status = "activa", ExternalSubscriptionId = "pre-1" });
+        // Con un cobro aprobado encima: la gracia protege a quien viene pagando, no
+        // estrena una suscripción que todavía no cobró nada.
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            LastPaymentAtUtc = DateTime.UtcNow.AddDays(-30),
+        });
         _http.Route(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""
@@ -741,9 +751,43 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Un_primer_cobro_rechazado_no_abre_ninguna_gracia()
+    {
+        // Sin un solo cobro aprobado no hay período pagado que proteger: la tarjeta nunca
+        // funcionó, así que el rechazo no estrena nada. Dar la gracia igual es regalar
+        // días de Pro a una suscripción que no cobró un peso.
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "trial",
+            ExternalSubscriptionId = "pre-1",
+            TrialEndsAtUtc = DateTime.UtcNow.AddDays(7),
+        });
+        _http.Route(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+            {"id":557,"preapproval_id":"pre-1","status":"rejected","last_modified":"2025-03-10T10:00:00Z",
+             "payment":{"id":1001,"status":"rejected"}}
+            """, Encoding.UTF8, "application/json"),
+        });
+
+        await Service().HandleNotificationAsync("authorized_payment", "updated", "557", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.GraceEndsAtUtc);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
     public async Task Los_reintentos_de_Mercado_Pago_no_estiran_la_gracia_indefinidamente()
     {
-        CreateUser(subscriptions: new Subscription { Status = "activa", ExternalSubscriptionId = "pre-1" });
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "activa",
+            ExternalSubscriptionId = "pre-1",
+            LastPaymentAtUtc = DateTime.UtcNow.AddDays(-30),
+        });
         var service = Service();
         var attempt = 0;
         _http.Route(_ =>
@@ -1009,6 +1053,7 @@ public class SubscriptionServiceTests : IDisposable
             Status = "activa",
             ExternalSubscriptionId = "pre-1",
             NextBillingAtUtc = DateTime.UtcNow.AddDays(-1),
+            LastPaymentAtUtc = DateTime.UtcNow.AddDays(-30),
         });
         RouteMercadoPago(
             payment: """
@@ -1022,6 +1067,64 @@ public class SubscriptionServiceTests : IDisposable
         var stored = await _db.NewContext().Subscriptions.SingleAsync();
         Assert.Equal("cc_rejected_insufficient_amount", stored.LastPaymentStatusDetail);
         Assert.NotNull(stored.GraceEndsAtUtc);
+    }
+
+    [Fact]
+    public async Task Una_tarjeta_rechazada_no_enciende_la_prueba_gratis()
+    {
+        // El caso que se veía en producción: Mercado Pago da la preapproval por
+        // "authorized" apenas el pagador elige tarjeta, sin que el cobro haya salido.
+        // Leer eso como un cliente nuevo encendía la semana gratis con una tarjeta que
+        // acababa de rebotar.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: """
+            {"id":9010,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "next_payment_date":"@trialEnd@"}
+                """,
+                ("trialEnd", DateTime.UtcNow.AddDays(7))));
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9010", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.Null(stored.GraceEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
+    public async Task Al_volver_a_la_pantalla_la_prueba_sigue_sin_encenderse()
+    {
+        // La otra mitad del mismo agujero. Aunque el rechazo ya esté registrado, cada
+        // sincronización vuelve a leer la preapproval, que sigue diciendo "authorized"
+        // por días: sin esto, volver a la pantalla devolvía la semana gratis.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            LastPaymentStatusDetail = "cc_rejected_insufficient_amount",
+        });
+        RouteMercadoPago(preapproval: Json(
+            """
+            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+             "next_payment_date":"@trialEnd@"}
+            """,
+            ("trialEnd", DateTime.UtcNow.AddDays(7))));
+
+        await Service().SyncAsync(user, default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
     }
 
     [Fact]

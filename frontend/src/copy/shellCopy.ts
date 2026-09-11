@@ -238,7 +238,7 @@ export const shellCopy = {
         activa: 'El próximo cobro de {amount} es el {date}.',
         pago_fallido: 'Mercado Pago reintenta el cobro durante unos días. Si querés adelantarlo, revisá la tarjeta.',
         pausada: 'No hay cobros programados. Cuando reanudes, vuelve a correr con la misma tarjeta y el mismo precio.',
-        cancelada: 'No hay más cobros programados. Podés volver a suscribirte cuando quieras.',
+        cancelada: 'No hay más cobros programados. Cuando termine el período que ya pagaste vas a poder suscribirte de nuevo.',
         inactiva: 'Suscribite para desbloquear todas las métricas Pro.',
       },
       /**
@@ -292,6 +292,9 @@ export const shellCopy = {
        */
       checkoutOpenStatus: 'Pago sin terminar',
       checkoutOpenHint: 'Abriste el pago en Mercado Pago y no llegaste a completarlo. No se te cobró nada.',
+      checkoutRejectedStatus: 'Pago rechazado',
+      checkoutRejectedHint:
+        'Mercado Pago no pudo cobrar la tarjeta, así que la suscripción no quedó activa. No se te cobró nada.',
       checkoutOpenNext: 'Podés retomarlo donde lo dejaste o empezar de nuevo cuando quieras.',
       checkoutOpenPaidNote: 'Si en realidad ya pagaste, tocá "Actualizar estado" y lo buscamos en Mercado Pago.',
       /**
@@ -744,7 +747,7 @@ export const shellCopy = {
         activa: 'The next {amount} charge is on {date}.',
         pago_fallido: 'Mercado Pago retries the charge for a few days. To speed it up, check the card.',
         pausada: 'No charges are scheduled. When you resume, it picks up with the same card and price.',
-        cancelada: 'No further charges are scheduled. You can subscribe again any time.',
+        cancelada: 'No further charges are scheduled. When the period you already paid for ends, you can subscribe again.',
         inactiva: 'Subscribe to unlock every Pro metric.',
       },
       pendingReasons: {
@@ -789,6 +792,9 @@ export const shellCopy = {
       // have a payment pending worries them about something that never took place.
       checkoutOpenStatus: 'Payment not finished',
       checkoutOpenHint: 'You opened the payment on Mercado Pago but never completed it. Nothing was charged.',
+      checkoutRejectedStatus: 'Payment declined',
+      checkoutRejectedHint:
+        'Mercado Pago could not charge the card, so the subscription never started. Nothing was charged.',
       checkoutOpenNext: 'Pick it up where you left it, or start over whenever you like.',
       checkoutOpenPaidNote: 'If you did pay after all, hit "Check again" and we will look it up on Mercado Pago.',
       testPayerBannerTitle: 'Test mode: payments are not real',
