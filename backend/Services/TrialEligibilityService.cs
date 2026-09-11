@@ -42,6 +42,14 @@ public sealed class TrialEligibilityService(
             return new TrialEligibility(false, "account_used", identity);
         }
 
+        // Given by an admin, so the rules below do not apply: they exist to stop someone
+        // collecting free weeks, and this one was handed over, not collected. It still
+        // comes after the account rule — a granted week, once used, is used.
+        if (user.TrialGrantedAtUtc is not null)
+        {
+            return new TrialEligibility(true, null, identity);
+        }
+
         if (_options.AllowedCountries.Length > 0 &&
             identity.CountryCode is { } country &&
             !_options.AllowedCountries.Contains(country, StringComparer.OrdinalIgnoreCase))
@@ -106,6 +114,21 @@ public sealed class TrialEligibilityService(
         });
 
         logger.LogInformation("Free trial claimed by user {UserId} on subscription {SubscriptionId}.", user.Id, subscription.Id);
+    }
+
+    /// <summary>
+    /// Hands the free week back from the admin panel: the next checkout carries it, even
+    /// from an IP or a device that already used one (see <see cref="EvaluateAsync"/>). The
+    /// ledger of past claims is left alone — it is still what stops other accounts on the
+    /// same device.
+    /// </summary>
+    public void Grant(User user)
+    {
+        user.HasUsedTrial = false;
+        user.TrialGrantedAtUtc = DateTime.UtcNow;
+        user.UpdatedAtUtc = DateTime.UtcNow;
+
+        logger.LogInformation("Free trial granted to user {UserId} from the admin panel.", user.Id);
     }
 
     /// <summary>

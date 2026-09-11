@@ -9,6 +9,9 @@ import {
   getAdminSystem,
   getAdminUrgencies,
   getAdminUser,
+  grantAdminTrial,
+  grantAdminVip,
+  revokeAdminVip,
   searchAdminUsers,
   syncAdminUser,
 } from '../adminApi'
@@ -76,6 +79,25 @@ describe('API del panel', () => {
     expect(call.url).toBe(`${BASE}/api/admin/users/u%201/notes`)
     expect(call.method).toBe('POST')
     expect(JSON.parse(String(call.body))).toEqual({ text: 'Pidió factura.' })
+  })
+
+  it('da VIP por días, o sin vencimiento sólo si se pide', async () => {
+    await grantAdminVip('tok', 'u 1', 30)
+    const call = lastCall()
+    expect(call.url).toBe(`${BASE}/api/admin/users/u%201/vip`)
+    expect(call.method).toBe('POST')
+    expect(JSON.parse(String(call.body))).toEqual({ days: 30 })
+
+    await grantAdminVip('tok', 'u-1', null)
+    expect(JSON.parse(String(lastCall().body))).toEqual({ forever: true })
+  })
+
+  it('quita el VIP con DELETE y devuelve la semana gratis con POST', async () => {
+    await revokeAdminVip('tok', 'u-1')
+    expect(lastCall()).toMatchObject({ url: `${BASE}/api/admin/users/u-1/vip`, method: 'DELETE' })
+
+    await grantAdminTrial('tok', 'u-1')
+    expect(lastCall()).toMatchObject({ url: `${BASE}/api/admin/users/u-1/trial`, method: 'POST' })
   })
 
   it('pide los cobros por página y, si hay, por estado', async () => {

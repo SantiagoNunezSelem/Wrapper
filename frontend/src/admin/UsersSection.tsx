@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Language } from '../types'
 import type { AdminCopy } from '../copy/adminCopy'
-import { addAdminNote, getAdminUser, searchAdminUsers, syncAdminUser } from './adminApi'
+import { addAdminNote, getAdminUser, grantAdminTrial, grantAdminVip, revokeAdminVip, searchAdminUsers, syncAdminUser } from './adminApi'
 import { compact, count, dateShort, dateTime, describeEvent, fill, money, paymentMethod, relative } from './format'
 import { ExportButton, LoadError, StatusPill } from './parts'
-import type { AdminNote, AdminSubscription, AdminUserDetail } from './types'
+import type { AdminAccess, AdminNote, AdminSubscription, AdminUserDetail } from './types'
 import { useAdminLoad } from './useAdminLoad'
 
 /** Usuarios: buscar una cuenta y verla entera. El soporte de "pagué y no tengo acceso". */
@@ -157,6 +157,8 @@ function UserDetailPanel({
         </div>
       </section>
 
+      <AccessCard token={token} userId={userId} access={d.access} copy={copy} language={language} onChanged={detail.replace} />
+
       <div className="adm-grid-2">
         <section className="adm-card" aria-labelledby="adm-sub">
           <header className="adm-card-head">
@@ -287,6 +289,178 @@ function UserDetailPanel({
   )
 }
 
+const VIP_OPTIONS = [7, 30, 90, null] as const
+type VipOption = (typeof VIP_OPTIONS)[number]
+type AccessAction = 'grant' | 'revoke' | 'trial'
+
+/** El "sin vencimiento" del servidor es el 31/12/2099, el mismo del VIP sembrado del admin. */
+function isForever(value: string): boolean {
+  return new Date(value).getUTCFullYear() >= 2099
+}
+
+/**
+ * Dar o quitar Pro, y devolver la semana gratis. Cada acción se confirma en el lugar, con lo
+ * que va a pasar escrito; qué botones hay lo decide el servidor (`access`).
+ */
+function AccessCard({
+  token,
+  userId,
+  access,
+  copy,
+  language,
+  onChanged,
+}: {
+  token: string
+  userId: string
+  access: AdminAccess
+  copy: AdminCopy
+  language: Language
+  onChanged: (detail: AdminUserDetail) => void
+}) {
+  const s = copy.users
+  const [days, setDays] = useState<VipOption>(30)
+  const [pending, setPending] = useState<AccessAction | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function apply(action: AccessAction) {
+    setBusy(true)
+    setError(null)
+    try {
+      const next =
+        action === 'grant'
+          ? await grantAdminVip(token, userId, days)
+          : action === 'revoke'
+            ? await revokeAdminVip(token, userId)
+            : await grantAdminTrial(token, userId)
+      setPending(null)
+      onChanged(next)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const courtesy = access.courtesyUntilUtc
+    ? isForever(access.courtesyUntilUtc)
+      ? s.accessCourtesyForever
+      : fill(s.accessCourtesy, { date: dateShort(access.courtesyUntilUtc, language) })
+    : null
+
+  const summary =
+    access.source === 'admin'
+      ? s.accessAdmin
+      : access.source === 'subscription'
+        ? s.accessSubscription
+        : access.source === 'courtesy' && courtesy
+          ? courtesy
+          : s.accessNone
+
+  const trialText =
+    access.trialState === 'used'
+      ? s.trialUsed
+      : access.trialState === 'granted' && access.trialGrantedAtUtc
+        ? fill(s.trialGranted, { date: dateShort(access.trialGrantedAtUtc, language) })
+        : s.trialUnused
+
+  function confirmation(action: AccessAction) {
+    const text =
+      action === 'grant'
+        ? fill(s.grantVipConfirm, { duration: days === null ? s.vipForever : fill(s.vipDays, { n: days }) })
+        : action === 'revoke'
+          ? access.revokeCancelsBilling
+            ? s.revokeVipConfirmBilling
+            : s.revokeVipConfirm
+          : s.grantTrialConfirm
+
+    return (
+      <div className="adm-confirm">
+        <p>{text}</p>
+        <div className="adm-actions">
+          <button
+            type="button"
+            className={`adm-button ${action === 'revoke' ? 'is-danger' : 'is-primary'}`}
+            disabled={busy}
+            onClick={() => apply(action)}
+          >
+            {busy ? s.applying : s.confirm}
+          </button>
+          <button type="button" className="adm-button" disabled={busy} onClick={() => setPending(null)}>
+            {s.back}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <section className="adm-card" aria-labelledby="adm-access">
+      <header className="adm-card-head">
+        <h3 id="adm-access">{s.access}</h3>
+      </header>
+      <p className="adm-access-summary">{summary}</p>
+      {access.source === 'subscription' && courtesy ? <p className="adm-faint">{courtesy}</p> : null}
+
+      {pending === 'grant' || pending === 'revoke' ? (
+        confirmation(pending)
+      ) : (
+        <>
+          {access.canGrantVip ? (
+            <div className="adm-chips adm-access-days" role="group" aria-label={s.vipDuration}>
+              {VIP_OPTIONS.map((option) => (
+                <button
+                  key={option ?? 'forever'}
+                  type="button"
+                  className={`adm-chip${option === days ? ' is-on' : ''}`}
+                  aria-pressed={option === days}
+                  onClick={() => setDays(option)}
+                >
+                  {option === null ? s.vipForever : fill(s.vipDays, { n: option })}
+                </button>
+              ))}
+            </div>
+          ) : access.grantVipBlockedReason === 'paid_active' ? (
+            <p className="adm-faint">{s.grantVipBlocked.paid_active}</p>
+          ) : null}
+          {access.canGrantVip || access.canRevokeVip ? (
+            <div className="adm-actions">
+              {access.canGrantVip ? (
+                <button type="button" className="adm-button is-primary" disabled={busy} onClick={() => setPending('grant')}>
+                  {s.grantVip}
+                </button>
+              ) : null}
+              {access.canRevokeVip ? (
+                <button type="button" className="adm-button is-danger" disabled={busy} onClick={() => setPending('revoke')}>
+                  {s.revokeVip}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {access.source === 'admin' ? null : (
+        <>
+          <h4 className="adm-eyebrow">{s.trial}</h4>
+          <p className="adm-muted">{trialText}</p>
+          {pending === 'trial' ? (
+            confirmation('trial')
+          ) : access.canGrantTrial ? (
+            <div className="adm-actions">
+              <button type="button" className="adm-button" disabled={busy} onClick={() => setPending('trial')}>
+                {s.grantTrial}
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {error ? <p className="adm-error-text" role="alert">{error}</p> : null}
+    </section>
+  )
+}
+
 /** Lo que el soporte sabe de la cuenta y no está en ningún otro lado. Se agrega, no se edita. */
 function NotesCard({
   token,
@@ -367,6 +541,10 @@ function SubscriptionFacts({ subscription, copy, language }: { subscription: Adm
     [s.status, <StatusPill key="status" status={subscription.status} copy={copy} />],
     [s.plan, `${subscription.planType} · ${money(subscription.amount, subscription.currencyId, language)}`],
   ]
+
+  if (subscription.accessRevokedAtUtc) {
+    rows.push([s.revokedAt, dateShort(subscription.accessRevokedAtUtc, language)])
+  }
 
   if (subscription.graceEndsAtUtc && subscription.status === 'pago_fallido') {
     rows.push([s.graceUntil, dateShort(subscription.graceEndsAtUtc, language)])

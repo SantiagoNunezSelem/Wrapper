@@ -62,6 +62,8 @@ describe('formato del panel', () => {
     expect(describeEvent({ ...event, topic: 'sync' }, copy)).toBe(e.sync)
     expect(describeEvent({ ...event, topic: 'reconcile' }, copy)).toBe(e.reconcile)
     expect(describeEvent({ ...event, topic: 'dev' }, copy)).toBe(e.dev)
+    expect(describeEvent({ ...event, topic: 'admin', action: 'revoke_access' }, copy)).toBe(e.adminRevoke)
+    expect(describeEvent({ ...event, topic: 'admin' }, copy)).toBe(e.admin)
     expect(describeEvent({ ...event, topic: 'algo_nuevo' }, copy)).toBe(e.other)
   })
 

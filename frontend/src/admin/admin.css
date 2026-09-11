@@ -483,6 +483,26 @@
 .adm-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .adm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
+.adm-button.is-danger {
+  border-color: var(--vz-danger-text);
+  color: var(--vz-danger-text);
+}
+
+.adm-button.is-danger:hover:not(:disabled) { background: var(--vz-danger-bg); }
+
+.adm-access-summary { margin: 0; }
+.adm-access-days { margin-top: 12px; }
+
+.adm-confirm {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: 12px;
+}
+
+.adm-confirm p { margin: 0; }
+.adm-confirm .adm-actions { margin-top: 10px; }
+
 .adm-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 
 .adm-timeline li {

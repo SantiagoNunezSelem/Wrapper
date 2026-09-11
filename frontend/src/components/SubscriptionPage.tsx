@@ -76,6 +76,8 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   resubscribeTitle: string
   adminNote: string
   devNote: string
+  courtesyNote: string
+  courtesyNoteForever: string
   plansTitle: string
   planName: string
   invoicesTitle: string
@@ -172,6 +174,13 @@ export function SubscriptionPage({
         {error ? <p className="subpage-error">{error}</p> : null}
         {overview?.warning ? <p className="subpage-error">{overview.warning}</p> : null}
         {overview?.cancellation ? <CancellationNote overview={overview} copy={copy} locale={locale} /> : null}
+        {overview?.courtesyUntilUtc ? (
+          <p className="subpage-note">
+            {new Date(overview.courtesyUntilUtc).getUTCFullYear() >= 2099
+              ? copy.courtesyNoteForever
+              : fillTokens(copy.courtesyNote, { date: formatDate(overview.courtesyUntilUtc, locale) })}
+          </p>
+        ) : null}
 
         {!user ? (
           <section className="subpage-section subpage-signin">

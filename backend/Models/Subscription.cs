@@ -79,6 +79,13 @@ public sealed class Subscription
     /// </summary>
     public bool IsDevSimulated { get; set; }
 
+    /// <summary>
+    /// When an admin took Pro away from this subscription. A revoked row grants nothing,
+    /// whatever its status or dates say later: Mercado Pago keeps reporting on it (a late
+    /// webhook, a sync) and those write the status and the dates, never this.
+    /// </summary>
+    public DateTime? AccessRevokedAtUtc { get; set; }
+
     public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 

@@ -562,6 +562,7 @@ public static class SubscriptionEndpoints
         // The admin override is real access, but it is not a purchase, so the screen must
         // not offer to cancel or resume it.
         var fromAdminOverride = user.IsAdmin && current is null;
+        var courtesy = SubscriptionAccessEvaluator.HasCourtesyAccess(user);
 
         return new SubscriptionOverviewResponse(
             PlanResponse.From(subscriptions.GetPlanInfo()),
@@ -571,7 +572,7 @@ public static class SubscriptionEndpoints
             fromAdminOverride,
             eligibility.IsEligible,
             eligibility.Reason,
-            SubscriptionActionsResponse.For(current, fromAdminOverride),
+            SubscriptionActionsResponse.For(current, fromAdminOverride, courtesy),
             subscriptions.GetManageUrl(),
             [.. user.Subscriptions
                 .OrderByDescending(item => item.CreatedAtUtc)
@@ -579,7 +580,8 @@ public static class SubscriptionEndpoints
             [.. invoices.Select(InvoiceResponse.From)],
             [.. events.Select(EventResponse.From)],
             warning,
-            cancellation);
+            cancellation,
+            courtesy ? user.VipUntilUtc : null);
     }
 }
 
@@ -654,6 +656,11 @@ public sealed record SubscriptionResponse(
     public static SubscriptionResponse From(Subscription subscription)
     {
         var hasAccess = SubscriptionAccessEvaluator.HasVipAccess(subscription);
+        var revokedAt = subscription.AccessRevokedAtUtc;
+
+        // A revoked row shows the day its access ended, not the date Mercado Pago still has
+        // on file: "termina el 10 de octubre" on an account that already lost Pro is false.
+        DateTime? Until(DateTime? value) => revokedAt is { } at && value > at ? at : value;
 
         return new SubscriptionResponse(
             subscription.Id,
@@ -665,18 +672,18 @@ public sealed record SubscriptionResponse(
             subscription.PaymentMethodLabel,
             subscription.ExternalSubscriptionId,
             subscription.TrialStartsAtUtc,
-            subscription.TrialEndsAtUtc,
+            Until(subscription.TrialEndsAtUtc),
             subscription.SubscriptionStartsAtUtc,
-            subscription.NextBillingAtUtc,
+            Until(subscription.NextBillingAtUtc),
             subscription.LastPaymentAtUtc,
             subscription.CancelledAtUtc,
-            subscription.GraceEndsAtUtc,
+            Until(subscription.GraceEndsAtUtc),
             subscription.PausedAtUtc,
             subscription.LastSyncedAtUtc,
             subscription.TrialWasApplied,
             subscription.IsDevSimulated,
             hasAccess,
-            subscription.Status is "trial" or "activa" or "pago_fallido",
+            revokedAt is null && subscription.Status is "trial" or "activa" or "pago_fallido",
             hasAccess ? subscription.NextBillingAtUtc ?? subscription.TrialEndsAtUtc : null,
             subscription.Status == "pendiente" ? subscription.CheckoutUrl : null,
             subscription.LastPaymentStatusDetail,
@@ -696,13 +703,22 @@ public sealed record SubscriptionActionsResponse(
     bool CanCancel,
     bool CanResume)
 {
-    public static SubscriptionActionsResponse For(Subscription? current, bool fromAdminOverride)
+    public static SubscriptionActionsResponse For(Subscription? current, bool fromAdminOverride, bool courtesy = false)
     {
         if (fromAdminOverride)
         {
             return new SubscriptionActionsResponse(false, false, false, false);
         }
 
+        var actions = ForSubscription(current);
+
+        // Pro given from the admin panel is access already in hand: offering the plan on
+        // top of it is the same paying-twice the cancelled-but-running rule below prevents.
+        return courtesy ? actions with { CanSubscribe = false, CanResumeCheckout = false } : actions;
+    }
+
+    private static SubscriptionActionsResponse ForSubscription(Subscription? current)
+    {
         if (current is null)
         {
             return new SubscriptionActionsResponse(true, false, false, false);
@@ -714,6 +730,14 @@ public sealed record SubscriptionActionsResponse(
         if (current.IsDevSimulated)
         {
             return new SubscriptionActionsResponse(true, false, true, false);
+        }
+
+        // Pro taken away from the panel, and cancelled at Mercado Pago when it would have
+        // been charged: nothing is left to cancel or resume, and nothing stands in the way
+        // of subscribing again.
+        if (current.AccessRevokedAtUtc is not null)
+        {
+            return new SubscriptionActionsResponse(true, false, false, false);
         }
 
         var linked = !string.IsNullOrWhiteSpace(current.ExternalSubscriptionId);
@@ -813,7 +837,10 @@ public sealed record SubscriptionOverviewResponse(
     IReadOnlyList<EventResponse> Events,
     string? Warning,
     // Present only on the response to a cancellation.
-    CancellationResponse? Cancellation);
+    CancellationResponse? Cancellation,
+    // The end of the Pro an admin gave without a charge, while it runs. Not a
+    // subscription: nothing is charged and there is nothing to cancel.
+    DateTime? CourtesyUntilUtc = null);
 
 /// <summary>
 /// The configuration that decides whether payments can complete, next to what has
