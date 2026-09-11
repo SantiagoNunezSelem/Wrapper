@@ -295,11 +295,14 @@ public static class SchemaUpgrades
             cancellationToken);
 
         // ---------------------------------------------------------------------
-        // Admin panel: all additive. Nothing here changes a table the app already
-        // reads; it only adds columns and tables the panel fills in.
+        // Admin panel: all additive. Columns only the panel writes, null everywhere
+        // else — and null means exactly what the app did before they existed.
         // ---------------------------------------------------------------------
 
         await AddColumnIfMissingAsync(db, "Users", "LastSeenAtUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "VipUntilUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "TrialGrantedAtUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Subscriptions", "AccessRevokedAtUtc", "TEXT NULL", cancellationToken);
 
         foreach (var statement in new[]
                  {

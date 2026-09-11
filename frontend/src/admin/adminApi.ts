@@ -70,6 +70,28 @@ export function getAdminSystem(token: string): Promise<AdminSystemReport> {
   return request<AdminSystemReport>('/api/admin/system', { method: 'GET' }, token)
 }
 
+/** Duraciones del VIP que ofrece el panel. `null` es sin vencimiento. */
+export type AdminVipDays = 7 | 30 | 90 | null
+
+/** Pro sin cobro. Si ya tiene Pro de regalo, se suma a lo que le queda. */
+export function grantAdminVip(token: string, id: string, days: AdminVipDays): Promise<AdminUserDetail> {
+  return request<AdminUserDetail>(
+    `/api/admin/users/${encodeURIComponent(id)}/vip`,
+    { method: 'POST', body: JSON.stringify(days === null ? { forever: true } : { days }) },
+    token,
+  )
+}
+
+/** Le saca el Pro ya. Una suscripción que Mercado Pago volvería a cobrar se cancela primero. */
+export function revokeAdminVip(token: string, id: string): Promise<AdminUserDetail> {
+  return request<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(id)}/vip`, { method: 'DELETE' }, token)
+}
+
+/** Su próxima suscripción arranca con la semana gratis, aunque su red o su dispositivo ya la hayan usado. */
+export function grantAdminTrial(token: string, id: string): Promise<AdminUserDetail> {
+  return request<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(id)}/trial`, { method: 'POST' }, token)
+}
+
 export type AdminExport = 'users' | 'invoices'
 
 /** El CSV entero, como archivo. Cada descarga queda en el registro de acciones del panel. */

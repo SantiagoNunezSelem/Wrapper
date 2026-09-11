@@ -171,6 +171,9 @@ export interface SubscriptionOverview {
   events: SubscriptionEvent[]
   warning: string | null
   cancellation: CancellationResult | null
+  /** The end of the Pro an admin gave without a charge, while it runs. Not a subscription:
+   * nothing is charged and there is nothing to cancel. */
+  courtesyUntilUtc?: string | null
 }
 
 /**

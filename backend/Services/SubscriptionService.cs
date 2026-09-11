@@ -95,10 +95,12 @@ public sealed class SubscriptionService(
 
         // Anything still granting Pro blocks a second checkout, not only "activa" and
         // "trial": a cancelled subscription keeps the period it already paid for, and
-        // buying again inside that window is paying twice over for the same days.
-        if (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is { } current &&
-            !current.IsDevSimulated &&
-            SubscriptionAccessEvaluator.HasVipAccess(current))
+        // buying again inside that window is paying twice over for the same days. Pro
+        // given from the admin panel counts too, for the same reason.
+        if (SubscriptionAccessEvaluator.HasCourtesyAccess(user) ||
+            (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is { } current &&
+             !current.IsDevSimulated &&
+             SubscriptionAccessEvaluator.HasVipAccess(current)))
         {
             throw new SubscriptionConflictException("already_active", "This account already has an active subscription.");
         }
@@ -360,6 +362,62 @@ public sealed class SubscriptionService(
         }
 
         return subscription;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Admin revocation
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Takes Pro away now from every subscription still granting it — the admin panel's
+    /// "Quitar VIP". Unlike <see cref="CancelAsync"/>, which leaves the customer the period
+    /// they already paid for, access ends immediately: this is for tests, and for the rare
+    /// account that has to lose Pro today.
+    ///
+    /// A subscription Mercado Pago would charge again is cancelled there first and only
+    /// then marked revoked, so a failed call leaves that row as it was: an account charged
+    /// every month for Pro it cannot use is worse than one that keeps Pro a while longer.
+    /// </summary>
+    /// <returns>The Mercado Pago ids cancelled on the way, for the audit trail.</returns>
+    public async Task<IReadOnlyList<string>> RevokeAccessAsync(User user, CancellationToken cancellationToken)
+    {
+        var cancelled = new List<string>();
+
+        foreach (var subscription in user.Subscriptions.Where(SubscriptionAccessEvaluator.HasVipAccess).ToList())
+        {
+            var bills = SubscriptionAccessEvaluator.BillsAtProvider(subscription);
+
+            if (bills)
+            {
+                var updated = await client.CancelSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
+                if (updated is not null)
+                {
+                    ApplyPreapproval(subscription, updated);
+                }
+
+                cancelled.Add(subscription.ExternalSubscriptionId!);
+            }
+
+            var now = DateTime.UtcNow;
+            subscription.Status = "cancelada";
+            subscription.CancelledAtUtc ??= now;
+            subscription.AccessRevokedAtUtc = now;
+            subscription.CheckoutUrl = null;
+            subscription.UpdatedAtUtc = now;
+
+            RecordEvent(
+                subscription,
+                "admin",
+                "revoke_access",
+                null,
+                bills ? "Access revoked from the admin panel; cancelled at Mercado Pago." : "Access revoked from the admin panel.");
+
+            // One row at a time: once Mercado Pago has cancelled one, a failure on the next
+            // must not lose that — it would stay cancelled there and "activa" here.
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return cancelled;
     }
 
     // ---------------------------------------------------------------------------

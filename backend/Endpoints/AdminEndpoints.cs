@@ -8,8 +8,9 @@ namespace backend.Endpoints;
 
 /// <summary>
 /// The admin panel's API. Every route sits behind one gate — <see cref="RequireAdmin"/> —
-/// so a new section cannot ship without it. The only writes are a re-read from Mercado
-/// Pago and internal notes; both land in the audit trail, as do the exports.
+/// so a new section cannot ship without it. The writes are a re-read from Mercado Pago,
+/// internal notes and the access actions (VIP and the free week); all of them land in the
+/// audit trail, as do the exports.
 /// </summary>
 public static class AdminEndpoints
 {
@@ -83,6 +84,110 @@ public static class AdminEndpoints
                 : Results.NotFound();
         });
 
+        // Pro without a payment: 7, 30 or 90 days, or no end with `forever`. A body that
+        // says neither is a 400, not "no end" — a permanent grant is asked for, never
+        // fallen into.
+        group.MapPost("/users/{id:guid}/vip", async (
+            Guid id,
+            AdminVipRequest? request,
+            ClaimsPrincipal principal,
+            AdminDashboardService admin,
+            AdminAccessService access,
+            CancellationToken cancellationToken) =>
+        {
+            if (request is null ||
+                (!request.Forever && (request.Days is not { } days || !AdminAccessService.AllowedDays.Contains(days))))
+            {
+                return Results.BadRequest(new { message = "Elegí 7, 30 o 90 días, o sin vencimiento.", code = "invalid_days" });
+            }
+
+            var user = await admin.LoadUserAsync(id, cancellationToken);
+            if (user is null)
+            {
+                return Results.NotFound();
+            }
+
+            var (adminId, adminEmail) = Actor(principal);
+            try
+            {
+                await access.GrantVipAsync(user, request.Forever ? null : request.Days, adminId, adminEmail, cancellationToken);
+            }
+            catch (SubscriptionConflictException exception)
+            {
+                return Conflict(exception);
+            }
+
+            return Results.Ok(await admin.GetUserAsync(id, cancellationToken));
+        });
+
+        // Takes Pro away now. A subscription Mercado Pago would charge again is cancelled
+        // there first, and while that call fails its access stays: charging someone every
+        // month for Pro they cannot use is worse than leaving Pro on a while longer.
+        group.MapDelete("/users/{id:guid}/vip", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            AdminDashboardService admin,
+            AdminAccessService access,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var user = await admin.LoadUserAsync(id, cancellationToken);
+            if (user is null)
+            {
+                return Results.NotFound();
+            }
+
+            var (adminId, adminEmail) = Actor(principal);
+            try
+            {
+                await access.RevokeVipAsync(user, adminId, adminEmail, cancellationToken);
+            }
+            catch (SubscriptionConflictException exception)
+            {
+                return Conflict(exception);
+            }
+            catch (MercadoPagoException exception)
+            {
+                loggerFactory.CreateLogger("Admin").LogError(exception, "Admin revoke failed for user {UserId}.", id);
+                return Results.Json(
+                    new
+                    {
+                        message = "Mercado Pago no canceló la suscripción, así que esa suscripción conserva el acceso. Probá de nuevo en un momento.",
+                        code = "provider_error",
+                    },
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+
+            return Results.Ok(await admin.GetUserAsync(id, cancellationToken));
+        });
+
+        // The next checkout carries the free week, even from an IP or device that used one.
+        group.MapPost("/users/{id:guid}/trial", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            AdminDashboardService admin,
+            AdminAccessService access,
+            CancellationToken cancellationToken) =>
+        {
+            var user = await admin.LoadUserAsync(id, cancellationToken);
+            if (user is null)
+            {
+                return Results.NotFound();
+            }
+
+            var (adminId, adminEmail) = Actor(principal);
+            try
+            {
+                await access.GrantTrialAsync(user, adminId, adminEmail, cancellationToken);
+            }
+            catch (SubscriptionConflictException exception)
+            {
+                return Conflict(exception);
+            }
+
+            return Results.Ok(await admin.GetUserAsync(id, cancellationToken));
+        });
+
         group.MapGet("/invoices", async (string? status, int? page, AdminReportsService reports, CancellationToken cancellationToken) =>
             Results.Ok(await reports.GetInvoicesAsync(status, page ?? 1, DateTime.UtcNow, cancellationToken)));
 
@@ -131,6 +236,9 @@ public static class AdminEndpoints
     private static (Guid Id, string Email) Actor(ClaimsPrincipal principal) =>
         (principal.GetRequiredUserId(), principal.FindFirstValue(ClaimTypes.Email) ?? string.Empty);
 
+    private static IResult Conflict(SubscriptionConflictException exception) =>
+        Results.Json(new { message = exception.Message, code = exception.Code }, statusCode: StatusCodes.Status409Conflict);
+
     /// <summary>
     /// Re-reads <c>IsAdmin</c> from the database on every request instead of trusting the
     /// role claim in the token: that claim lives as long as the token does (hours), so
@@ -155,3 +263,7 @@ public static class AdminEndpoints
 }
 
 public sealed record AdminNoteRequest(string? Text);
+
+/// <param name="Days">7, 30 or 90.</param>
+/// <param name="Forever">No end. It has to be asked for: a body with neither is refused.</param>
+public sealed record AdminVipRequest(int? Days, bool Forever = false);

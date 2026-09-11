@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminCopy } from '../../copy/adminCopy'
 import type { UserProfile } from '../../types'
 import type {
+  AdminAccess,
   AdminAiReport,
   AdminBusiness,
   AdminInvoicePage,
@@ -21,6 +22,9 @@ vi.mock('../adminApi', () => ({
   getAdminUser: vi.fn(),
   syncAdminUser: vi.fn(),
   addAdminNote: vi.fn(),
+  grantAdminVip: vi.fn(),
+  revokeAdminVip: vi.fn(),
+  grantAdminTrial: vi.fn(),
   getAdminInvoices: vi.fn(),
   getAdminAi: vi.fn(),
   getAdminProduct: vi.fn(),
@@ -109,6 +113,28 @@ const page: AdminUserPage = {
   items: [{ id: 'u-2', email: 'martin@example.com', displayName: 'Martín Rodríguez', createdAtUtc: '2026-06-02T12:00:00Z', state: 'pago_fallido', isAdmin: false }],
 }
 
+/** La cuenta de la ficha: Pro por una suscripción que Mercado Pago sigue cobrando. */
+const baseAccess: AdminAccess = {
+  source: 'subscription',
+  courtesyUntilUtc: null,
+  canGrantVip: false,
+  grantVipBlockedReason: 'paid_active',
+  canRevokeVip: true,
+  revokeCancelsBilling: true,
+  trialState: 'used',
+  trialGrantedAtUtc: null,
+  canGrantTrial: true,
+}
+
+const noAccess: AdminAccess = {
+  ...baseAccess,
+  source: 'none',
+  canGrantVip: true,
+  grantVipBlockedReason: null,
+  canRevokeVip: false,
+  revokeCancelsBilling: false,
+}
+
 const detail: AdminUserDetail = {
   id: 'u-2',
   email: 'martin@example.com',
@@ -137,6 +163,7 @@ const detail: AdminUserDetail = {
     createdAtUtc: '2026-06-02T12:00:00Z',
     isSeededVip: false,
     isDevSimulated: false,
+    accessRevokedAtUtc: null,
   },
   subscriptions: [],
   invoices: [{ id: 'i-1', status: 'rechazado', statusDetail: 'cc_rejected_insufficient_amount', amount: 7800, currencyId: 'ARS', paidAtUtc: null, debitScheduledAtUtc: '2026-09-09T12:00:00Z', createdAtUtc: '2026-09-09T12:00:00Z', attemptNumber: 1 }],
@@ -144,6 +171,12 @@ const detail: AdminUserDetail = {
   usage: { savedAnalyses: 6, sharedStories: 2, aiMetrics: 11, aiMetricsFailed: 1, freeUnlocks: 3, trialClaims: 1, trialCountries: ['AR'], aiTokens: 48_000 },
   lastSeenAtUtc: new Date(Date.now() - 3 * HOUR).toISOString(),
   notes: [{ id: 'n-1', authorEmail: 'admin@example.com', text: 'Pidió factura.', createdAtUtc: '2026-09-09T12:00:00Z' }],
+  access: baseAccess,
+}
+
+/** La misma cuenta, sin Pro y sin suscripción. */
+function withoutPro(access: Partial<AdminAccess> = {}): AdminUserDetail {
+  return { ...detail, state: 'inactiva', hasProAccess: false, current: null, subscriptions: [], access: { ...noAccess, ...access } }
 }
 
 const invoices: AdminInvoicePage = {
@@ -219,7 +252,7 @@ afterEach(() => {
   window.history.replaceState(null, '', '/')
 })
 
-describe('AdminApp · acceso', () => {
+describe('AdminApp · acceso al panel', () => {
   it('sin sesión pide iniciarla', () => {
     renderAdmin('/admin', { token: null, user: null })
     expect(screen.getByText(copy.signInFirst)).toBeInTheDocument()
@@ -510,6 +543,137 @@ describe('AdminApp · Usuarios', () => {
 
     expect(window.location.pathname).toBe('/admin')
     expect(await screen.findByText('1.284')).toBeInTheDocument()
+  })
+})
+
+describe('AdminApp · Acceso de una cuenta', () => {
+  it('con una suscripción que cobra, quitar VIP avisa que la cancela en Mercado Pago', async () => {
+    vi.mocked(api.revokeAdminVip).mockResolvedValueOnce({
+      ...detail,
+      state: 'cancelada',
+      hasProAccess: false,
+      current: { ...detail.current!, status: 'cancelada', accessRevokedAtUtc: '2026-09-11T12:00:00Z' },
+      access: noAccess,
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByText(copy.users.accessSubscription)).toBeInTheDocument()
+    // Dar VIP encima de esa suscripción no frenaría los cobros: no se ofrece, y se dice por qué.
+    expect(screen.getByText(copy.users.grantVipBlocked.paid_active)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: copy.users.grantVip })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: copy.users.revokeVip }))
+    expect(screen.getByText(copy.users.revokeVipConfirmBilling)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: copy.users.confirm }))
+
+    expect(api.revokeAdminVip).toHaveBeenCalledWith('token', 'u-2')
+    expect(await screen.findByText(copy.users.accessNone)).toBeInTheDocument()
+    expect(screen.getByText(copy.users.revokedAt)).toBeInTheDocument()
+    expect(screen.queryByText(copy.users.revokeVipConfirmBilling)).not.toBeInTheDocument()
+  })
+
+  it('da VIP con la duración elegida', async () => {
+    vi.mocked(api.getAdminUser).mockResolvedValueOnce(withoutPro())
+    vi.mocked(api.grantAdminVip).mockResolvedValueOnce({
+      ...withoutPro({ source: 'courtesy', courtesyUntilUtc: '2026-12-10T12:00:00Z', canRevokeVip: true }),
+      hasProAccess: true,
+      state: 'activa',
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByText(copy.users.accessNone)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '90 días' }))
+    await userEvent.click(screen.getByRole('button', { name: copy.users.grantVip }))
+    expect(screen.getByText(/: 90 días\. /)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: copy.users.confirm }))
+
+    expect(api.grantAdminVip).toHaveBeenCalledWith('token', 'u-2', 90)
+    expect(await screen.findByText(/^Tiene Pro de regalo hasta el /)).toBeInTheDocument()
+  })
+
+  it('sin vencimiento hay que elegirlo, y así se pide', async () => {
+    vi.mocked(api.getAdminUser).mockResolvedValueOnce(withoutPro())
+    vi.mocked(api.grantAdminVip).mockResolvedValueOnce({
+      ...withoutPro({ source: 'courtesy', courtesyUntilUtc: '2099-12-31T00:00:00Z', canRevokeVip: true }),
+      hasProAccess: true,
+    })
+    renderAdmin('/admin/usuarios/u-2')
+    await screen.findByText(copy.users.accessNone)
+
+    // Por defecto es un mes: lo permanente se elige a propósito.
+    expect(screen.getByRole('button', { name: '30 días' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: copy.users.vipForever }))
+    await userEvent.click(screen.getByRole('button', { name: copy.users.grantVip }))
+    await userEvent.click(screen.getByRole('button', { name: copy.users.confirm }))
+
+    expect(api.grantAdminVip).toHaveBeenCalledWith('token', 'u-2', null)
+    expect(await screen.findByText(copy.users.accessCourtesyForever)).toBeInTheDocument()
+  })
+
+  it('devuelve la semana gratis', async () => {
+    vi.mocked(api.grantAdminTrial).mockResolvedValueOnce({
+      ...detail,
+      hasUsedTrial: false,
+      access: { ...baseAccess, trialState: 'granted', trialGrantedAtUtc: '2026-09-11T12:00:00Z', canGrantTrial: false },
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByText(copy.users.trialUsed)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: copy.users.grantTrial }))
+    expect(screen.getByText(copy.users.grantTrialConfirm)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: copy.users.confirm }))
+
+    expect(api.grantAdminTrial).toHaveBeenCalledWith('token', 'u-2')
+    expect(await screen.findByText(/^Habilitada por un admin el /)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: copy.users.grantTrial })).not.toBeInTheDocument()
+  })
+
+  it('volver cierra la confirmación sin tocar nada', async () => {
+    renderAdmin('/admin/usuarios/u-2')
+    await screen.findByText(copy.users.accessSubscription)
+
+    await userEvent.click(screen.getByRole('button', { name: copy.users.revokeVip }))
+    await userEvent.click(screen.getByRole('button', { name: copy.users.back }))
+
+    expect(api.revokeAdminVip).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: copy.users.revokeVip })).toBeInTheDocument()
+  })
+
+  it('si la acción falla, lo dice y la ficha queda como estaba', async () => {
+    vi.mocked(api.revokeAdminVip).mockRejectedValueOnce(new Error('Mercado Pago no canceló la suscripción.'))
+    renderAdmin('/admin/usuarios/u-2')
+    await screen.findByText(copy.users.accessSubscription)
+
+    await userEvent.click(screen.getByRole('button', { name: copy.users.revokeVip }))
+    await userEvent.click(screen.getByRole('button', { name: copy.users.confirm }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Mercado Pago no canceló la suscripción.')
+    expect(screen.getByText(copy.users.accessSubscription)).toBeInTheDocument()
+  })
+
+  it('a un admin sólo le dice que siempre tiene Pro', async () => {
+    vi.mocked(api.getAdminUser).mockResolvedValueOnce({
+      ...detail,
+      isAdmin: true,
+      access: { ...baseAccess, source: 'admin', canGrantVip: false, grantVipBlockedReason: 'admin', canRevokeVip: false, canGrantTrial: false },
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByText(copy.users.accessAdmin)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: copy.users.grantVip })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: copy.users.revokeVip })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: copy.users.grantTrial })).not.toBeInTheDocument()
+  })
+
+  it('el Pro de regalo encima de una suscripción se ve aparte', async () => {
+    vi.mocked(api.getAdminUser).mockResolvedValueOnce({
+      ...detail,
+      access: { ...baseAccess, courtesyUntilUtc: '2026-12-10T12:00:00Z' },
+    })
+    renderAdmin('/admin/usuarios/u-2')
+
+    expect(await screen.findByText(copy.users.accessSubscription)).toBeInTheDocument()
+    expect(screen.getByText(/^Tiene Pro de regalo hasta el /)).toBeInTheDocument()
   })
 })
 

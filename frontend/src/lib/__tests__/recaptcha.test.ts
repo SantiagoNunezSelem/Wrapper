@@ -58,8 +58,10 @@ describe('loadRecaptchaScript', () => {
 
   it('inyecta el script una sola vez por site key', async () => {
     const { loadRecaptchaScript } = await freshModule()
-    void loadRecaptchaScript('site-key')
-    void loadRecaptchaScript('site-key')
+    // Con `catch` y no sueltas: las dos siguen esperando los 10 segundos del timeout, y en
+    // cuanto la suite entera dura más que eso, ese rechazo sin dueño ensucia toda la corrida.
+    void loadRecaptchaScript('site-key').catch(() => {})
+    void loadRecaptchaScript('site-key').catch(() => {})
 
     expect(document.head.querySelectorAll('script')).toHaveLength(1)
   })

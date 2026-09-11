@@ -11,6 +11,9 @@ public static class AdminActions
     public const string Sync = "sync";
     public const string ExportUsers = "export_users";
     public const string ExportInvoices = "export_invoices";
+    public const string GrantVip = "grant_vip";
+    public const string RevokeVip = "revoke_vip";
+    public const string GrantTrial = "grant_trial";
 }
 
 /// <summary>

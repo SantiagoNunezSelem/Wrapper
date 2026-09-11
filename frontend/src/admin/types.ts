@@ -136,6 +136,8 @@ export interface AdminSubscription {
   createdAtUtc: string
   isSeededVip: boolean
   isDevSimulated: boolean
+  /** Cuándo un admin le quitó el acceso. Null si nunca. */
+  accessRevokedAtUtc: string | null
 }
 
 export interface AdminInvoice {
@@ -179,6 +181,24 @@ export interface AdminNote {
   createdAtUtc: string
 }
 
+/**
+ * De dónde sale el Pro de la cuenta y qué acciones de acceso ofrece el panel. Lo decide el
+ * servidor, así el panel nunca muestra un botón que la API rechazaría.
+ */
+export interface AdminAccess {
+  source: 'admin' | 'subscription' | 'courtesy' | 'none'
+  /** Fin del Pro dado desde el panel, mientras dura. */
+  courtesyUntilUtc: string | null
+  canGrantVip: boolean
+  grantVipBlockedReason: 'admin' | 'paid_active' | null
+  canRevokeVip: boolean
+  /** Si quitar el Pro también cancela una suscripción que Mercado Pago volvería a cobrar. */
+  revokeCancelsBilling: boolean
+  trialState: 'used' | 'granted' | 'unused'
+  trialGrantedAtUtc: string | null
+  canGrantTrial: boolean
+}
+
 export interface AdminUserDetail {
   id: string
   email: string
@@ -198,6 +218,7 @@ export interface AdminUserDetail {
   /** Última vez que abrió la app con la sesión iniciada. Null si no entró desde que se registra. */
   lastSeenAtUtc: string | null
   notes: AdminNote[]
+  access: AdminAccess
 }
 
 export interface AdminInvoiceRow {

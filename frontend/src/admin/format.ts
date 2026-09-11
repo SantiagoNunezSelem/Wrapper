@@ -117,6 +117,8 @@ export function describeEvent(event: AdminEvent, copy: AdminCopy): string {
       return e.reconcile
     case 'dev':
       return e.dev
+    case 'admin':
+      return event.action === 'revoke_access' ? e.adminRevoke : e.admin
     default:
       return e.other
   }

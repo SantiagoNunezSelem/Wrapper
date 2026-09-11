@@ -6,13 +6,17 @@ public static class SubscriptionAccessEvaluator
 {
     public static bool HasVipAccess(User user)
     {
-        if (user.IsAdmin)
+        if (user.IsAdmin || HasCourtesyAccess(user))
         {
             return true;
         }
 
         return GetLatestRelevantSubscription(user) is { } subscription && HasVipAccess(subscription);
     }
+
+    /// <summary>Pro given from the admin panel, still running. See <see cref="User.VipUntilUtc"/>.</summary>
+    public static bool HasCourtesyAccess(User user) =>
+        user.VipUntilUtc is { } until && until >= DateTime.UtcNow;
 
     /// <summary>
     /// The one word the shells put next to someone's name. Deliberately not the raw row
@@ -31,7 +35,16 @@ public static class SubscriptionAccessEvaluator
             return "activa";
         }
 
-        if (GetLatestRelevantSubscription(user) is not { } subscription)
+        var subscription = GetLatestRelevantSubscription(user);
+
+        // Pro from the panel reads as active, like the admin override: a cancelled or
+        // abandoned row left over from before must not label an account that has Pro.
+        if (HasCourtesyAccess(user) && (subscription is null || !HasVipAccess(subscription)))
+        {
+            return "activa";
+        }
+
+        if (subscription is null)
         {
             return "inactiva";
         }
@@ -72,8 +85,27 @@ public static class SubscriptionAccessEvaluator
         subscription.LastPaymentStatusDetail is { Length: > 0 } detail &&
         !SettledWithoutPayment.Any(prefix => detail.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Whether Mercado Pago may still charge this subscription: linked to a preapproval,
+    /// not simulated, not revoked, and in a state whose preapproval is alive — or pending
+    /// with a charge already moving.
+    /// </summary>
+    public static bool BillsAtProvider(Subscription subscription) =>
+        !subscription.IsDevSimulated &&
+        subscription.AccessRevokedAtUtc is null &&
+        !string.IsNullOrWhiteSpace(subscription.ExternalSubscriptionId) &&
+        (subscription.Status is "trial" or "activa" or "pago_fallido" or "pausada" ||
+         (subscription.Status == "pendiente" && HasPaymentInFlight(subscription)));
+
     public static bool HasVipAccess(Subscription subscription)
     {
+        // Taken away from the panel. Checked before the status on purpose: Mercado Pago can
+        // rewrite that status and its dates afterwards, and none of it gives Pro back.
+        if (subscription.AccessRevokedAtUtc is not null)
+        {
+            return false;
+        }
+
         var now = DateTime.UtcNow;
 
         return subscription.Status switch

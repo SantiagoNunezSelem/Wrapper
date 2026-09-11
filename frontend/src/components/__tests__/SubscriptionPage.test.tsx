@@ -137,6 +137,20 @@ describe('SubscriptionPage', () => {
     })
   })
 
+  describe('Pro de regalo', () => {
+    it('dice hasta cuándo y que no se cobra nada', () => {
+      renderPage({ ...overview(null), hasVipAccess: true, courtesyUntilUtc: '2026-12-10T12:00:00Z' })
+
+      expect(screen.getByText(/^Tenés Pro de regalo hasta el .+\. No se te cobra nada\.$/)).toBeInTheDocument()
+    })
+
+    it('sin vencimiento no inventa una fecha', () => {
+      renderPage({ ...overview(null), hasVipAccess: true, courtesyUntilUtc: '2099-12-31T00:00:00Z' })
+
+      expect(screen.getByText(copy.courtesyNoteForever)).toBeInTheDocument()
+    })
+  })
+
   describe('actividad de la cuenta', () => {
     // Tópicos de webhook y transiciones de estado: un diagnóstico para quien administra la
     // facturación, no algo que un cliente pueda leer.

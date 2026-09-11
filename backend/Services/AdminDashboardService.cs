@@ -419,7 +419,8 @@ public sealed class AdminDashboardService(
             events,
             usage,
             user.LastSeenAtUtc,
-            notes);
+            notes,
+            AdminAccessService.Describe(user));
     }
 }
 
@@ -530,12 +531,13 @@ public sealed record AdminSubscription(
     DateTime? LastSyncedAtUtc,
     DateTime CreatedAtUtc,
     bool IsSeededVip,
-    bool IsDevSimulated)
+    bool IsDevSimulated,
+    DateTime? AccessRevokedAtUtc)
 {
     public static AdminSubscription From(Subscription item) =>
         new(item.Id, item.Status, item.PlanType, item.Amount, item.CurrencyId, item.PaymentMethodLabel, item.ExternalSubscriptionId,
             item.LastPaymentStatusDetail, item.TrialEndsAtUtc, item.NextBillingAtUtc, item.GraceEndsAtUtc, item.CancelledAtUtc,
-            item.LastSyncedAtUtc, item.CreatedAtUtc, item.IsSeededVip, item.IsDevSimulated);
+            item.LastSyncedAtUtc, item.CreatedAtUtc, item.IsSeededVip, item.IsDevSimulated, item.AccessRevokedAtUtc);
 }
 
 public sealed record AdminInvoice(
@@ -584,4 +586,5 @@ public sealed record UserDetail(
     IReadOnlyList<AdminEvent> Events,
     UserUsage Usage,
     DateTime? LastSeenAtUtc,
-    IReadOnlyList<AdminNoteDto> Notes);
+    IReadOnlyList<AdminNoteDto> Notes,
+    AdminAccess Access);
