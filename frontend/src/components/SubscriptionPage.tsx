@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { formatMoney } from '../lib/format'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
@@ -58,6 +58,9 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   cancelConfirmBody: string
   cancelConfirmTrialBody: string
   cancelConfirmPendingBody: string
+  discardCheckoutCta: string
+  discardCheckoutTitle: string
+  discardCheckoutYes: string
   cancelConfirmYes: string
   cancelConfirmNo: string
   cancelledNothingCharged: string
@@ -200,20 +203,28 @@ export function SubscriptionPage({
               isBusy={isBusy}
               busyAction={busyAction}
               canResumeCheckout={Boolean(actions?.canResumeCheckout)}
+              canCancel={Boolean(actions?.canCancel)}
               onRefresh={onRefresh}
+              onCancel={onCancel}
             />
 
-            <CurrentPlanSection
-              current={current}
-              plan={plan}
-              copy={copy}
-              locale={locale}
-              overview={overview}
-              isBusy={isBusy}
-              busyAction={busyAction}
-              onCancel={onCancel}
-              onResume={onResume}
-            />
+            {/* Nothing has been bought yet, so there is no plan to describe. The dates
+                Mercado Pago projects for a checkout nobody completed — a start day, a
+                first debit — read exactly like a subscription that is already running,
+                which is the opposite of what the banner right above is saying. */}
+            {current.status !== 'pendiente' ? (
+              <CurrentPlanSection
+                current={current}
+                plan={plan}
+                copy={copy}
+                locale={locale}
+                overview={overview}
+                isBusy={isBusy}
+                busyAction={busyAction}
+                onCancel={onCancel}
+                onResume={onResume}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -277,7 +288,9 @@ function StatusBanner({
   isBusy,
   busyAction,
   canResumeCheckout,
+  canCancel,
   onRefresh,
+  onCancel,
 }: {
   current: SubscriptionRecord
   copy: SubscriptionPageCopy
@@ -285,8 +298,13 @@ function StatusBanner({
   isBusy: boolean
   busyAction: SubscriptionBusyAction | null
   canResumeCheckout: boolean
+  canCancel: boolean
   onRefresh: () => void
+  onCancel: () => void
 }) {
+  // Closing an unfinished attempt lives here because the plan card it used to live in is
+  // not drawn for one: there is no plan yet to cancel a renewal on.
+  const [discarding, setDiscarding] = useState(false)
   // `pendiente` covers two opposite things, and the screen must not say the same words
   // for both: a charge Mercado Pago is genuinely working on, and a checkout that was
   // opened and abandoned — where nothing was authorised and nothing will be charged.
@@ -353,6 +371,16 @@ function StatusBanner({
             <button type="button" className="ghost-button" onClick={onRefresh} disabled={isBusy}>
               {busyAction === 'refresh' ? copy.checkingStatus : copy.refreshCta}
             </button>
+            {canCancel ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setDiscarding(true)}
+                disabled={isBusy}
+              >
+                {busyAction === 'cancel' ? copy.cancelling : copy.discardCheckoutCta}
+              </button>
+            ) : null}
           </div>
           {canResumeCheckout && current.checkoutUrl ? (
             <p className="subpage-banner-fineprint">{copy.resumeCheckoutHint}</p>
@@ -361,6 +389,25 @@ function StatusBanner({
             {isUnfinishedCheckout ? copy.checkoutOpenPaidNote : copy.alreadyPaidNote}
           </p>
         </>
+      ) : null}
+
+      {discarding ? (
+        <ConfirmDialog
+          copy={{
+            title: copy.discardCheckoutTitle,
+            body: copy.cancelConfirmPendingBody,
+            confirm: copy.discardCheckoutYes,
+            cancel: copy.cancelConfirmNo,
+            busy: copy.cancelling,
+            close: copy.close,
+          }}
+          isBusy={isBusy}
+          onConfirm={() => {
+            setDiscarding(false)
+            onCancel()
+          }}
+          onCancel={() => setDiscarding(false)}
+        />
       ) : null}
     </section>
   )

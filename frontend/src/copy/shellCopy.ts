@@ -1,4 +1,4 @@
-import type { Language } from '../types'
+﻿import type { Language } from '../types'
 
 /**
  * Todo el texto visible de la app, en los dos idiomas.
@@ -337,6 +337,11 @@ export const shellCopy = {
         'Estás en la prueba gratis: el primer cobro de {amount} del {date} no se va a hacer. Conservás el acceso Pro hasta esa fecha.',
       cancelConfirmPendingBody:
         'Todavía no se completó ningún pago, así que no hay nada que cobrar. Vamos a cerrar este intento y podés arrancar uno nuevo cuando quieras.',
+      // "Cancelar renovación" no aplica sobre un intento: no hay renovación todavía, y
+      // llamarlo así da a entender que existe una suscripción andando.
+      discardCheckoutCta: 'Descartar este intento',
+      discardCheckoutTitle: '¿Descartar este intento de pago?',
+      discardCheckoutYes: 'Sí, descartar',
       cancelConfirmYes: 'Sí, cancelar',
       cancelConfirmNo: 'Volver',
       cancelledNothingCharged: 'Listo: cancelamos la renovación y no se te va a cobrar nada.',
@@ -831,6 +836,9 @@ export const shellCopy = {
         "You're on the free trial: the first {amount} charge on {date} will not happen. You keep Pro access until then.",
       cancelConfirmPendingBody:
         "No payment has gone through, so there is nothing to charge. We'll close this attempt and you can start a new one whenever you want.",
+      discardCheckoutCta: 'Discard this attempt',
+      discardCheckoutTitle: 'Discard this payment attempt?',
+      discardCheckoutYes: 'Yes, discard',
       cancelConfirmYes: 'Yes, cancel',
       cancelConfirmNo: 'Go back',
       cancelledNothingCharged: "Done: renewal cancelled and you won't be charged anything.",

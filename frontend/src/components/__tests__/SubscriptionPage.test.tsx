@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+﻿import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { shellCopy } from '../../copy/shellCopy'
@@ -287,6 +287,36 @@ describe('SubscriptionPage', () => {
         'href',
         'https://mp.test/subscribe/pre-1',
       )
+    })
+
+    it('no dibuja la tarjeta del plan: todavía no hay plan', () => {
+      // Mercado Pago proyecta un día de inicio y un primer cobro apenas se abre el
+      // checkout. Mostrarlos arriba de "Tu plan" describe una suscripción andando, que es
+      // justo lo contrario de lo que dice el cartel de al lado.
+      renderPage(
+        overview(
+          record({
+            ...abandoned(),
+            subscriptionStartsAtUtc: '2026-09-11T00:00:00Z',
+            nextBillingAtUtc: '2026-09-18T00:00:00Z',
+          }),
+          { canResumeCheckout: true },
+        ),
+      )
+
+      expect(screen.queryByText(copy.currentPlanTitle)).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.startedOn)).not.toBeInTheDocument()
+    })
+
+    it('deja descartar el intento desde el mismo cartel', async () => {
+      // La acción vivía en la tarjeta del plan, que ya no se dibuja acá. Sin esto, un
+      // checkout trabado no tendría salida.
+      const handlers = renderPage(overview(abandoned(), { canCancel: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.discardCheckoutCta }))
+      await userEvent.click(screen.getByRole('button', { name: copy.discardCheckoutYes }))
+
+      expect(handlers.onCancel).toHaveBeenCalledTimes(1)
     })
   })
 
