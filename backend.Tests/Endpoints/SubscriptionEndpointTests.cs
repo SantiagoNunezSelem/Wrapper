@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -93,6 +93,25 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
         Assert.Equal("activa", current.GetProperty("status").GetString());
         Assert.True(current.GetProperty("hasAccess").GetBoolean());
         Assert.Equal(1, body.GetProperty("history").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task El_historial_de_suscripciones_solo_lista_pruebas_y_meses_cobrados()
+    {
+        // Un checkout que nunca llegó a cobrar no es una suscripción, es un intento — y los
+        // intentos se cuentan en el historial de pagos, con el motivo del rechazo al lado.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: [
+            ApiFactory.ActiveSubscription(),
+            new Subscription { Status = "cancelada", TrialEndsAtUtc = DateTime.UtcNow.AddDays(-20) },
+            new Subscription { Status = "pendiente", LastPaymentStatusDetail = "cc_rejected_other_reason" },
+        ]);
+
+        var history = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("history");
+
+        Assert.Equal(2, history.GetArrayLength());
+        Assert.DoesNotContain(
+            "pendiente",
+            history.EnumerateArray().Select(item => item.GetProperty("status").GetString()));
     }
 
     [Fact]

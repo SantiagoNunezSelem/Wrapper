@@ -574,7 +574,13 @@ public static class SubscriptionEndpoints
             eligibility.Reason,
             SubscriptionActionsResponse.For(current, fromAdminOverride, courtesy),
             subscriptions.GetManageUrl(),
+            // Only what the customer actually got: a free week that started, or a month
+            // that was charged. A checkout that never became either is an attempt, not a
+            // subscription — attempts belong in the payment history, with the reason they
+            // failed next to them, instead of turning this list into a log of everything
+            // that went wrong.
             [.. user.Subscriptions
+                .Where(item => item.TrialEndsAtUtc is not null || item.LastPaymentAtUtc is not null || item.IsDevSimulated)
                 .OrderByDescending(item => item.CreatedAtUtc)
                 .Select(SubscriptionResponse.From)],
             [.. invoices.Select(InvoiceResponse.From)],

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using backend.Data;
 using backend.Models;
@@ -169,6 +169,10 @@ public class ApiFactory : WebApplicationFactory<Program>
         PaymentProvider = "mercadopago",
         NextBillingAtUtc = DateTime.UtcNow.AddDays(20),
         ExternalSubscriptionId = "pre-1",
+        // Con un mes ya cobrado encima. Una suscripción activa que nunca cobró un peso no
+        // existe fuera de un fixture, y darla por buena esconde justamente los casos donde
+        // la diferencia importa.
+        LastPaymentAtUtc = DateTime.UtcNow.AddDays(-10),
     };
 
     protected override void Dispose(bool disposing)
