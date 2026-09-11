@@ -303,7 +303,7 @@ public sealed class SubscriptionService(
 
         if (updated is not null)
         {
-            ApplyPreapproval(subscription, updated);
+            await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
         }
 
         // Applied after the mapping, not before: ApplyPreapproval trusts the provider's
@@ -335,7 +335,7 @@ public sealed class SubscriptionService(
 
         if (updated is not null)
         {
-            ApplyPreapproval(subscription, updated);
+            await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
         }
         else
         {
@@ -392,7 +392,7 @@ public sealed class SubscriptionService(
                 var updated = await client.CancelSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
                 if (updated is not null)
                 {
-                    ApplyPreapproval(subscription, updated);
+                    await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
                 }
 
                 cancelled.Add(subscription.ExternalSubscriptionId!);
@@ -509,7 +509,7 @@ public sealed class SubscriptionService(
         // Pago reports it as "authorized" from the moment the payer picks a card, before
         // knowing whether the card works, so reading it first derives the free week from
         // the authorisation and then never hears the charge that bounced.
-        ApplyPreapproval(subscription, preapproval);
+        await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
         subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
@@ -626,7 +626,7 @@ public sealed class SubscriptionService(
                 // says nothing about whether that card paid.
                 await db.SaveChangesAsync(cancellationToken);
                 await RefreshPendingReasonAsync(subscription, cancellationToken);
-                ApplyPreapproval(subscription, preapproval);
+                await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
                 subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
@@ -757,7 +757,7 @@ public sealed class SubscriptionService(
             {
                 if (await client.GetSubscriptionAsync(subscription.ExternalSubscriptionId, cancellationToken) is { } preapproval)
                 {
-                    ApplyPreapproval(subscription, preapproval);
+                    await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
                 }
             }
             catch (MercadoPagoException exception)
@@ -901,7 +901,7 @@ public sealed class SubscriptionService(
         }
 
         var previousStatus = subscription.Status;
-        ApplyPreapproval(subscription, preapproval);
+        await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
         RecordEvent(subscription, topic, action, eventId, $"{previousStatus} → {subscription.Status}", rawBody);
         await db.SaveChangesAsync(cancellationToken);
@@ -987,8 +987,13 @@ public sealed class SubscriptionService(
     // ---------------------------------------------------------------------------
 
     /// <summary>Folds a Mercado Pago preapproval into the local row.</summary>
-    private void ApplyPreapproval(Subscription subscription, Preapproval preapproval)
+    private async Task ApplyPreapprovalAsync(
+        Subscription subscription,
+        Preapproval preapproval,
+        CancellationToken cancellationToken)
     {
+        var nothingCollected = await NothingWasEverCollectedAsync(subscription, cancellationToken);
+
         subscription.ExternalSubscriptionId ??= preapproval.Id;
         subscription.ExternalPlanId ??= preapproval.PreapprovalPlanId;
         subscription.ExternalPayerId = preapproval.PayerId?.ToString(CultureInfo.InvariantCulture) ?? subscription.ExternalPayerId;
@@ -1015,7 +1020,7 @@ public sealed class SubscriptionService(
         subscription.Status = preapproval.Status switch
         {
             "pending" => "pendiente",
-            "authorized" => ResolveAuthorizedStatus(subscription, preapproval),
+            "authorized" => ResolveAuthorizedStatus(subscription, preapproval, nothingCollected),
             "paused" => "pausada",
             "cancelled" or "canceled" => "cancelada",
             _ => subscription.Status,
@@ -1056,7 +1061,7 @@ public sealed class SubscriptionService(
         // rules, a billing date through "activa" and "pausada" — which is the free account
         // a refused card used to walk away with, and it outlived even cancelling. They
         // come back by themselves as soon as a charge is approved.
-        if (NothingWasEverCollected(subscription))
+        if (nothingCollected)
         {
             subscription.TrialEndsAtUtc = null;
             subscription.NextBillingAtUtc = null;
@@ -1069,9 +1074,37 @@ public sealed class SubscriptionService(
     /// preapproval on "authorized" through all of that — it authorises the moment the
     /// payer picks a card, long before knowing whether the card works — so this is the
     /// only thing that separates a customer from a card that never paid.
+    ///
+    /// Read from the invoices — the same rows "Historial de pagos" lists — and not only
+    /// from <see cref="Models.Subscription.LastPaymentStatusDetail"/>, which is a cache of
+    /// the newest unsettled charge and is wiped whenever nothing is outstanding. Trusting
+    /// the cache alone let the screen show a rejected charge and a running free week at the
+    /// same time, each reading a different source about the same money.
     /// </summary>
-    private static bool NothingWasEverCollected(Subscription subscription) =>
-        subscription.LastPaymentAtUtc is null && subscription.LastPaymentStatusDetail is { Length: > 0 };
+    private async Task<bool> NothingWasEverCollectedAsync(
+        Subscription subscription,
+        CancellationToken cancellationToken)
+    {
+        if (subscription.LastPaymentAtUtc is not null)
+        {
+            return false;
+        }
+
+        var statuses = await db.SubscriptionInvoices
+            .Where(invoice => invoice.SubscriptionId == subscription.Id)
+            .Select(invoice => invoice.Status)
+            .ToListAsync(cancellationToken);
+
+        if (statuses.Contains("aprobado"))
+        {
+            return false;
+        }
+
+        // The detail covers the charge this very notification is carrying, whose invoice is
+        // written a few lines later and is not in the database yet.
+        return subscription.LastPaymentStatusDetail is { Length: > 0 } ||
+               statuses.Any(status => status is "rechazado" or "pendiente" or "reintentando");
+    }
 
     /// <summary>
     /// An authorised subscription is either inside its free week or genuinely paying.
@@ -1079,7 +1112,10 @@ public sealed class SubscriptionService(
     /// free trial that has not been charged yet is still in the trial, and the first
     /// real debit date is exactly when it ends.
     /// </summary>
-    private static string ResolveAuthorizedStatus(Subscription subscription, Preapproval preapproval)
+    private static string ResolveAuthorizedStatus(
+        Subscription subscription,
+        Preapproval preapproval,
+        bool nothingCollected)
     {
         var hasFreeTrial = preapproval.AutoRecurring?.FreeTrial is not null;
         var chargedCount = preapproval.Summarized?.ChargedQuantity ?? 0;
@@ -1091,8 +1127,8 @@ public sealed class SubscriptionService(
         // nothing was ever collected, and the account still switched itself to Pro. So
         // while a charge of ours is refused or still undecided and none has ever been
         // approved, the row stays where it was — waiting for money that has not moved. The
-        // dates it would have inherited are cleared at the end of ApplyPreapproval.
-        if (NothingWasEverCollected(subscription))
+        // dates it would have inherited are cleared at the end of ApplyPreapprovalAsync.
+        if (nothingCollected)
         {
             return "pendiente";
         }

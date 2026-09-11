@@ -1173,6 +1173,47 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Una_factura_rechazada_basta_para_no_dar_la_prueba()
+    {
+        // El webhook de la preapproval puede llegar solo, sin que el motivo del rechazo
+        // esté escrito en la fila: o nunca se guardó, o lo limpió una sincronización que no
+        // encontró nada pendiente. La factura rechazada sigue ahí, y es la misma fila que
+        // la pantalla lista en "Historial de pagos" — si no contara, la cuenta terminaría
+        // diciendo dos cosas distintas sobre la misma plata.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+        });
+
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9200",
+            ExternalTransactionId = "9200",
+            Status = "rechazado",
+            StatusDetail = "cc_rejected_other_reason",
+        });
+        _db.Context.SaveChanges();
+
+        RouteMercadoPago(preapproval: Json(
+            """
+            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+             "next_payment_date":"@trialEnd@"}
+            """,
+            ("trialEnd", DateTime.UtcNow.AddDays(7))));
+
+        await Service().HandleNotificationAsync("subscription_preapproval", "updated", "pre-1", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
     public async Task Cada_intento_de_pago_queda_en_el_historial_con_su_motivo()
     {
         // "Historial de pagos" cuenta todos los intentos, no sólo los que salieron bien: el
