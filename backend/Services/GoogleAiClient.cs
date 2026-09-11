@@ -197,7 +197,7 @@ public sealed class GoogleAiClient(
                 }
             }
 
-            return ParseAcceptedIds(body);
+            return WithUsage(ParseAcceptedIds(body), body);
         }
     }
 
@@ -361,10 +361,48 @@ public sealed class GoogleAiClient(
     /// the model kept the leading "#".
     /// </summary>
     private static string NormalizeId(string value) => value.Trim().TrimStart('#').Trim();
+
+    /// <summary>
+    /// Attaches what the call cost, read off the answer's <c>usageMetadata</c>. Best effort
+    /// by design: an answer without it, or one that is not JSON, leaves the counts null and
+    /// the verdict untouched — what a call cost must never decide what it answered.
+    /// Reasoning tokens are billed as output, so they are added to it.
+    /// </summary>
+    internal static AiCallOutcome WithUsage(AiCallOutcome outcome, string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("usageMetadata", out var usage) || usage.ValueKind != JsonValueKind.Object)
+            {
+                return outcome;
+            }
+
+            int Read(string name) =>
+                usage.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+                    ? number
+                    : 0;
+
+            return outcome with
+            {
+                InputTokens = Read("promptTokenCount"),
+                OutputTokens = Read("candidatesTokenCount") + Read("thoughtsTokenCount"),
+            };
+        }
+        catch (JsonException)
+        {
+            return outcome;
+        }
+    }
 }
 
 public sealed record AiCallOutcome(bool IsSuccess, IReadOnlyList<string> AcceptedIds, string? ErrorCode)
 {
+    /// <summary>Null when the call never reached Gemini, or its answer carried no usage.</summary>
+    public int? InputTokens { get; init; }
+
+    public int? OutputTokens { get; init; }
+
     public static AiCallOutcome Success(IReadOnlyList<string> acceptedIds) => new(true, acceptedIds, null);
 
     public static AiCallOutcome Failure(string errorCode) => new(false, [], errorCode);

@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import { useIsMobile } from './app/useIsMobile'
 import { useVistazo } from './app/useVistazo'
 import { DesktopShell } from './shells/desktop/DesktopShell'
 import { MobileShell } from './shells/mobile/MobileShell'
 import { lazyPanel } from './components/lazyPanel'
 import { TestPayerBanner } from './components/TestPayerBanner'
+import { isAdminPath } from './admin/route'
 
 // La página pública de un recorrido compartido: la ve quien abre un link `/s/{slug}`,
 // que no es el recorrido normal de nadie que ya está usando la app. Cargarla aparte
@@ -15,6 +17,9 @@ const SharedStoryView = lazyPanel(
   // el link recién compartido abre en blanco.
   'screen',
 )
+
+// El panel de administración: sólo lo descarga quien entra a `/admin`.
+const AdminApp = lazyPanel(() => import('./admin/AdminApp'), (m) => m.AdminApp, 'screen')
 
 /**
  * La raíz: arma el estado una sola vez y elige quién lo dibuja.
@@ -30,6 +35,10 @@ const SharedStoryView = lazyPanel(
 function App() {
   const vistazo = useVistazo()
   const isMobile = useIsMobile()
+
+  // Como el recorrido compartido, se resuelve una vez: al panel se entra por su URL, no
+  // navegando dentro de la app.
+  const isAdminRoute = useMemo(() => isAdminPath(window.location.pathname), [])
 
   // `/s/{slug}` es un recorrido compartido: no es la app, es una página pública
   // de lectura. Quien la abre puede no tener sesión ni chat cargado — sólo el
@@ -51,7 +60,18 @@ function App() {
         title={vistazo.copy.subscriptionPage.testPayerBannerTitle}
         body={vistazo.copy.subscriptionPage.testPayerBannerBody}
       />
-      {isMobile ? <MobileShell vistazo={vistazo} /> : <DesktopShell vistazo={vistazo} />}
+      {isAdminRoute ? (
+        <AdminApp
+          token={vistazo.token}
+          user={vistazo.user}
+          language={vistazo.language}
+          onToggleLanguage={() => vistazo.setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+        />
+      ) : isMobile ? (
+        <MobileShell vistazo={vistazo} />
+      ) : (
+        <DesktopShell vistazo={vistazo} />
+      )}
     </>
   )
 }

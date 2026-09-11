@@ -303,6 +303,38 @@ public static class SubscriptionEndpoints
                 // different fixes.
                 webhookLog.Record(WebhookOutcomes.Rejected, notification.Topic, notification.DataId, check.Reason);
 
+                // The in-memory record resets on deploy — which is exactly when a rotated
+                // secret starts bouncing everything — so a copy goes to the database too
+                // (pruned after two weeks at startup). Best effort: failing to write it must
+                // never turn this 401 into a 500, which Mercado Pago reads as "retry".
+                //
+                // Capped per hour, because this endpoint is public: without a cap, a script
+                // posting unsigned notifications would grow the table as fast as the global
+                // rate limit lets it. A rotated secret shows in the first few rejections, so
+                // a hundred an hour is plenty; past that only the in-memory counter counts.
+                const int MaxStoredPerHour = 100;
+                static string? Cap(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
+
+                try
+                {
+                    var db = http.RequestServices.GetRequiredService<AppDbContext>();
+                    var hourAgo = DateTime.UtcNow.AddHours(-1);
+                    if (await db.WebhookRejections.CountAsync(item => item.ReceivedAtUtc >= hourAgo, cancellationToken) < MaxStoredPerHour)
+                    {
+                        db.WebhookRejections.Add(new WebhookRejection
+                        {
+                            Topic = Cap(notification.Topic, 100),
+                            DataId = Cap(notification.DataId, 100),
+                            Reason = Cap(check.Reason, 300),
+                        });
+                        await db.SaveChangesAsync(cancellationToken);
+                    }
+                }
+                catch (Exception exception) when (exception is DbUpdateException or System.Data.Common.DbException)
+                {
+                    logger.LogWarning(exception, "Could not persist a rejected Mercado Pago notification.");
+                }
+
                 return Results.Unauthorized();
             }
 

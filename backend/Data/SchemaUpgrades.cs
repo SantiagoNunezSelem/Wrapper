@@ -293,6 +293,71 @@ public static class SchemaUpgrades
             DELETE FROM "SharedStories" WHERE "ExpiresAtUtc" <= datetime('now');
             """,
             cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // Admin panel: all additive. Nothing here changes a table the app already
+        // reads; it only adds columns and tables the panel fills in.
+        // ---------------------------------------------------------------------
+
+        await AddColumnIfMissingAsync(db, "Users", "LastSeenAtUtc", "TEXT NULL", cancellationToken);
+
+        foreach (var statement in new[]
+                 {
+                     """
+                     CREATE TABLE IF NOT EXISTS "AiUsage" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_AiUsage" PRIMARY KEY,
+                         "UserId" TEXT NOT NULL,
+                         "MetricId" TEXT NULL,
+                         "InputTokens" INTEGER NOT NULL DEFAULT 0,
+                         "OutputTokens" INTEGER NOT NULL DEFAULT 0,
+                         "Succeeded" INTEGER NOT NULL DEFAULT 0,
+                         "CreatedAtUtc" TEXT NOT NULL
+                     );
+                     """,
+                     """CREATE INDEX IF NOT EXISTS "IX_AiUsage_CreatedAtUtc" ON "AiUsage" ("CreatedAtUtc");""",
+                     """CREATE INDEX IF NOT EXISTS "IX_AiUsage_UserId" ON "AiUsage" ("UserId");""",
+                     """
+                     CREATE TABLE IF NOT EXISTS "WebhookRejections" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_WebhookRejections" PRIMARY KEY,
+                         "Topic" TEXT NULL,
+                         "DataId" TEXT NULL,
+                         "Reason" TEXT NULL,
+                         "ReceivedAtUtc" TEXT NOT NULL
+                     );
+                     """,
+                     """CREATE INDEX IF NOT EXISTS "IX_WebhookRejections_ReceivedAtUtc" ON "WebhookRejections" ("ReceivedAtUtc");""",
+                     // Two weeks is plenty to notice a rotated secret, and keeps a flood of
+                     // forged notifications from growing the file for good.
+                     """DELETE FROM "WebhookRejections" WHERE "ReceivedAtUtc" <= datetime('now', '-14 days');""",
+                     """
+                     CREATE TABLE IF NOT EXISTS "AdminNotes" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_AdminNotes" PRIMARY KEY,
+                         "UserId" TEXT NOT NULL,
+                         "AuthorId" TEXT NOT NULL,
+                         "AuthorEmail" TEXT NULL,
+                         "Text" TEXT NULL,
+                         "CreatedAtUtc" TEXT NOT NULL,
+                         CONSTRAINT "FK_AdminNotes_Users_UserId" FOREIGN KEY ("UserId")
+                             REFERENCES "Users" ("Id") ON DELETE CASCADE
+                     );
+                     """,
+                     """CREATE INDEX IF NOT EXISTS "IX_AdminNotes_UserId" ON "AdminNotes" ("UserId");""",
+                     """
+                     CREATE TABLE IF NOT EXISTS "AdminAuditEvents" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_AdminAuditEvents" PRIMARY KEY,
+                         "AdminId" TEXT NOT NULL,
+                         "AdminEmail" TEXT NULL,
+                         "Action" TEXT NULL,
+                         "TargetUserId" TEXT NULL,
+                         "Details" TEXT NULL,
+                         "CreatedAtUtc" TEXT NOT NULL
+                     );
+                     """,
+                     """CREATE INDEX IF NOT EXISTS "IX_AdminAuditEvents_CreatedAtUtc" ON "AdminAuditEvents" ("CreatedAtUtc");""",
+                 })
+        {
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
     }
 
     private static async Task AddColumnIfMissingAsync(

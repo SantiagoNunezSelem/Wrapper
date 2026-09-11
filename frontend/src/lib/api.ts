@@ -55,7 +55,7 @@ function readErrorBody(text: string, status: number): { message: string; code?: 
   }
 }
 
-async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -71,6 +71,18 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
   }
 
   return (await response.json()) as T
+}
+
+/** Like `request`, for the few endpoints that answer with a file instead of JSON. */
+export async function requestBlob(path: string, token: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+
+  if (!response.ok) {
+    const { message, code } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code)
+  }
+
+  return response.blob()
 }
 
 export async function loginWithGoogle(

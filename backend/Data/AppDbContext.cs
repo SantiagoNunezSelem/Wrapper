@@ -15,6 +15,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<FreeMetricUnlock> FreeMetricUnlocks => Set<FreeMetricUnlock>();
     public DbSet<SharedStory> SharedStories => Set<SharedStory>();
+    public DbSet<AiUsage> AiUsage => Set<AiUsage>();
+    public DbSet<WebhookRejection> WebhookRejections => Set<WebhookRejection>();
+    public DbSet<AdminNote> AdminNotes => Set<AdminNote>();
+    public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -184,6 +188,47 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .WithMany(item => item.AiMetricResults)
                 .HasForeignKey(item => item.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // --- Admin panel ---------------------------------------------------------
+
+        modelBuilder.Entity<AiUsage>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.MetricId).HasMaxLength(60);
+            // Read by day ranges for spend, and per account for the profile.
+            entity.HasIndex(item => item.CreatedAtUtc);
+            entity.HasIndex(item => item.UserId);
+        });
+
+        modelBuilder.Entity<WebhookRejection>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Topic).HasMaxLength(100);
+            entity.Property(item => item.DataId).HasMaxLength(100);
+            entity.Property(item => item.Reason).HasMaxLength(300);
+            entity.HasIndex(item => item.ReceivedAtUtc);
+        });
+
+        modelBuilder.Entity<AdminNote>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.AuthorEmail).HasMaxLength(320);
+            entity.Property(item => item.Text).HasMaxLength(2000);
+            entity.HasIndex(item => item.UserId);
+            entity.HasOne(item => item.User)
+                .WithMany()
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AdminAuditEvent>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.AdminEmail).HasMaxLength(320);
+            entity.Property(item => item.Action).HasMaxLength(60);
+            entity.Property(item => item.Details).HasMaxLength(500);
+            entity.HasIndex(item => item.CreatedAtUtc);
         });
     }
 }

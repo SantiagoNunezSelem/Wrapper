@@ -72,5 +72,15 @@ public sealed class GoogleAiOptions
     /// </summary>
     public int ThinkingBudget { get; set; }
 
+    /// <summary>
+    /// Google's price per million input tokens for <see cref="Model"/>, in US dollars. Left
+    /// at 0, the admin panel shows tokens and no cost: a price copied off a pricing page that
+    /// has since changed is worse than none, because it looks exact.
+    /// </summary>
+    public decimal InputPricePerMillionUsd { get; set; }
+
+    /// <summary>Same as <see cref="InputPricePerMillionUsd"/>, for output (answer plus reasoning) tokens.</summary>
+    public decimal OutputPricePerMillionUsd { get; set; }
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }
