@@ -487,18 +487,29 @@ public sealed class SubscriptionService(
         }
 
         var previousStatus = subscription.Status;
-        ApplyPreapproval(subscription, preapproval);
 
         foreach (var payment in await client.SearchAuthorizedPaymentsAsync(subscription.ExternalSubscriptionId!, cancellationToken))
         {
             await UpsertInvoiceAsync(subscription, payment, cancellationToken);
         }
 
+        // Saved before the next step reads them back. RefreshPendingReasonAsync queries the
+        // database, and an invoice that exists only in the change tracker is invisible to
+        // that query — which would be exactly the refused charge this sync just learned
+        // about, the one thing standing between a dead card and the free week.
+        await db.SaveChangesAsync(cancellationToken);
+
         // The authorized_payments list carries the subscription's own scheduled charges,
         // but only /v1/payments knows *why* one is unsettled. Reading it for the newest
         // unsettled charge is what turns a bare "pendiente" into "tu banco tiene que
         // confirmar el pago" — one extra call, and only when something is actually stuck.
         await RefreshPendingReasonAsync(subscription, cancellationToken);
+
+        // The preapproval last, folded in on top of what those charges just said. Mercado
+        // Pago reports it as "authorized" from the moment the payer picks a card, before
+        // knowing whether the card works, so reading it first derives the free week from
+        // the authorisation and then never hears the charge that bounced.
+        ApplyPreapproval(subscription, preapproval);
 
         subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
@@ -604,14 +615,19 @@ public sealed class SubscriptionService(
                 }
 
                 var previousStatus = subscription.Status;
-                ApplyPreapproval(subscription, preapproval);
 
                 foreach (var payment in await client.SearchAuthorizedPaymentsAsync(subscription.ExternalSubscriptionId!, cancellationToken))
                 {
                     await UpsertInvoiceAsync(subscription, payment, cancellationToken);
                 }
 
+                // Charges first, preapproval last — the same order as SyncAsync, for the
+                // same reason: "authorized" arrives the moment the payer picks a card and
+                // says nothing about whether that card paid.
+                await db.SaveChangesAsync(cancellationToken);
                 await RefreshPendingReasonAsync(subscription, cancellationToken);
+                ApplyPreapproval(subscription, preapproval);
+
                 subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
                 if (previousStatus != subscription.Status)
@@ -720,12 +736,20 @@ public sealed class SubscriptionService(
 
         var previousStatus = subscription.Status;
 
-        // Order matters, and it is the same order the authorized_payment handler uses: the
-        // preapproval first, because it is the authority on trial-vs-active and on when
-        // the next debit lands — then the payment on top, because a charge is the
+        // This charge's own outcome lands on the row first, because everything below
+        // reads it: the preapproval mapping refuses to derive the free week while a charge
+        // of ours is refused or still undecided, and it can only know that if the reason
+        // is already there. It has to come from the payment — Mercado Pago goes on
+        // reporting the preapproval as "authorized" throughout.
+        subscription.LastPaymentStatusDetail = payment.Status is "approved"
+            ? null
+            : payment.StatusDetail;
+
+        // Then the preapproval, the authority on trial-vs-active and on when the next
+        // debit lands — and then the payment's own status on top, because a charge is the
         // strongest available signal about the subscription's health and it arrives before
-        // the preapproval's own status catches up. Reversed, a rejection would be wiped by
-        // a preapproval that still reads "authorized" (which it does, for days, while
+        // the preapproval's status catches up. Reversed, a rejection would be wiped by a
+        // preapproval that still reads "authorized" (which it does, for days, while
         // Mercado Pago retries) and the grace window would never start.
         if (!string.IsNullOrWhiteSpace(subscription.ExternalSubscriptionId))
         {
@@ -741,10 +765,6 @@ public sealed class SubscriptionService(
                 logger.LogWarning(exception, "Could not re-read preapproval {Id} after payment {PaymentId}.", subscription.ExternalSubscriptionId, dataId);
             }
         }
-
-        subscription.LastPaymentStatusDetail = payment.Status is "approved"
-            ? null
-            : payment.StatusDetail;
 
         if (BuildPaymentMethodLabel(payment.PaymentMethodId, payment.Card?.LastFourDigits) is { } label)
         {
@@ -773,7 +793,7 @@ public sealed class SubscriptionService(
                 subscription.SubscriptionStartsAtUtc ??= subscription.LastPaymentAtUtc;
             }
         }
-        else if (payment.Status is "rejected" && subscription.Status is "activa" or "trial")
+        else if (MapPaymentStatus(payment.Status) is "rechazado" && subscription.Status is "activa" or "trial")
         {
             // The grace window is there so a customer who has been paying does not see an
             // outage while Mercado Pago retries a card that stopped working. A
@@ -1029,7 +1049,29 @@ public sealed class SubscriptionService(
         }
 
         subscription.SubscriptionStartsAtUtc ??= preapproval.AutoRecurring?.StartDate ?? preapproval.DateCreated;
+
+        // Nothing collected and the last charge did not settle, so the dates Mercado Pago
+        // is projecting belong to a subscription that never started. Left standing they
+        // grant access on their own — a trial end through the "trial" and "cancelada"
+        // rules, a billing date through "activa" and "pausada" — which is the free account
+        // a refused card used to walk away with, and it outlived even cancelling. They
+        // come back by themselves as soon as a charge is approved.
+        if (NothingWasEverCollected(subscription))
+        {
+            subscription.TrialEndsAtUtc = null;
+            subscription.NextBillingAtUtc = null;
+        }
     }
+
+    /// <summary>
+    /// Whether a charge of ours is refused or still undecided and none has ever been
+    /// approved: no money has moved, and none is on its way. Mercado Pago holds the
+    /// preapproval on "authorized" through all of that — it authorises the moment the
+    /// payer picks a card, long before knowing whether the card works — so this is the
+    /// only thing that separates a customer from a card that never paid.
+    /// </summary>
+    private static bool NothingWasEverCollected(Subscription subscription) =>
+        subscription.LastPaymentAtUtc is null && subscription.LastPaymentStatusDetail is { Length: > 0 };
 
     /// <summary>
     /// An authorised subscription is either inside its free week or genuinely paying.
@@ -1047,14 +1089,11 @@ public sealed class SubscriptionService(
         // before anyone knows whether that card works. Reading "authorized" as proof of a
         // customer is what handed the free week to a refused payment: the charge bounced,
         // nothing was ever collected, and the account still switched itself to Pro. So
-        // while a charge of ours is refused or unsettled and none has ever been approved,
-        // the row stays where it was — waiting for money that has not moved.
-        if (subscription.LastPaymentAtUtc is null && subscription.LastPaymentStatusDetail is { Length: > 0 })
+        // while a charge of ours is refused or still undecided and none has ever been
+        // approved, the row stays where it was — waiting for money that has not moved. The
+        // dates it would have inherited are cleared at the end of ApplyPreapproval.
+        if (NothingWasEverCollected(subscription))
         {
-            // Cleared, not just left unset: an earlier sync may have written a trial end
-            // from this same preapproval, and a date in the future keeps granting access
-            // on its own the moment the row is cancelled.
-            subscription.TrialEndsAtUtc = null;
             return "pendiente";
         }
 
