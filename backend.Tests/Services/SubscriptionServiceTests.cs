@@ -1099,6 +1099,114 @@ public class SubscriptionServiceTests : IDisposable
         Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
     }
 
+    [Theory]
+    // Las tarjetas de prueba de Mercado Pago, con el status_detail que devuelve cada una.
+    [InlineData("rejected", "cc_rejected_other_reason")]              // OTHE
+    [InlineData("in_process", "pending_contingency")]                 // CONT
+    [InlineData("rejected", "cc_rejected_call_for_authorize")]        // CALL
+    [InlineData("rejected", "cc_rejected_insufficient_amount")]       // FUND
+    [InlineData("rejected", "cc_rejected_bad_filled_security_code")]  // SECU
+    [InlineData("rejected", "cc_rejected_bad_filled_date")]           // EXPI
+    [InlineData("rejected", "cc_rejected_bad_filled_other")]          // FORM
+    public async Task Ninguna_tarjeta_que_no_pago_enciende_la_prueba(string status, string detail)
+    {
+        // CONT es el que más engaña: no es un rechazo sino un "todavía lo estoy pensando",
+        // y la preapproval queda igual de "authorized" que con una tarjeta buena. Mientras
+        // la plata no llegue tampoco empieza la semana gratis; si después lo aprueban, la
+        // suscripción arranca sola con el mismo webhook.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: Json(
+                """
+                {"id":9020,"status":"@status@","status_detail":"@detail@",
+                 "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+                """,
+                ("status", status), ("detail", detail)),
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "next_payment_date":"@trialEnd@"}
+                """,
+                ("trialEnd", DateTime.UtcNow.AddDays(7))));
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9020", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.NotEqual("trial", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
+    public async Task Una_prueba_que_nadie_pago_no_sobrevive_a_la_cancelacion()
+    {
+        // El estado en el que quedaron las cuentas antes del arreglo: la semana gratis
+        // encendida por una tarjeta que rebotó y, al cancelar, ocho días de Pro que nadie
+        // pagó — porque una fila cancelada conserva el acceso de lo que ya estaba pago. La
+        // próxima sincronización tiene que apagarlo sola, sin tocar la base a mano.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "cancelada",
+            ExternalSubscriptionId = "pre-1",
+            TrialEndsAtUtc = DateTime.UtcNow.AddDays(8),
+            NextBillingAtUtc = DateTime.UtcNow.AddDays(8),
+        });
+        RouteMercadoPago(
+            preapproval: """{"id":"pre-1","status":"cancelled","last_modified":"2025-03-10T10:00:00Z"}""",
+            paymentsSearch: """
+            {"results":[{"id":557,"preapproval_id":"pre-1","status":"rejected",
+             "last_modified":"2025-03-10T10:00:00Z",
+             "payment":{"id":1001,"status":"rejected","status_detail":"cc_rejected_other_reason"}}]}
+            """,
+            payment: """
+            {"id":1001,"status":"rejected","status_detail":"cc_rejected_other_reason",
+             "date_last_updated":"2025-03-10T10:00:00Z"}
+            """);
+
+        await Service().SyncAsync(user, default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.Null(stored.NextBillingAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
+    public async Task Cada_intento_de_pago_queda_en_el_historial_con_su_motivo()
+    {
+        // "Historial de pagos" cuenta todos los intentos, no sólo los que salieron bien: el
+        // rechazado con su motivo es justamente el que alguien va a buscar cuando la
+        // tarjeta no le anduvo.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        var service = Service();
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9101,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"pending","last_modified":"2025-03-10T10:00:00Z"}""");
+        await service.HandleNotificationAsync("payment", "payment.updated", "9101", "{}", default);
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9102,"status":"approved","status_detail":"accredited","transaction_amount":7800,
+             "date_approved":"2025-03-11T10:00:00Z","date_last_updated":"2025-03-11T10:00:00Z",
+             "metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-11T10:00:00Z"}""");
+        await service.HandleNotificationAsync("payment", "payment.updated", "9102", "{}", default);
+
+        var invoices = await _db.NewContext().SubscriptionInvoices.ToListAsync();
+        Assert.Equal(2, invoices.Count);
+
+        var rejected = invoices.Single(invoice => invoice.ExternalPaymentId == "9101");
+        Assert.Equal("rechazado", rejected.Status);
+        Assert.Equal("cc_rejected_insufficient_amount", rejected.StatusDetail);
+        Assert.Equal("aprobado", invoices.Single(invoice => invoice.ExternalPaymentId == "9102").Status);
+    }
+
     [Fact]
     public async Task Al_volver_a_la_pantalla_la_prueba_sigue_sin_encenderse()
     {
@@ -1109,15 +1217,26 @@ public class SubscriptionServiceTests : IDisposable
         {
             Status = "pendiente",
             ExternalSubscriptionId = "pre-1",
-            LastPaymentStatusDetail = "cc_rejected_insufficient_amount",
         });
-        RouteMercadoPago(preapproval: Json(
-            """
-            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
-             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
-             "next_payment_date":"@trialEnd@"}
+        RouteMercadoPago(
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "next_payment_date":"@trialEnd@"}
+                """,
+                ("trialEnd", DateTime.UtcNow.AddDays(7))),
+            // El rechazo entra por donde entra en producción: el cobro que Mercado Pago
+            // lista para esta suscripción, que es lo que deja la factura rechazada.
+            paymentsSearch: """
+            {"results":[{"id":556,"preapproval_id":"pre-1","status":"rejected",
+             "last_modified":"2025-03-10T10:00:00Z",
+             "payment":{"id":1000,"status":"rejected","status_detail":"cc_rejected_insufficient_amount"}}]}
             """,
-            ("trialEnd", DateTime.UtcNow.AddDays(7))));
+            payment: """
+            {"id":1000,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+             "date_last_updated":"2025-03-10T10:00:00Z"}
+            """);
 
         await Service().SyncAsync(user, default);
 
