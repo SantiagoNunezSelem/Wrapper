@@ -1250,6 +1250,82 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task El_webhook_de_la_preapproval_consulta_los_cobros_antes_de_decidir()
+    {
+        // El caso de produccion, visto en los logs: la unica notificacion que llega es
+        // subscription_preapproval. Ninguna de payment, y todavia no corrio ningun sync,
+        // asi que en la fila no hay ni motivo de rechazo ni factura. Antes este camino
+        // decidia a ciegas con "authorized" — que Mercado Pago pone apenas el pagador
+        // elige tarjeta — y regalaba la semana gratis a una tarjeta ya rechazada.
+        CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+        });
+
+        RouteMercadoPago(
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "next_payment_date":"@trialEnd@"}
+                """,
+                ("trialEnd", DateTime.UtcNow.AddDays(7))),
+            paymentsSearch: """
+            {"results":[{"id":557,"preapproval_id":"pre-1","status":"rejected",
+             "last_modified":"2025-03-10T10:00:00Z",
+             "payment":{"id":1001,"status":"rejected","status_detail":"cc_rejected_other_reason"}}]}
+            """,
+            payment: """
+            {"id":1001,"status":"rejected","status_detail":"cc_rejected_other_reason",
+             "date_last_updated":"2025-03-10T10:00:00Z"}
+            """);
+
+        await Service().HandleNotificationAsync("subscription_preapproval", "updated", "pre-1", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+
+        // El cobro rechazado tambien queda en el historial: es la misma notificacion la
+        // que lo trajo, y la pantalla lo lista desde ahi.
+        Assert.Contains(
+            await _db.NewContext().SubscriptionInvoices.ToListAsync(),
+            invoice => invoice.Status == "rechazado");
+    }
+
+    [Fact]
+    public async Task Una_suscripcion_que_nunca_cobro_no_se_queda_con_la_fecha_de_inicio()
+    {
+        // La fecha de inicio se escribia sin condicion, y el bloque que limpia el resto no
+        // la tocaba. Quedaba una suscripcion "pendiente" declarando desde cuando esta
+        // andando — la misma fecha que la tarjeta del plan mostraba sobre un pago que
+        // nunca se completo.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            SubscriptionStartsAtUtc = DateTime.UtcNow.AddDays(-1),
+        });
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9400",
+            ExternalTransactionId = "9400",
+            Status = "rechazado",
+            StatusDetail = "cc_rejected_other_reason",
+        });
+        _db.Context.SaveChanges();
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("subscription_preapproval", "updated", "pre-1", "{}", default);
+
+        Assert.Null((await _db.NewContext().Subscriptions.SingleAsync()).SubscriptionStartsAtUtc);
+    }
+
+    [Fact]
     public async Task Una_factura_rechazada_basta_para_no_dar_la_prueba()
     {
         // El webhook de la preapproval puede llegar solo, sin que el motivo del rechazo
