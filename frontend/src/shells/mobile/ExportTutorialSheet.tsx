@@ -2,7 +2,10 @@ import { useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
 import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
 import { useModalDismiss } from '../../components/useModalDismiss'
+import { WhatsAppRedirectConfirm } from '../../components/WhatsAppRedirectConfirm'
+import { detectDefaultTutorialPlatform } from '../../lib/detectPlatform'
 import { usePwaInstall } from '../../lib/usePwaInstall'
+import { openWhatsAppApp } from '../../lib/whatsappLink'
 
 /**
  * El tutorial de exportación, como hoja — se abre al tocar "Subir chat" sin
@@ -19,8 +22,9 @@ export function ExportTutorialSheet({
   onClose: () => void
   onPick: () => void
 }) {
-  const [platform, setPlatform] = useState<ExportTutorialPlatform>('ios')
+  const [platform, setPlatform] = useState<ExportTutorialPlatform>(detectDefaultTutorialPlatform)
   const [step, setStep] = useState(0)
+  const [isWhatsAppConfirmOpen, setIsWhatsAppConfirmOpen] = useState(false)
   const { canInstall, isInstalled, install } = usePwaInstall()
 
   // Escape, scroll de fondo y foco: los mismos que el resto de los diálogos.
@@ -29,19 +33,37 @@ export function ExportTutorialSheet({
   const steps = copy.steps[platform]
   const active = steps[step]
   const isLast = step === steps.length - 1
+  const isAndroidGuided = platform === 'android'
   // Mientras el navegador tenga el prompt nativo listo, ese es el CTA principal;
   // apenas se usa (aceptado o no — `install()` limpia `canInstall` en los dos
-  // casos), el botón vuelve solo a "Elegir archivo", sin salir de esta pantalla.
-  const showInstallCta = active.install === true && canInstall
+  // casos), el botón pasa a ofrecer el paso siguiente o las instrucciones manuales.
+  const showInstallCta = active.install === true && !isInstalled && canInstall
 
   function selectPlatform(next: ExportTutorialPlatform) {
     setPlatform(next)
     setStep(0)
   }
 
+  function primaryLabel(): string {
+    if (active.install) {
+      if (showInstallCta) return copy.installCta
+      return isInstalled ? copy.installedNext : copy.installUnavailableNext
+    }
+    if (isAndroidGuided && isLast) return copy.goToWhatsApp
+    return isLast ? copy.pick : copy.next
+  }
+
   function handlePrimary() {
-    if (showInstallCta) {
-      void install()
+    if (active.install) {
+      if (showInstallCta) {
+        void install()
+        return
+      }
+      setStep((current) => Math.min(current + 1, steps.length - 1))
+      return
+    }
+    if (isAndroidGuided && isLast) {
+      setIsWhatsAppConfirmOpen(true)
       return
     }
     if (isLast) {
@@ -82,8 +104,6 @@ export function ExportTutorialSheet({
             {active.install ? (
               <div className="m-tutorial-install-panel">
                 <img src="/icon-192.png" alt="" className="tutorial-install-icon" width={64} height={64} />
-                {isInstalled ? <p className="install-app-note">{copy.installDone}</p> : null}
-                {!isInstalled && !canInstall ? <p className="install-app-note">{copy.installUnavailable}</p> : null}
               </div>
             ) : (
               <ExportTutorialArt step={step} platform={platform} chrome={false} />
@@ -95,6 +115,10 @@ export function ExportTutorialSheet({
             <span className="m-step-body">
               <strong>{active.title}</strong>
               <span>{active.body}</span>
+              {active.install && isInstalled ? <span className="install-app-note">{copy.installDone}</span> : null}
+              {active.install && !isInstalled && !canInstall ? (
+                <span className="install-app-note">{copy.installUnavailable}</span>
+              ) : null}
             </span>
           </div>
 
@@ -116,12 +140,27 @@ export function ExportTutorialSheet({
               ‹
             </button>
             <button type="button" className="primary-button" onClick={handlePrimary}>
-              {showInstallCta ? copy.installCta : isLast ? copy.pick : copy.next}
+              {primaryLabel()}
             </button>
           </div>
           <p className="m-privacy-note">{copy.privacy}</p>
         </div>
       </section>
+
+      {isWhatsAppConfirmOpen ? (
+        <WhatsAppRedirectConfirm
+          copy={{ ...copy.whatsappConfirm, close: copy.close }}
+          onConfirm={() => {
+            openWhatsAppApp()
+            setIsWhatsAppConfirmOpen(false)
+            onClose()
+          }}
+          onCancel={() => {
+            setIsWhatsAppConfirmOpen(false)
+            setStep(0)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

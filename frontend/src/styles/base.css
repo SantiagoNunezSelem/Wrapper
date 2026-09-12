@@ -640,6 +640,15 @@ h3 {
   overflow-y: auto;
 }
 
+/* Se abre desde un botón dentro del tutorial de exportación: si ese botón
+   tenía su tooltip abierto (foco o hover) un instante antes, el tooltip
+   compartido (z-index 200, ver Tooltip) puede quedar flotando por encima de
+   este backdrop y superponerse con el diálogo. Subirlo por encima del
+   tooltip lo resuelve sin tocar el sistema de tooltips para todo lo demás. */
+.modal-backdrop:has(.whatsapp-redirect-modal) {
+  z-index: 210;
+}
+
 .modal-card {
   width: min(860px, 100%);
   border-radius: var(--vz-radius-xl);

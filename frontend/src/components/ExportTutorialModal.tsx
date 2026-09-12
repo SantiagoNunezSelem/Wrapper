@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { detectDefaultTutorialPlatform } from '../lib/detectPlatform'
 import { usePwaInstall } from '../lib/usePwaInstall'
+import { openWhatsAppApp } from '../lib/whatsappLink'
 import { ExportTutorialArt, type ExportTutorialPlatform } from './ExportTutorialArt'
 import { ModalShell } from './ModalShell'
+import { WhatsAppRedirectConfirm } from './WhatsAppRedirectConfirm'
 
 export interface ExportTutorialCopy {
   eyebrow: string
@@ -14,11 +17,15 @@ export interface ExportTutorialCopy {
   skip: string
   pick: string
   next: string
+  goToWhatsApp: string
   privacy: string
   close: string
   installCta: string
   installDone: string
+  installedNext: string
   installUnavailable: string
+  installUnavailableNext: string
+  whatsappConfirm: { title: string; body: string; confirm: string; cancel: string }
 }
 
 /**
@@ -37,25 +44,51 @@ export function ExportTutorialModal({
   onClose: () => void
   onPick: () => void
 }) {
-  const [platform, setPlatform] = useState<ExportTutorialPlatform>('ios')
+  const [platform, setPlatform] = useState<ExportTutorialPlatform>(detectDefaultTutorialPlatform)
   const [step, setStep] = useState(0)
+  const [isWhatsAppConfirmOpen, setIsWhatsAppConfirmOpen] = useState(false)
   const { canInstall, isInstalled, install } = usePwaInstall()
 
   const steps = copy.steps[platform]
   const activeStep = steps[step]
+  const isAndroidGuided = platform === 'android'
+  const isLastStep = step === steps.length - 1
   // Mientras el navegador tenga el prompt nativo listo, ese es el CTA principal;
   // apenas se usa (aceptado o no — `install()` limpia `canInstall` en los dos
-  // casos), el botón vuelve solo a "Elegir archivo", sin salir de esta pantalla.
-  const showInstallCta = activeStep.install === true && canInstall
+  // casos), el botón pasa a ofrecer el paso siguiente o las instrucciones manuales.
+  const showInstallCta = activeStep.install === true && !isInstalled && canInstall
 
   function selectPlatform(next: ExportTutorialPlatform) {
     setPlatform(next)
     setStep(0)
   }
 
+  function primaryLabel(): string {
+    if (activeStep.install) {
+      if (showInstallCta) return copy.installCta
+      return isInstalled ? copy.installedNext : copy.installUnavailableNext
+    }
+    if (isAndroidGuided) {
+      return isLastStep ? copy.goToWhatsApp : copy.next
+    }
+    return copy.pick
+  }
+
   function handlePrimaryAction() {
-    if (showInstallCta) {
-      void install()
+    if (activeStep.install) {
+      if (showInstallCta) {
+        void install()
+        return
+      }
+      setStep((current) => Math.min(current + 1, steps.length - 1))
+      return
+    }
+    if (isAndroidGuided) {
+      if (isLastStep) {
+        setIsWhatsAppConfirmOpen(true)
+        return
+      }
+      setStep((current) => current + 1)
       return
     }
     onPick()
@@ -109,14 +142,31 @@ export function ExportTutorialModal({
         <div className="tutorial-foot">
           <p>{copy.privacy}</p>
           <div className="tutorial-foot-actions">
-            <button type="button" className="ghost-button" onClick={onPick}>
-              {copy.skip}
-            </button>
+            {isAndroidGuided ? null : (
+              <button type="button" className="ghost-button" onClick={onPick}>
+                {copy.skip}
+              </button>
+            )}
             <button type="button" className="primary-button" onClick={handlePrimaryAction}>
-              {showInstallCta ? copy.installCta : copy.pick}
+              {primaryLabel()}
             </button>
           </div>
         </div>
+
+        {isWhatsAppConfirmOpen ? (
+          <WhatsAppRedirectConfirm
+            copy={{ ...copy.whatsappConfirm, close: copy.close }}
+            onConfirm={() => {
+              openWhatsAppApp()
+              setIsWhatsAppConfirmOpen(false)
+              onClose()
+            }}
+            onCancel={() => {
+              setIsWhatsAppConfirmOpen(false)
+              setStep(0)
+            }}
+          />
+        ) : null}
     </ModalShell>
   )
 }
