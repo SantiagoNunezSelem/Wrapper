@@ -488,7 +488,7 @@ public sealed class SubscriptionService(
 
         var previousStatus = subscription.Status;
 
-        foreach (var payment in await client.SearchAuthorizedPaymentsAsync(subscription.ExternalSubscriptionId!, cancellationToken))
+        foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId!, cancellationToken))
         {
             await UpsertInvoiceAsync(subscription, payment, cancellationToken);
         }
@@ -520,6 +520,36 @@ public sealed class SubscriptionService(
 
         await db.SaveChangesAsync(cancellationToken);
         return subscription;
+    }
+
+    /// <summary>
+    /// The charges Mercado Pago has on file, or none when it refuses to list them.
+    ///
+    /// This is an enrichment: the preapproval decides the subscription's state, and these
+    /// only fill in the billing history. Letting a refusal here abort the caller cost
+    /// months of silence — <c>/authorized_payments/search</c> answered 400 to the page size
+    /// we asked for, so every sync and every reconciler pass died on it before reading the
+    /// preapproval, and the account screen quietly stopped updating itself. The page size
+    /// is fixed now; the swallow stays, because the next thing Mercado Pago refuses must
+    /// not cost the status update it was attached to.
+    /// </summary>
+    private async Task<IReadOnlyList<AuthorizedPayment>> ListChargesAsync(
+        string preapprovalId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await client.SearchAuthorizedPaymentsAsync(preapprovalId, cancellationToken);
+        }
+        catch (MercadoPagoException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Could not list the charges for preapproval {Id}; syncing without them.",
+                preapprovalId);
+
+            return [];
+        }
     }
 
     /// <summary>
@@ -616,7 +646,7 @@ public sealed class SubscriptionService(
 
                 var previousStatus = subscription.Status;
 
-                foreach (var payment in await client.SearchAuthorizedPaymentsAsync(subscription.ExternalSubscriptionId!, cancellationToken))
+                foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId!, cancellationToken))
                 {
                     await UpsertInvoiceAsync(subscription, payment, cancellationToken);
                 }

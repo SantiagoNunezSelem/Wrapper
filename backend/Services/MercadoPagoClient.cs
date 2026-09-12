@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -163,9 +163,13 @@ public sealed class MercadoPagoClient(
         string preapprovalId,
         CancellationToken cancellationToken)
     {
+        // No page size. This endpoint answers `400 Invalid value for limit` to sizes it
+        // accepts elsewhere, and since the search runs inside every sync, that 400 was
+        // taking the whole sync down with it. Mercado Pago's own default page is far more
+        // than one subscription's charges.
         var result = await SendAsync<AuthorizedPaymentSearch>(
             HttpMethod.Get,
-            $"/authorized_payments/search?preapproval_id={Uri.EscapeDataString(preapprovalId)}&limit=50",
+            $"/authorized_payments/search?preapproval_id={Uri.EscapeDataString(preapprovalId)}",
             null,
             cancellationToken);
 

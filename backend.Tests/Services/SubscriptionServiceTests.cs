@@ -1173,6 +1173,39 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Si_Mercado_Pago_no_lista_los_cobros_la_sincronizacion_sigue()
+    {
+        // Los cobros son un extra; el estado de la suscripción no. Cuando la búsqueda
+        // fallaba, el sync moría antes de leer la preapproval y la cuenta se quedaba
+        // congelada en lo último que hubiera escrito un webhook.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+        });
+
+        _http.Route(request => request.RequestUri!.AbsolutePath.Contains("/authorized_payments/search")
+            ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"message":"Invalid value for limit","status":400}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            }
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"id":"pre-1","status":"cancelled","last_modified":"2025-03-10T10:00:00Z"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+
+        await Service().SyncAsync(user, default);
+
+        Assert.Equal("cancelada", (await _db.NewContext().Subscriptions.SingleAsync()).Status);
+    }
+
+    [Fact]
     public async Task Una_factura_rechazada_basta_para_no_dar_la_prueba()
     {
         // El webhook de la preapproval puede llegar solo, sin que el motivo del rechazo

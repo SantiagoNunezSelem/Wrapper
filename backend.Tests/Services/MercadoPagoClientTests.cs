@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using backend.Options;
 using backend.Services;
 using backend.Tests.Infrastructure;
@@ -261,6 +261,20 @@ public class MercadoPagoClientTests
 
         Assert.Empty(await client.SearchSubscriptionsByPayerEmailAsync("ana@example.com", default));
         Assert.Empty(await client.SearchAuthorizedPaymentsAsync("pre-1", default));
+    }
+
+    [Fact]
+    public async Task La_busqueda_de_cobros_NO_pide_un_tamano_de_pagina()
+    {
+        // `limit=50` devolvía `400 Invalid value for limit` en este endpoint. La búsqueda
+        // corre dentro de cada sincronización, así que ese 400 se llevaba puesta la
+        // sincronización entera y la pantalla dejaba de actualizarse sola.
+        var (client, http) = Build(stub => stub.Always(HttpStatusCode.OK, """{"results":[]}"""));
+
+        await client.SearchAuthorizedPaymentsAsync("pre-1", default);
+
+        Assert.DoesNotContain("limit", http.LastRequest.Uri.Query);
+        Assert.Contains("preapproval_id=pre-1", http.LastRequest.Uri.Query);
     }
 
     [Fact]
