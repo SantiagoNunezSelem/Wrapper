@@ -1173,6 +1173,124 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Un_pago_demorado_que_al_final_se_acredita_enciende_la_cuenta()
+    {
+        // El CONT que termina bien. Mientras Mercado Pago lo piensa no hay Pro, y cuando
+        // acredita la cuenta se enciende sola y conserva la semana gratis que la preapproval
+        // sigue declarando — el cobro aprobado es la prueba de que la tarjeta servía.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        var service = Service();
+        var preapproval = Json(
+            """
+            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+             "next_payment_date":"@trialEnd@"}
+            """,
+            ("trialEnd", DateTime.UtcNow.AddDays(7)));
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9301,"status":"in_process","status_detail":"pending_contingency",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: preapproval);
+        await service.HandleNotificationAsync("payment", "payment.updated", "9301", "{}", default);
+
+        var waiting = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", waiting.Status);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(waiting));
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9301,"status":"approved","status_detail":"accredited",
+             "date_approved":"2025-03-11T10:00:00Z","date_last_updated":"2025-03-11T10:00:00Z",
+             "metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: preapproval);
+        await service.HandleNotificationAsync("payment", "payment.updated", "9301", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("trial", stored.Status);
+        Assert.NotNull(stored.TrialEndsAtUtc);
+        Assert.NotNull(stored.LastPaymentAtUtc);
+        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
+    public async Task Si_Mercado_Pago_no_lista_los_cobros_la_sincronizacion_sigue()
+    {
+        // Los cobros son un extra; el estado de la suscripción no. Cuando la búsqueda
+        // fallaba, el sync moría antes de leer la preapproval y la cuenta se quedaba
+        // congelada en lo último que hubiera escrito un webhook.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+        });
+
+        _http.Route(request => request.RequestUri!.AbsolutePath.Contains("/authorized_payments/search")
+            ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"message":"Invalid value for limit","status":400}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            }
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"id":"pre-1","status":"cancelled","last_modified":"2025-03-10T10:00:00Z"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+
+        await Service().SyncAsync(user, default);
+
+        Assert.Equal("cancelada", (await _db.NewContext().Subscriptions.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Una_factura_rechazada_basta_para_no_dar_la_prueba()
+    {
+        // El webhook de la preapproval puede llegar solo, sin que el motivo del rechazo
+        // esté escrito en la fila: o nunca se guardó, o lo limpió una sincronización que no
+        // encontró nada pendiente. La factura rechazada sigue ahí, y es la misma fila que
+        // la pantalla lista en "Historial de pagos" — si no contara, la cuenta terminaría
+        // diciendo dos cosas distintas sobre la misma plata.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+        });
+
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9200",
+            ExternalTransactionId = "9200",
+            Status = "rechazado",
+            StatusDetail = "cc_rejected_other_reason",
+        });
+        _db.Context.SaveChanges();
+
+        RouteMercadoPago(preapproval: Json(
+            """
+            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+             "next_payment_date":"@trialEnd@"}
+            """,
+            ("trialEnd", DateTime.UtcNow.AddDays(7))));
+
+        await Service().HandleNotificationAsync("subscription_preapproval", "updated", "pre-1", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Null(stored.TrialEndsAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
     public async Task Cada_intento_de_pago_queda_en_el_historial_con_su_motivo()
     {
         // "Historial de pagos" cuenta todos los intentos, no sólo los que salieron bien: el
@@ -1584,6 +1702,67 @@ public class SubscriptionServiceTests : IDisposable
             ExternalSubscriptionId = "pre-1",
             CreatedAtUtc = DateTime.UtcNow.AddDays(-7),
         });
+        RouteMercadoPago();
+
+        Assert.Equal(0, await Service().ReconcileAsync(10, default));
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Un_cobro_en_curso_se_sigue_mirando_pasadas_las_48_horas()
+    {
+        // La tarjeta CONT deja el cobro en_process, y Mercado Pago dice hasta 2 días
+        // hábiles para resolverlo — con un fin de semana de por medio eso pasa las 48
+        // horas del checkout abandonado comun. La diferencia con el test de arriba es la
+        // factura "pendiente" real: no es un checkout que nadie tocó, es uno que Mercado
+        // Pago sigue procesando.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-3),
+        });
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9301",
+            ExternalTransactionId = "9301",
+            Status = "pendiente",
+            StatusDetail = "pending_contingency",
+        });
+        _db.Context.SaveChanges();
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        // El estado se queda en "pendiente" — nada se acreditó todavía, eso es correcto.
+        // Lo que este test prueba es que se la sigue mirando en vez de saltarla.
+        await Service().ReconcileAsync(10, default);
+
+        Assert.NotEmpty(_http.Requests);
+        Assert.NotNull((await _db.NewContext().Subscriptions.SingleAsync()).LastSyncedAtUtc);
+    }
+
+    [Fact]
+    public async Task Un_cobro_en_curso_deja_de_mirarse_pasado_el_tope_absoluto()
+    {
+        // Cinco días de "todavía lo estamos pensando" ya no es una demora de Mercado Pago,
+        // es una cuenta que necesita soporte, no otro poll cada 15 minutos para siempre.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-6),
+        });
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9301",
+            ExternalTransactionId = "9301",
+            Status = "pendiente",
+            StatusDetail = "pending_contingency",
+        });
+        _db.Context.SaveChanges();
         RouteMercadoPago();
 
         Assert.Equal(0, await Service().ReconcileAsync(10, default));
