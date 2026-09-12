@@ -1709,6 +1709,67 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Un_cobro_en_curso_se_sigue_mirando_pasadas_las_48_horas()
+    {
+        // La tarjeta CONT deja el cobro en_process, y Mercado Pago dice hasta 2 días
+        // hábiles para resolverlo — con un fin de semana de por medio eso pasa las 48
+        // horas del checkout abandonado comun. La diferencia con el test de arriba es la
+        // factura "pendiente" real: no es un checkout que nadie tocó, es uno que Mercado
+        // Pago sigue procesando.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-3),
+        });
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9301",
+            ExternalTransactionId = "9301",
+            Status = "pendiente",
+            StatusDetail = "pending_contingency",
+        });
+        _db.Context.SaveChanges();
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        // El estado se queda en "pendiente" — nada se acreditó todavía, eso es correcto.
+        // Lo que este test prueba es que se la sigue mirando en vez de saltarla.
+        await Service().ReconcileAsync(10, default);
+
+        Assert.NotEmpty(_http.Requests);
+        Assert.NotNull((await _db.NewContext().Subscriptions.SingleAsync()).LastSyncedAtUtc);
+    }
+
+    [Fact]
+    public async Task Un_cobro_en_curso_deja_de_mirarse_pasado_el_tope_absoluto()
+    {
+        // Cinco días de "todavía lo estamos pensando" ya no es una demora de Mercado Pago,
+        // es una cuenta que necesita soporte, no otro poll cada 15 minutos para siempre.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-6),
+        });
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = user.Subscriptions.Single().Id,
+            UserId = user.Id,
+            ExternalPaymentId = "9301",
+            ExternalTransactionId = "9301",
+            Status = "pendiente",
+            StatusDetail = "pending_contingency",
+        });
+        _db.Context.SaveChanges();
+        RouteMercadoPago();
+
+        Assert.Equal(0, await Service().ReconcileAsync(10, default));
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
     public async Task Sin_credenciales_el_reconciliador_no_hace_nada()
     {
         CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });

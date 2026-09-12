@@ -610,14 +610,25 @@ public sealed class SubscriptionService(
 
         var now = DateTime.UtcNow;
         var checkoutFloor = now.AddHours(-_options.PendingCheckoutHours);
+        var inProgressFloor = now.AddHours(-_options.PendingPaymentInProgressHours);
 
+        // A "pendiente" row is either of two very different things, and they need two
+        // different clocks. Most are an abandoned checkout — nobody finished, nothing is
+        // coming, stop polling after PendingCheckoutHours. But once a charge is sitting in
+        // Mercado Pago's own `in_process` (a real "pendiente" invoice, not one we invented),
+        // the payer did act and Mercado Pago is still deciding — that gets the longer
+        // PendingPaymentInProgressHours instead of being cut off at the same 48 hours as a
+        // checkout nobody touched.
         var candidates = await db.Subscriptions
             .Where(item =>
                 !item.IsDevSimulated &&
                 item.ExternalSubscriptionId != null &&
                 (
-                    // Waiting on the payer, or on Mercado Pago's own processing.
-                    (item.Status == "pendiente" && item.CreatedAtUtc >= checkoutFloor) ||
+                    (item.Status == "pendiente" &&
+                     (item.CreatedAtUtc >= checkoutFloor ||
+                      (item.CreatedAtUtc >= inProgressFloor &&
+                       db.SubscriptionInvoices.Any(invoice =>
+                           invoice.SubscriptionId == item.Id && invoice.Status == "pendiente")))) ||
                     // A retry may have gone through since the rejection.
                     item.Status == "pago_fallido" ||
                     // The renewal was due and we were never told how it went.

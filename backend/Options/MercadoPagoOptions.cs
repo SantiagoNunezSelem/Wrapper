@@ -1,4 +1,4 @@
-namespace backend.Options;
+﻿namespace backend.Options;
 
 /// <summary>
 /// Everything the Mercado Pago subscription flow needs. Prices and periods live here
@@ -80,8 +80,24 @@ public sealed class MercadoPagoOptions
     /// <summary>
     /// How long an unfinished checkout keeps being polled before it is written off. A
     /// payer who closed the tab should not be re-read every quarter of an hour forever.
+    ///
+    /// This only covers a checkout with nothing behind it yet. One that Mercado Pago is
+    /// actively working on — a charge sitting in <c>in_process</c>, the state behind
+    /// <c>pending_contingency</c> — uses <see cref="PendingPaymentInProgressHours"/>
+    /// instead, because Mercado Pago itself can take longer than this to decide.
     /// </summary>
     public int PendingCheckoutHours { get; set; } = 48;
+
+    /// <summary>
+    /// How long the reconciler keeps polling a "pendiente" row past
+    /// <see cref="PendingCheckoutHours"/> when there is an <c>in_process</c> charge behind
+    /// it — Mercado Pago's own answer for "we are still deciding", which their docs put at
+    /// up to two business days and a weekend stretches past 48 hours in wall-clock time.
+    /// Past this point a customer's card has been undecided for so long that a support
+    /// conversation is more useful than another poll, so it stops rather than running
+    /// forever on a single stuck account.
+    /// </summary>
+    public int PendingPaymentInProgressHours { get; set; } = 120;
 
     /// <summary>
     /// Where the payer manages the card behind the subscription. Mercado Pago exposes no
