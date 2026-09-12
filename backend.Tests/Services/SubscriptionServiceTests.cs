@@ -1173,6 +1173,50 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Un_pago_demorado_que_al_final_se_acredita_enciende_la_cuenta()
+    {
+        // El CONT que termina bien. Mientras Mercado Pago lo piensa no hay Pro, y cuando
+        // acredita la cuenta se enciende sola y conserva la semana gratis que la preapproval
+        // sigue declarando — el cobro aprobado es la prueba de que la tarjeta servía.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        var service = Service();
+        var preapproval = Json(
+            """
+            {"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z",
+             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+             "next_payment_date":"@trialEnd@"}
+            """,
+            ("trialEnd", DateTime.UtcNow.AddDays(7)));
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9301,"status":"in_process","status_detail":"pending_contingency",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: preapproval);
+        await service.HandleNotificationAsync("payment", "payment.updated", "9301", "{}", default);
+
+        var waiting = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", waiting.Status);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(waiting));
+
+        RouteMercadoPago(
+            payment: """
+            {"id":9301,"status":"approved","status_detail":"accredited",
+             "date_approved":"2025-03-11T10:00:00Z","date_last_updated":"2025-03-11T10:00:00Z",
+             "metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: preapproval);
+        await service.HandleNotificationAsync("payment", "payment.updated", "9301", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("trial", stored.Status);
+        Assert.NotNull(stored.TrialEndsAtUtc);
+        Assert.NotNull(stored.LastPaymentAtUtc);
+        Assert.True(SubscriptionAccessEvaluator.HasVipAccess(stored));
+    }
+
+    [Fact]
     public async Task Si_Mercado_Pago_no_lista_los_cobros_la_sincronizacion_sigue()
     {
         // Los cobros son un extra; el estado de la suscripción no. Cuando la búsqueda

@@ -771,9 +771,21 @@ public sealed class SubscriptionService(
         // of ours is refused or still undecided, and it can only know that if the reason
         // is already there. It has to come from the payment — Mercado Pago goes on
         // reporting the preapproval as "authorized" throughout.
-        subscription.LastPaymentStatusDetail = payment.Status is "approved"
-            ? null
-            : payment.StatusDetail;
+        //
+        // The approval date belongs to the same handover. A payment Mercado Pago sat on for
+        // two days and then accredited arrives here as the proof that the card worked, and
+        // if the mapping runs before that lands it still reads "nothing has been collected"
+        // — clearing the free week and the next debit date off a subscription that had just
+        // been paid for.
+        if (payment.Status is "approved")
+        {
+            subscription.LastPaymentStatusDetail = null;
+            subscription.LastPaymentAtUtc = payment.DateApproved ?? payment.DateLastUpdated ?? DateTime.UtcNow;
+        }
+        else
+        {
+            subscription.LastPaymentStatusDetail = payment.StatusDetail;
+        }
 
         // Then the preapproval, the authority on trial-vs-active and on when the next
         // debit lands — and then the payment's own status on top, because a charge is the
@@ -810,7 +822,6 @@ public sealed class SubscriptionService(
 
         if (payment.Status is "approved")
         {
-            subscription.LastPaymentAtUtc = payment.DateApproved ?? payment.DateLastUpdated ?? DateTime.UtcNow;
             subscription.GraceEndsAtUtc = null;
             subscription.CheckoutUrl = null;
 
