@@ -177,6 +177,34 @@ public sealed class MercadoPagoClient(
     }
 
     /// <summary>
+    /// Every payment Mercado Pago has on file for one of our subscriptions, matched by the
+    /// <c>external_reference</c> the checkout stamped on the preapproval — Mercado Pago
+    /// copies it onto each payment the subscription generates.
+    ///
+    /// This is the only way to see a card that was declined <em>during</em> the hosted
+    /// checkout. <see cref="SearchAuthorizedPaymentsAsync"/> lists the subscription's own
+    /// scheduled debits, and a checkout that never got past the card is not one of those:
+    /// it is a plain payment, and it exists nowhere else we look. Without this call a
+    /// refused card leaves no trace at all — an empty billing history, and, worse, nothing
+    /// to weigh against a preapproval that Mercado Pago reports as <c>authorized</c>
+    /// regardless.
+    ///
+    /// Newest first, so a caller that only wants the latest attempt need not sort.
+    /// </summary>
+    public async Task<IReadOnlyList<MercadoPagoPayment>> SearchPaymentsAsync(
+        string externalReference,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendAsync<PaymentSearch>(
+            HttpMethod.Get,
+            $"/v1/payments/search?external_reference={Uri.EscapeDataString(externalReference)}&sort=date_created&criteria=desc",
+            null,
+            cancellationToken);
+
+        return result?.Results ?? [];
+    }
+
+    /// <summary>
     /// One payment, straight from the payments API. Needed because the <c>payment</c>
     /// topic — which Mercado Pago's own docs tell you to enable alongside the two
     /// subscription topics — notifies a payment id, not an authorized_payment id, and it
@@ -435,6 +463,9 @@ public sealed record PaymentCard(
 public sealed record PaymentPayer(
     [property: JsonPropertyName("id")] string? Id,
     [property: JsonPropertyName("email")] string? Email);
+
+public sealed record PaymentSearch(
+    [property: JsonPropertyName("results")] List<MercadoPagoPayment>? Results);
 
 public sealed record PreapprovalSearch(
     [property: JsonPropertyName("results")] List<Preapproval>? Results);

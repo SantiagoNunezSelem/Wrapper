@@ -51,6 +51,28 @@ public class SubscriptionServiceTests : IDisposable
         return user;
     }
 
+    /// <summary>
+    /// Deja registrado un cobro aprobado de esta suscripción — el de $0 de la semana gratis,
+    /// salvo que se pida otro importe.
+    ///
+    /// Es la prueba de que la tarjeta funcionó, y desde que una rechazada dejó de encender
+    /// la prueba es lo único que separa a un cliente de un checkout que rebotó: sin un
+    /// cobro aprobado detrás, cancelar devuelve la semana y las fechas que proyecta el
+    /// preapproval se descartan.
+    /// </summary>
+    private void AddApprovedInvoice(Subscription subscription, decimal amount = 0m)
+    {
+        _db.Context.SubscriptionInvoices.Add(new SubscriptionInvoice
+        {
+            SubscriptionId = subscription.Id,
+            UserId = subscription.UserId,
+            ExternalPaymentId = $"ap-{Guid.NewGuid():N}",
+            Status = "aprobado",
+            Amount = amount,
+        });
+        _db.Context.SaveChanges();
+    }
+
     private static HttpContext Context()
     {
         var context = new DefaultHttpContext();
@@ -76,6 +98,23 @@ public class SubscriptionServiceTests : IDisposable
         return template;
     }
 
+    /// <summary>
+    /// Un cobro aprobado, tal como lo devuelve <c>/authorized_payments/search</c> cuando la
+    /// tarjeta funcionó.
+    ///
+    /// Aparece en casi todos los fixtures de una suscripción que de verdad cobró, y no es
+    /// decorado: desde que una tarjeta rechazada dejó de encender la prueba, un preapproval
+    /// en "authorized" sin un solo cobro aprobado detrás ya no alcanza para dar acceso.
+    /// Mercado Pago autoriza apenas el pagador elige tarjeta y se queda ahí aunque el cobro
+    /// rebote, así que "authorized" sin plata es justo el estado de la tarjeta rechazada.
+    /// </summary>
+    private const string CobroAprobado =
+        """{"results":[{"id":555,"status":"processed","payment":{"id":999,"status":"approved"}}]}""";
+
+    /// <summary>Un cobro rechazado: la tarjeta que el banco no autorizó.</summary>
+    private const string CobroRechazado =
+        """{"results":[{"id":556,"status":"rejected","payment":{"id":998,"status":"rejected","status_detail":"cc_rejected_insufficient_amount"}}]}""";
+
     /// <summary>Responde según la ruta, que es lo que hace falta cuando un solo flujo
     /// pega a `/preapproval` y `/authorized_payments`.</summary>
     private void RouteMercadoPago(
@@ -83,6 +122,7 @@ public class SubscriptionServiceTests : IDisposable
         string? createdPreapproval = null,
         string? preapprovalSearch = null,
         string? paymentsSearch = null,
+        string? paymentSearch = null,
         string? payment = null,
         string? authorizedPayment = null)
     {
@@ -100,6 +140,8 @@ public class SubscriptionServiceTests : IDisposable
                 _ when isCreate => createdPreapproval ?? """{"id":"pre-1","status":"pending","init_point":"https://mp.test/subscribe/pre-1"}""",
                 var p when p.Contains("/preapproval") => preapproval ?? """{"id":"pre-1","status":"pending"}""",
                 var p when p.Contains("/authorized_payments/search") => paymentsSearch ?? """{"results":[]}""",
+                // Antes que /v1/payments/{id}: la ruta de búsqueda lo contiene como prefijo.
+                var p when p.Contains("/v1/payments/search") => paymentSearch ?? """{"results":[]}""",
                 var p when p.Contains("/v1/payments/") => payment ?? """{"id":1,"status":"approved","status_detail":"accredited"}""",
                 _ => authorizedPayment ?? "{}",
             };
@@ -380,6 +422,7 @@ public class SubscriptionServiceTests : IDisposable
             Status = "activa",
             NextBillingAtUtc = nextBilling,
             ExternalSubscriptionId = "pre-1",
+            LastPaymentAtUtc = DateTime.UtcNow.AddDays(-10),
         });
 
         var result = await Service().CancelAsync(user, default);
@@ -434,7 +477,8 @@ public class SubscriptionServiceTests : IDisposable
         var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalPlanId = "plan-1" });
         RouteMercadoPago(
             preapprovalSearch: """{"results":[{"id":"pre-99","preapproval_plan_id":"plan-1","date_created":"2025-03-10T10:00:00Z"}]}""",
-            preapproval: """{"id":"pre-99","status":"authorized"}""");
+            preapproval: """{"id":"pre-99","status":"authorized"}""",
+            paymentsSearch: CobroAprobado);
 
         var result = await Service().SyncAsync(user, default);
 
@@ -477,7 +521,7 @@ public class SubscriptionServiceTests : IDisposable
     public async Task El_sync_deja_un_evento_solo_cuando_el_estado_cambia()
     {
         var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""", paymentsSearch: CobroAprobado);
         var service = Service();
 
         await service.SyncAsync(user, default);
@@ -529,18 +573,24 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Un_plan_con_prueba_gratis_y_sin_cobros_se_lee_como_trial()
+    public async Task Un_plan_con_prueba_gratis_se_lee_como_trial_cuando_la_tarjeta_funciono()
     {
-        // Mercado Pago no expone un estado "trialing": se deriva.
+        // Mercado Pago no expone un estado "trialing": se deriva. La semana gratis tiene su
+        // propio cobro en $0, y ese cobro aprobado es la prueba de que la tarjeta funciona
+        // — sin el, no se enciende nada, porque un "authorized" pelado es tambien lo que
+        // muestra un preapproval cuya tarjeta rebotó.
         var trialEnd = DateTime.UtcNow.AddDays(5);
         var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: Json(
-            """
-            {"id":"pre-1","status":"authorized","next_payment_date":"@trialEnd@",
-             "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
-             "summarized":{"charged_quantity":0}}
-            """,
-            ("trialEnd", trialEnd)));
+        RouteMercadoPago(
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","next_payment_date":"@trialEnd@",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "summarized":{"charged_quantity":0}}
+                """,
+                ("trialEnd", trialEnd)),
+            paymentsSearch:
+                """{"results":[{"id":555,"status":"processed","transaction_amount":0,"payment":{"id":999,"status":"approved"}}]}""");
 
         var result = await Service().SyncAsync(user, default);
 
@@ -553,13 +603,15 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Con_un_cobro_hecho_el_trial_ya_terminó()
     {
         var user = CreateUser(subscriptions: new Subscription { Status = "trial", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: Json(
-            """
-            {"id":"pre-1","status":"authorized","next_payment_date":"@next@",
-             "auto_recurring":{"free_trial":{"frequency":7}},
-             "summarized":{"charged_quantity":1}}
-            """,
-            ("next", DateTime.UtcNow.AddDays(25))));
+        RouteMercadoPago(
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","next_payment_date":"@next@",
+                 "auto_recurring":{"free_trial":{"frequency":7}},
+                 "summarized":{"charged_quantity":1}}
+                """,
+                ("next", DateTime.UtcNow.AddDays(25))),
+            paymentsSearch: CobroAprobado);
 
         var result = await Service().SyncAsync(user, default);
 
@@ -570,11 +622,168 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Un_plan_sin_prueba_gratis_arranca_activo()
     {
         var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""", paymentsSearch: CobroAprobado);
 
         var result = await Service().SyncAsync(user, default);
 
         Assert.Equal("activa", result!.Status);
+    }
+
+    // =======================================================================
+    // Tarjeta rechazada en el checkout
+    //
+    // El caso que se llevaba la prueba gratis. Mercado Pago autoriza el preapproval apenas
+    // el pagador elige una tarjeta y lo deja autorizado aunque el cobro rebote, así que
+    // "authorized" no dice absolutamente nada sobre si alguien pagó. Y el rechazo del
+    // checkout no es un débito agendado, así que no aparece en /authorized_payments: vive
+    // sólo en /v1/payments, que es el único lugar donde se lo puede ir a buscar.
+    // =======================================================================
+
+    [Fact]
+    public async Task Una_tarjeta_rechazada_NO_enciende_la_prueba_gratis()
+    {
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            TrialWasApplied = true,
+        });
+
+        RouteMercadoPago(
+            // Mercado Pago sigue diciendo "authorized", con su semana gratis y su primera
+            // fecha de débito, como si no hubiera pasado nada.
+            preapproval: Json(
+                """
+                {"id":"pre-1","status":"authorized","next_payment_date":"@trialEnd@",
+                 "auto_recurring":{"free_trial":{"frequency":7,"frequency_type":"days"}},
+                 "summarized":{"charged_quantity":0}}
+                """,
+                ("trialEnd", DateTime.UtcNow.AddDays(7))),
+            paymentSearch: Json(
+                """
+                {"results":[{"id":998,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+                  "external_reference":"@ref@","transaction_amount":7900,"currency_id":"ARS"}]}
+                """,
+                ("ref", user.Subscriptions[0].Id)),
+            // El mismo cobro leído de a uno: es lo que hace RefreshPendingReasonAsync para
+            // poder contar el motivo en la pantalla.
+            payment: """{"id":998,"status":"rejected","status_detail":"cc_rejected_insufficient_amount"}""");
+
+        var result = await Service().SyncAsync(user, default);
+
+        Assert.Equal("pendiente", result!.Status);
+        Assert.Null(result.TrialEndsAtUtc);
+        Assert.Null(result.NextBillingAtUtc);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(user));
+        Assert.Equal("inactiva", SubscriptionAccessEvaluator.GetVisibleState(user));
+    }
+
+    [Fact]
+    public async Task El_rechazo_del_checkout_queda_en_el_historial_de_pagos()
+    {
+        // La otra mitad del mismo problema: la pantalla que alguien abre para entender por
+        // qué no le anduvo la tarjeta estaba vacía, porque el único cobro que existía no
+        // era un débito agendado y no lo buscábamos donde estaba.
+        var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+
+        RouteMercadoPago(
+            preapproval: """{"id":"pre-1","status":"authorized"}""",
+            paymentSearch: Json(
+                """
+                {"results":[{"id":998,"status":"rejected","status_detail":"cc_rejected_insufficient_amount",
+                  "external_reference":"@ref@","transaction_amount":7900,"currency_id":"ARS",
+                  "payment_method_id":"visa","card":{"last_four_digits":"6411"}}]}
+                """,
+                ("ref", user.Subscriptions[0].Id)),
+            payment: """{"id":998,"status":"rejected","status_detail":"cc_rejected_insufficient_amount"}""");
+
+        await Service().SyncAsync(user, default);
+
+        var invoice = await _db.NewContext().SubscriptionInvoices.SingleAsync();
+        Assert.Equal("rechazado", invoice.Status);
+        Assert.Equal("cc_rejected_insufficient_amount", invoice.StatusDetail);
+        Assert.Equal(7900m, invoice.Amount);
+        Assert.Equal("visa ···· 6411", invoice.PaymentMethodLabel);
+    }
+
+    [Fact]
+    public async Task Sin_ningun_cobro_a_la_vista_tampoco_se_da_acceso()
+    {
+        // El agujero exacto por el que se colaban las rechazadas: no había cobro fallido
+        // registrado —el del checkout no aparecía en ninguna lista que consultáramos— y eso
+        // se leía como prueba de que el cobro había salido bien. No saber nada no es saber
+        // que se pagó, y sobre plata las dos formas de equivocarse no salen lo mismo.
+        var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+
+        var result = await Service().SyncAsync(user, default);
+
+        Assert.Equal("pendiente", result!.Status);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(user));
+    }
+
+    [Fact]
+    public async Task El_link_del_checkout_se_descarta_cuando_Mercado_Pago_ya_lo_autorizo()
+    {
+        // Un init_point deja de servir en cuanto el preapproval sale de "pending". Mientras
+        // una tarjeta rechazada movía la fila a "trial" esto no se notaba; ahora la fila se
+        // queda en "pendiente", y sin esto la cuenta seguiría ofreciendo "Terminá el pago"
+        // contra un link muerto —y cada reintento volvería a ese mismo link en vez de abrir
+        // un checkout que funcione.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+        });
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+
+        var result = await Service().SyncAsync(user, default);
+
+        Assert.Null(result!.CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task Un_checkout_que_todavia_no_se_pago_conserva_su_link()
+    {
+        // El otro lado: mientras Mercado Pago lo sigue teniendo en "pending", el link es lo
+        // único que le permite a alguien terminar un pago que dejó a medias.
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+        });
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"pending"}""");
+
+        var result = await Service().SyncAsync(user, default);
+
+        Assert.Equal("https://mp.test/subscribe/pre-1", result!.CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task Cancelar_un_checkout_que_rebotó_devuelve_la_semana()
+    {
+        // Se quema al abrir el checkout, que es el default conservador. Pero cobrarle la
+        // única semana gratis a alguien porque su banco le rechazó la tarjeta es
+        // indefendible, y no cuesta nada: la semana sólo arranca con un cobro aprobado, así
+        // que reintentar con una tarjeta muerta no rinde un día de Pro.
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"cancelled"}""");
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            TrialWasApplied = true,
+        });
+        user.HasUsedTrial = true;
+        _db.Context.TrialClaims.Add(new TrialClaim { UserId = user.Id, SubscriptionId = user.Subscriptions[0].Id });
+        await _db.Context.SaveChangesAsync();
+
+        await Service().CancelAsync(user, default);
+
+        var reread = _db.NewContext();
+        Assert.False(await reread.Users.Where(item => item.Id == user.Id).Select(item => item.HasUsedTrial).SingleAsync());
+        Assert.Equal(0, await reread.TrialClaims.CountAsync());
     }
 
     // =======================================================================
@@ -596,7 +805,9 @@ public class SubscriptionServiceTests : IDisposable
     public async Task Una_notificacion_de_preapproval_aplica_el_estado(string topic)
     {
         var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+        RouteMercadoPago(
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""",
+            paymentsSearch: CobroAprobado);
 
         await Service().HandleNotificationAsync(topic, "updated", "pre-1", "{}", default);
 
@@ -664,9 +875,11 @@ public class SubscriptionServiceTests : IDisposable
     {
         var subscription = new Subscription { Status = "pendiente" };
         CreateUser(subscriptions: subscription);
-        RouteMercadoPago(preapproval: Json(
-            """{"id":"pre-1","status":"authorized","external_reference":"@ref@","last_modified":"2025-03-10T10:00:00Z"}""",
-            ("ref", subscription.Id)));
+        RouteMercadoPago(
+            preapproval: Json(
+                """{"id":"pre-1","status":"authorized","external_reference":"@ref@","last_modified":"2025-03-10T10:00:00Z"}""",
+                ("ref", subscription.Id)),
+            paymentsSearch: CobroAprobado);
 
         await Service().HandleNotificationAsync("preapproval", "updated", "pre-1", "{}", default);
 
@@ -1596,6 +1809,11 @@ public class SubscriptionServiceTests : IDisposable
             NextBillingAtUtc = DateTime.UtcNow.AddDays(4),
         });
 
+        // Las dos mitades de una prueba de verdad: la tarjeta funcionó —su cobro de $0
+        // está aprobado— y todavía no salió un peso. De ahí salen las dos afirmaciones de
+        // abajo, y ninguna de las dos se puede hacer sobre un checkout que fue rechazado.
+        AddApprovedInvoice(user.Subscriptions[0]);
+
         var result = await Service().CancelAsync(user, default);
 
         // El motor de Mercado Pago es el que agenda el primer débito: si el preapproval ya
@@ -1646,10 +1864,12 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Cancelar_una_suscripcion_YA_autorizada_no_devuelve_la_semana()
+    public async Task Cancelar_una_prueba_que_arranco_de_verdad_no_devuelve_la_semana()
     {
-        // Acá sí la usó: el reintegro es sólo para el checkout que nunca llegó a existir
-        // del lado de Mercado Pago.
+        // Acá sí la usó, y el reintegro no es para esto. Lo que decide no es si la fila
+        // estaba vinculada a Mercado Pago —una tarjeta rechazada también deja una fila
+        // vinculada— sino si alguna vez hubo un cobro aprobado: con uno, la semana que
+        // estuvo corriendo ya se consumió.
         RouteMercadoPago(preapproval: """{"id":"pre-1","status":"cancelled"}""");
         var user = CreateUser(subscriptions: new Subscription
         {
@@ -1661,6 +1881,7 @@ public class SubscriptionServiceTests : IDisposable
         user.HasUsedTrial = true;
         _db.Context.TrialClaims.Add(new TrialClaim { UserId = user.Id, SubscriptionId = user.Subscriptions[0].Id });
         await _db.Context.SaveChangesAsync();
+        AddApprovedInvoice(user.Subscriptions[0]);
 
         await Service().CancelAsync(user, default);
 
@@ -1702,13 +1923,14 @@ public class SubscriptionServiceTests : IDisposable
     [Fact]
     public async Task Reanudar_vuelve_a_poner_la_suscripcion_en_marcha()
     {
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""");
+        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized"}""", paymentsSearch: CobroAprobado);
         var user = CreateUser(subscriptions: new Subscription
         {
             Status = "pausada",
             ExternalSubscriptionId = "pre-1",
             PausedAtUtc = DateTime.UtcNow.AddDays(-3),
             NextBillingAtUtc = DateTime.UtcNow.AddDays(10),
+            LastPaymentAtUtc = DateTime.UtcNow.AddDays(-20),
         });
 
         var result = await Service().ResumeAsync(user, default);
@@ -1744,7 +1966,9 @@ public class SubscriptionServiceTests : IDisposable
         // se habilitó en el panel, el secreto rotó, un deploy se comió la entrega. Todas
         // terminan igual: cobrada la tarjeta y la app diciendo "pendiente".
         CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
-        RouteMercadoPago(preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""");
+        RouteMercadoPago(
+            preapproval: """{"id":"pre-1","status":"authorized","last_modified":"2025-03-10T10:00:00Z"}""",
+            paymentsSearch: CobroAprobado);
 
         var changed = await Service().ReconcileAsync(10, default);
 

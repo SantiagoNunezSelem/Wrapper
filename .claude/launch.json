@@ -13,6 +13,19 @@
       "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
       "port": 5173,
       "url": "https://localhost:5173"
+    },
+    {
+      "name": "dashboard-backend",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "C:/Users/PC1/Desktop/wrapper-CRM-dashboard/backend"],
+      "port": 5175
+    },
+    {
+      "name": "dashboard-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/PC1/Desktop/wrapper-CRM-dashboard/frontend"],
+      "port": 5173,
+      "url": "https://localhost:5173"
     }
   ]
 }
