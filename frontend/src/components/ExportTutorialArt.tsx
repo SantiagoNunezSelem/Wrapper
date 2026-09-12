@@ -549,12 +549,12 @@ export function ExportTutorialArt({
   platform: ExportTutorialPlatform
   chrome: boolean
 }) {
-  // Primer paso de Android: grabación real en vez de la ilustración SVG —
-  // reemplazo gradual, paso a paso, de las demás escenas dibujadas abajo.
-  if (step === 0 && platform === 'android') {
+  // Pasos 2 y 3 de Android (el paso 1 es "instalar la app", sin video): grabaciones
+  // reales en vez de la ilustración SVG de abajo, que sólo sigue en pie para iOS.
+  if (platform === 'android' && (step === 1 || step === 2)) {
     return (
       <video
-        src="/tutorial/export-android-step1.mp4"
+        src={step === 1 ? '/tutorial/export-android-step2.mp4' : '/tutorial/export-android-step3.mp4'}
         className="tutorial-gif"
         aria-label={`Paso ${step + 1}`}
         autoPlay
