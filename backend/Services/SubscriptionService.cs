@@ -953,6 +953,22 @@ public sealed class SubscriptionService(
         }
 
         var previousStatus = subscription.Status;
+
+        // Charges first, same as SyncAsync and ReconcileAsync, and for the same reason:
+        // this topic fires the moment the payer picks a card, which proves nothing about
+        // whether it worked. Without this call, a preapproval-only notification was the
+        // one path with no way to learn a charge had bounced — it had to arrive already
+        // knowing, from a `payment` notification or an earlier sync that had reached the
+        // same conclusion first. When neither had happened yet — the ordinary order these
+        // two notifications arrive in, not an edge case — this granted the free week to a
+        // card that had already been declined.
+        foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId ?? dataId, cancellationToken))
+        {
+            await UpsertInvoiceAsync(subscription, payment, cancellationToken);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await RefreshPendingReasonAsync(subscription, cancellationToken);
         await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
         RecordEvent(subscription, topic, action, eventId, $"{previousStatus} → {subscription.Status}", rawBody);
@@ -1105,18 +1121,22 @@ public sealed class SubscriptionService(
             subscription.NextBillingAtUtc = next;
         }
 
-        subscription.SubscriptionStartsAtUtc ??= preapproval.AutoRecurring?.StartDate ?? preapproval.DateCreated;
-
         // Nothing collected and the last charge did not settle, so the dates Mercado Pago
         // is projecting belong to a subscription that never started. Left standing they
         // grant access on their own — a trial end through the "trial" and "cancelada"
-        // rules, a billing date through "activa" and "pausada" — which is the free account
-        // a refused card used to walk away with, and it outlived even cancelling. They
-        // come back by themselves as soon as a charge is approved.
+        // rules, a billing date through "activa" and "pausada", a start date through the
+        // plan card — which is the free account a refused card used to walk away with,
+        // and it outlived even cancelling. They come back by themselves as soon as a
+        // charge is approved.
         if (nothingCollected)
         {
             subscription.TrialEndsAtUtc = null;
             subscription.NextBillingAtUtc = null;
+            subscription.SubscriptionStartsAtUtc = null;
+        }
+        else
+        {
+            subscription.SubscriptionStartsAtUtc ??= preapproval.AutoRecurring?.StartDate ?? preapproval.DateCreated;
         }
     }
 
