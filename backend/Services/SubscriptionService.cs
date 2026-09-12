@@ -306,6 +306,26 @@ public sealed class SubscriptionService(
             await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
         }
 
+        // Asked after the mapping, not before: the preapproval Mercado Pago just handed back
+        // carries its own last_charged_date, and folding that in first means the question
+        // below is answered with everything known about this subscription rather than with
+        // whatever had reached the invoices by now.
+
+        // The free week goes back whenever this subscription never collected a peso — not
+        // only when the row was never linked to Mercado Pago, which is what this used to
+        // check. That test stood in for "nothing was ever authorised", and it stopped being
+        // a fair proxy the moment a declined card started leaving a perfectly linked row
+        // behind: Mercado Pago authorises the preapproval on the payer picking a card, so a
+        // checkout that was refused four times over has an id, has a preapproval, and has
+        // still given this customer nothing. Charging them their one free week for a card
+        // their bank declined is indefensible — and it costs nothing, because a free week
+        // only ever starts on an approved charge now, so retrying with a dead card in a
+        // loop yields exactly as much Pro as it should: none.
+        if (await NothingWasEverCollectedAsync(subscription, cancellationToken))
+        {
+            await trialEligibility.ReleaseAsync(user, subscription, cancellationToken);
+        }
+
         // Applied after the mapping, not before: ApplyPreapproval trusts the provider's
         // status, and a just-cancelled preapproval sometimes still reads as authorized for
         // a moment.
@@ -488,16 +508,11 @@ public sealed class SubscriptionService(
 
         var previousStatus = subscription.Status;
 
-        foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId!, cancellationToken))
-        {
-            await UpsertInvoiceAsync(subscription, payment, cancellationToken);
-        }
-
-        // Saved before the next step reads them back. RefreshPendingReasonAsync queries the
-        // database, and an invoice that exists only in the change tracker is invisible to
-        // that query — which would be exactly the refused charge this sync just learned
-        // about, the one thing standing between a dead card and the free week.
-        await db.SaveChangesAsync(cancellationToken);
+        // Saved as it goes, before the next step reads them back: RefreshPendingReasonAsync
+        // queries the database, and an invoice that exists only in the change tracker is
+        // invisible to that query — which would be exactly the refused charge this sync
+        // just learned about, the one thing standing between a dead card and the free week.
+        await RecordProviderChargesAsync(subscription, subscription.ExternalSubscriptionId!, cancellationToken);
 
         // The authorized_payments list carries the subscription's own scheduled charges,
         // but only /v1/payments knows *why* one is unsettled. Reading it for the newest
@@ -550,6 +565,76 @@ public sealed class SubscriptionService(
 
             return [];
         }
+    }
+
+    /// <summary>
+    /// The payments Mercado Pago has recorded against this subscription, or none when it
+    /// refuses to list them. Swallowed for the same reason as
+    /// <see cref="ListChargesAsync"/>: this enriches the caller's work and must never be
+    /// what kills it.
+    ///
+    /// Matched by <c>external_reference</c> — the local row's own id, stamped on the
+    /// preapproval before the payer was ever redirected, and copied by Mercado Pago onto
+    /// every payment the subscription produces.
+    /// </summary>
+    private async Task<IReadOnlyList<MercadoPagoPayment>> ListPaymentsAsync(
+        Subscription subscription,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await client.SearchPaymentsAsync(
+                subscription.Id.ToString(),
+                cancellationToken);
+        }
+        catch (MercadoPagoException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Could not list the payments for subscription {SubscriptionId}; continuing without them.",
+                subscription.Id);
+
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Writes everything Mercado Pago has on file about this subscription's money into the
+    /// billing history: the subscription's own scheduled debits, and the plain payments
+    /// behind them.
+    ///
+    /// Both lists are needed, for two different charges. The scheduled debits are the
+    /// monthly ones. The payments are the only place a card refused <em>during</em> the
+    /// hosted checkout ever shows up — that attempt never becomes a scheduled debit, so
+    /// asking only for those left it invisible: "Historial de pagos" stayed empty on an
+    /// account whose card had just been declined four times, and — the expensive half —
+    /// the mapping below was left with nothing to weigh against a preapproval that Mercado
+    /// Pago reports as <c>authorized</c> whether the card worked or not. That is how a
+    /// declined card walked off with the free week.
+    ///
+    /// Saved in between deliberately: the second pass has to recognise the row the first
+    /// pass may have just created, and a query cannot see an entity that is still only in
+    /// the change tracker — which would split one charge into two lines of someone's
+    /// billing history.
+    /// </summary>
+    private async Task RecordProviderChargesAsync(
+        Subscription subscription,
+        string preapprovalId,
+        CancellationToken cancellationToken)
+    {
+        foreach (var charge in await ListChargesAsync(preapprovalId, cancellationToken))
+        {
+            await UpsertInvoiceAsync(subscription, charge, cancellationToken);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var payment in await ListPaymentsAsync(subscription, cancellationToken))
+        {
+            await UpsertInvoiceFromPaymentAsync(subscription, payment, cancellationToken);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -657,15 +742,10 @@ public sealed class SubscriptionService(
 
                 var previousStatus = subscription.Status;
 
-                foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId!, cancellationToken))
-                {
-                    await UpsertInvoiceAsync(subscription, payment, cancellationToken);
-                }
-
                 // Charges first, preapproval last — the same order as SyncAsync, for the
                 // same reason: "authorized" arrives the moment the payer picks a card and
                 // says nothing about whether that card paid.
-                await db.SaveChangesAsync(cancellationToken);
+                await RecordProviderChargesAsync(subscription, subscription.ExternalSubscriptionId!, cancellationToken);
                 await RefreshPendingReasonAsync(subscription, cancellationToken);
                 await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
@@ -962,12 +1042,7 @@ public sealed class SubscriptionService(
         // same conclusion first. When neither had happened yet — the ordinary order these
         // two notifications arrive in, not an edge case — this granted the free week to a
         // card that had already been declined.
-        foreach (var payment in await ListChargesAsync(subscription.ExternalSubscriptionId ?? dataId, cancellationToken))
-        {
-            await UpsertInvoiceAsync(subscription, payment, cancellationToken);
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
+        await RecordProviderChargesAsync(subscription, subscription.ExternalSubscriptionId ?? dataId, cancellationToken);
         await RefreshPendingReasonAsync(subscription, cancellationToken);
         await ApplyPreapprovalAsync(subscription, preapproval, cancellationToken);
 
@@ -1108,10 +1183,15 @@ public sealed class SubscriptionService(
             subscription.PausedAtUtc = null;
         }
 
-        // The checkout link only has a job while the payer still has to use it. Clearing
-        // it is what makes "Terminá el pago" disappear the moment there is nothing left to
-        // finish, instead of inviting someone to authorise a second subscription.
-        if (subscription.Status != "pendiente")
+        // The checkout link only has a job while the payer still has to use it, and that
+        // window is Mercado Pago's to close, not ours: an init_point stops working the
+        // moment the preapproval leaves "pending", whatever the local row says. Reading our
+        // own status here instead was survivable only while an authorised preapproval
+        // always moved the row off "pendiente" — now that a declined card correctly leaves
+        // it there, the same test would keep offering "Terminá el pago" on a link that
+        // cannot be paid, and FindResumableCheckout would send every retry back to it
+        // instead of opening a checkout that works.
+        if (preapproval.Status != "pending")
         {
             subscription.CheckoutUrl = null;
         }
@@ -1141,17 +1221,29 @@ public sealed class SubscriptionService(
     }
 
     /// <summary>
-    /// Whether a charge of ours is refused or still undecided and none has ever been
-    /// approved: no money has moved, and none is on its way. Mercado Pago holds the
-    /// preapproval on "authorized" through all of that — it authorises the moment the
-    /// payer picks a card, long before knowing whether the card works — so this is the
-    /// only thing that separates a customer from a card that never paid.
+    /// Whether this subscription has ever actually collected money — the one question that
+    /// separates a customer from a card that was declined. Mercado Pago will not answer it:
+    /// it holds the preapproval on "authorized" from the moment the payer picks a card,
+    /// long before knowing whether that card works, and it never moves off it when the
+    /// charge is refused.
     ///
-    /// Read from the invoices — the same rows "Historial de pagos" lists — and not only
-    /// from <see cref="Models.Subscription.LastPaymentStatusDetail"/>, which is a cache of
-    /// the newest unsettled charge and is wiped whenever nothing is outstanding. Trusting
-    /// the cache alone let the screen show a rejected charge and a running free week at the
-    /// same time, each reading a different source about the same money.
+    /// <b>An approved charge is required, and nothing else will do.</b> The previous
+    /// version asked the opposite question — it looked for a charge that had failed, and
+    /// read "no failure on file" as proof that one had succeeded. Which meant that the case
+    /// where we knew <em>nothing at all</em>, because the checkout's own declined payment
+    /// is not a scheduled debit and so appeared in none of the lists we read, came out as
+    /// "the money moved". That is the whole bug: every declined card landed here with an
+    /// empty billing history and was handed the free week on the strength of it. Absence of
+    /// evidence is not evidence, least of all about money, and the two ways to be wrong are
+    /// not symmetrical — a payer who really did pay and is briefly left on "pendiente" is
+    /// one sync away from being right, while Pro given to a card that never paid is revenue
+    /// gone and nobody finds out.
+    ///
+    /// Read from the invoices, the same rows "Historial de pagos" lists, so the screen and
+    /// this decision can never disagree about the same money — plus
+    /// <see cref="Models.Subscription.LastPaymentAtUtc"/> for the approval that the
+    /// notification in flight has already applied but whose invoice is written a few lines
+    /// later.
     /// </summary>
     private async Task<bool> NothingWasEverCollectedAsync(
         Subscription subscription,
@@ -1162,20 +1254,10 @@ public sealed class SubscriptionService(
             return false;
         }
 
-        var statuses = await db.SubscriptionInvoices
-            .Where(invoice => invoice.SubscriptionId == subscription.Id)
-            .Select(invoice => invoice.Status)
-            .ToListAsync(cancellationToken);
-
-        if (statuses.Contains("aprobado"))
-        {
-            return false;
-        }
-
-        // The detail covers the charge this very notification is carrying, whose invoice is
-        // written a few lines later and is not in the database yet.
-        return subscription.LastPaymentStatusDetail is { Length: > 0 } ||
-               statuses.Any(status => status is "rechazado" or "pendiente" or "reintentando");
+        return !await db.SubscriptionInvoices
+            .AnyAsync(
+                invoice => invoice.SubscriptionId == subscription.Id && invoice.Status == "aprobado",
+                cancellationToken);
     }
 
     /// <summary>
@@ -1194,12 +1276,13 @@ public sealed class SubscriptionService(
         var firstChargeAt = preapproval.NextPaymentDate;
 
         // Mercado Pago authorises the preapproval as soon as the payer picks a card, well
-        // before anyone knows whether that card works. Reading "authorized" as proof of a
-        // customer is what handed the free week to a refused payment: the charge bounced,
-        // nothing was ever collected, and the account still switched itself to Pro. So
-        // while a charge of ours is refused or still undecided and none has ever been
-        // approved, the row stays where it was — waiting for money that has not moved. The
-        // dates it would have inherited are cleared at the end of ApplyPreapprovalAsync.
+        // before anyone knows whether that card works — and it stays authorised when the
+        // charge is then declined. Reading "authorized" as proof of a customer is what
+        // handed the free week to every refused payment: the card bounced, nothing was ever
+        // collected, and the account switched itself to Pro anyway. So the free week is
+        // derived from an approved charge or not at all; until one lands, the row stays
+        // where it was, waiting for money that has not moved. The dates it would have
+        // inherited are cleared at the end of ApplyPreapprovalAsync.
         if (nothingCollected)
         {
             return "pendiente";

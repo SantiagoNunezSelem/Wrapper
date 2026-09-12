@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using backend.Models;
 using backend.Options;
@@ -65,6 +65,10 @@ public class AdminAccessServiceTests : IDisposable
         PaymentProvider = "mercadopago",
         NextBillingAtUtc = DateTime.UtcNow.AddDays(20),
         ExternalSubscriptionId = "pre-1",
+        // Una suscripción que cobró tiene la fecha del cobro. No es adorno: sin ella
+        // la fila es indistinguible de un checkout rechazado, y las fechas que proyecta
+        // Mercado Pago sobre una que nunca cobró se descartan a propósito.
+        LastPaymentAtUtc = DateTime.UtcNow.AddDays(-10),
     };
 
     /// <summary>La preapproval para cualquier lectura o escritura de /preapproval; listas vacías para las búsquedas.</summary>
