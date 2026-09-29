@@ -88,6 +88,8 @@ export interface SubscriptionRecord {
   accessUntilUtc: string | null
   /** The unfinished checkout to go back to, when the payer left one half-done. */
   checkoutUrl: string | null
+  /** Who the checkout was opened for; Mercado Pago only lets that account pay it. */
+  payerEmail: string | null
   /** Mercado Pago's `status_detail` for a charge that has not settled — `pending_contingency`,
    * `pending_challenge`, `cc_rejected_insufficient_amount`… See `pendingReasons` in the copy. */
   pendingReason: string | null

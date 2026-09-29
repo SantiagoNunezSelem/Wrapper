@@ -193,7 +193,7 @@ public class SubscriptionServiceTests : IDisposable
         var user = CreateUser();
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service(new MercadoPagoOptions { AccessToken = "" }).StartCheckoutAsync(user, Context(), null, default));
+            Service(new MercadoPagoOptions { AccessToken = "" }).StartCheckoutAsync(user, Context(), null, null, default));
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser();
 
-        var result = await Service().StartCheckoutAsync(user, Context(), "device-abc", default);
+        var result = await Service().StartCheckoutAsync(user, Context(), "device-abc", null, default);
 
         Assert.Equal("pendiente", result.Status);
         Assert.Equal("https://mp.test/subscribe/pre-1", result.RedirectUrl);
@@ -223,7 +223,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser();
 
-        await Service().StartCheckoutAsync(user, Context(), "device-abc", default);
+        await Service().StartCheckoutAsync(user, Context(), "device-abc", null, default);
 
         var reread = _db.NewContext();
         Assert.True(await reread.Users.Where(item => item.Id == user.Id).Select(item => item.HasUsedTrial).SingleAsync());
@@ -236,7 +236,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser(hasUsedTrial: true);
 
-        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         Assert.False(result.TrialApplied);
         Assert.Equal("account_used", result.TrialDeniedReason);
@@ -249,7 +249,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser();
 
-        await Service().StartCheckoutAsync(user, Context(), null, default);
+        await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         var record = await _db.NewContext().SubscriptionEvents.SingleAsync();
         Assert.Equal("checkout", record.Topic);
@@ -263,7 +263,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser(hasUsedTrial: true);
 
-        await Service().StartCheckoutAsync(user, Context(), null, default);
+        await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         var record = await _db.NewContext().SubscriptionEvents.SingleAsync();
         Assert.Equal("no_trial", record.Action);
@@ -287,7 +287,7 @@ public class SubscriptionServiceTests : IDisposable
         });
 
         var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() =>
-            Service().StartCheckoutAsync(user, Context(), null, default));
+            Service().StartCheckoutAsync(user, Context(), null, null, default));
 
         Assert.Equal("already_active", error.Code);
     }
@@ -303,7 +303,7 @@ public class SubscriptionServiceTests : IDisposable
             IsDevSimulated = true,
         });
 
-        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         Assert.Equal("pendiente", result.Status);
     }
@@ -314,7 +314,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser(subscriptions: new Subscription { Status = "cancelada", NextBillingAtUtc = DateTime.UtcNow.AddDays(-1) });
 
-        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         Assert.Equal("pendiente", result.Status);
     }
@@ -325,7 +325,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago(createdPreapproval: """{"id":"pre-1","status":"pending"}""");
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service().StartCheckoutAsync(CreateUser(), Context(), null, default));
+            Service().StartCheckoutAsync(CreateUser(), Context(), null, null, default));
     }
 
     [Fact]
@@ -345,7 +345,7 @@ public class SubscriptionServiceTests : IDisposable
         });
 
         await Assert.ThrowsAsync<MercadoPagoException>(() =>
-            Service().StartCheckoutAsync(CreateUser(), Context(), null, default));
+            Service().StartCheckoutAsync(CreateUser(), Context(), null, null, default));
 
         Assert.Empty(await _db.NewContext().Subscriptions.ToListAsync());
     }
@@ -1100,7 +1100,7 @@ public class SubscriptionServiceTests : IDisposable
         RouteMercadoPago();
         var user = CreateUser();
 
-        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         var create = _http.Requests.Single(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
@@ -1132,7 +1132,7 @@ public class SubscriptionServiceTests : IDisposable
         };
         var user = CreateUser();
 
-        var result = await Service(options).StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service(options).StartCheckoutAsync(user, Context(), null, null, default);
 
         var create = _http.Requests.Single(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
@@ -1151,7 +1151,7 @@ public class SubscriptionServiceTests : IDisposable
     {
         RouteMercadoPago();
 
-        await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
+        await Service().StartCheckoutAsync(CreateUser(), Context(), null, null, default);
 
         var create = _http.Requests.Single(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
@@ -1164,7 +1164,7 @@ public class SubscriptionServiceTests : IDisposable
     {
         RouteMercadoPago();
 
-        await Service().StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, default);
+        await Service().StartCheckoutAsync(CreateUser(hasUsedTrial: true), Context(), null, null, default);
 
         var create = _http.Requests.Single(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
@@ -1183,8 +1183,8 @@ public class SubscriptionServiceTests : IDisposable
         var service = Service();
         var user = CreateUser();
 
-        var first = await service.StartCheckoutAsync(user, Context(), null, default);
-        var second = await service.StartCheckoutAsync(user, Context(), null, default);
+        var first = await service.StartCheckoutAsync(user, Context(), null, null, default);
+        var second = await service.StartCheckoutAsync(user, Context(), null, null, default);
 
         Assert.True(second.Resumed);
         Assert.Equal(first.SubscriptionId, second.SubscriptionId);
@@ -1203,10 +1203,201 @@ public class SubscriptionServiceTests : IDisposable
             CreatedAtUtc = DateTime.UtcNow.AddDays(-30),
         });
 
-        var result = await Service().StartCheckoutAsync(user, Context(), null, default);
+        var result = await Service().StartCheckoutAsync(user, Context(), null, null, default);
 
         Assert.False(result.Resumed);
         Assert.Equal("https://mp.test/subscribe/pre-1", result.RedirectUrl);
+    }
+
+    // =======================================================================
+    // Mail del pagador
+    // =======================================================================
+    //
+    // Mercado Pago solo deja autorizar el preapproval a la cuenta cuyo mail es el
+    // payer_email ("Tu e-mail no coincide con el de la suscripción"), y ese mail muchas
+    // veces no es el de Google con el que la persona entró acá. Por eso se elige en la
+    // tarjeta del plan y queda guardado en cada intento.
+
+    private CapturedRequest CreatePreapprovalRequest() =>
+        _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+
+    [Fact]
+    public async Task El_mail_elegido_viaja_como_payer_email_y_queda_en_la_fila()
+    {
+        RouteMercadoPago();
+        var user = CreateUser();
+
+        await Service().StartCheckoutAsync(user, Context(), null, "  Otra.Cuenta@Hotmail.com ", default);
+
+        // Normalizado: Mercado Pago no distingue mayúsculas, y comparar contra la fila
+        // después (para retomar o reemplazar) tiene que dar lo mismo que dio acá.
+        Assert.Contains("\"payer_email\":\"otra.cuenta@hotmail.com\"", CreatePreapprovalRequest().Body);
+        Assert.DoesNotContain(user.Email, CreatePreapprovalRequest().Body);
+        Assert.Equal("otra.cuenta@hotmail.com", (await _db.NewContext().Subscriptions.SingleAsync()).PayerEmail);
+    }
+
+    [Fact]
+    public async Task Sin_mail_elegido_se_usa_el_de_la_cuenta_y_tambien_queda_en_la_fila()
+    {
+        RouteMercadoPago();
+        var user = CreateUser();
+
+        await Service().StartCheckoutAsync(user, Context(), null, null, default);
+
+        Assert.Contains(user.Email, CreatePreapprovalRequest().Body);
+        Assert.Equal(user.Email, (await _db.NewContext().Subscriptions.SingleAsync()).PayerEmail);
+    }
+
+    [Fact]
+    public async Task TestPayerEmail_gana_tambien_sobre_el_mail_elegido()
+    {
+        // Contra un vendedor de prueba no hay otro pagador que Mercado Pago acepte.
+        RouteMercadoPago();
+        var options = new MercadoPagoOptions { AccessToken = "TEST-1", TestPayerEmail = "test_user_9999@testuser.com" };
+
+        await Service(options).StartCheckoutAsync(CreateUser(), Context(), null, "otra@hotmail.com", default);
+
+        Assert.Contains("test_user_9999@testuser.com", CreatePreapprovalRequest().Body);
+        Assert.DoesNotContain("otra@hotmail.com", CreatePreapprovalRequest().Body);
+    }
+
+    [Theory]
+    [InlineData("no-es-un-mail")]
+    [InlineData("ana@localhost")]
+    [InlineData("ana @gmail.com")]
+    public async Task Un_mail_invalido_no_abre_nada(string payerEmail)
+    {
+        RouteMercadoPago();
+        var user = CreateUser();
+
+        var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() =>
+            Service().StartCheckoutAsync(user, Context(), null, payerEmail, default));
+
+        Assert.Equal("invalid_payer_email", error.Code);
+        Assert.Empty(_http.Requests);
+        Assert.Equal(0, await _db.NewContext().Subscriptions.CountAsync());
+    }
+
+    [Fact]
+    public async Task El_mismo_mail_retoma_el_checkout_en_vez_de_abrir_otro()
+    {
+        RouteMercadoPago();
+        var service = Service();
+        var user = CreateUser();
+
+        var first = await service.StartCheckoutAsync(user, Context(), null, "otra@hotmail.com", default);
+        var second = await service.StartCheckoutAsync(user, Context(), null, "OTRA@hotmail.com", default);
+
+        Assert.True(second.Resumed);
+        Assert.Equal(first.SubscriptionId, second.SubscriptionId);
+        Assert.Equal(1, await _db.NewContext().Subscriptions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Otro_mail_reemplaza_el_checkout_a_medias()
+    {
+        // Retomar no sirve: ese link es de la otra cuenta y Mercado Pago lo va a rebotar
+        // siempre. Se cancela allá antes de abrir el nuevo, para que nunca haya dos
+        // preapprovals autorizables a la vez.
+        RouteMercadoPago();
+        var service = Service();
+        var user = CreateUser();
+
+        var first = await service.StartCheckoutAsync(user, Context(), "device-abc", null, default);
+        var second = await service.StartCheckoutAsync(user, Context(), "device-abc", "otra@hotmail.com", default);
+
+        Assert.False(second.Resumed);
+        Assert.NotEqual(first.SubscriptionId, second.SubscriptionId);
+
+        var cancel = _http.Requests.Single(request => request.Method == HttpMethod.Put);
+        Assert.EndsWith("/preapproval/pre-1", cancel.Uri.AbsolutePath);
+        Assert.Contains("\"status\":\"cancelled\"", cancel.Body);
+
+        var reread = _db.NewContext();
+        var previous = await reread.Subscriptions.SingleAsync(item => item.Id == first.SubscriptionId);
+        Assert.Equal("cancelada", previous.Status);
+        Assert.Null(previous.CheckoutUrl);
+        Assert.Equal("otra@hotmail.com", (await reread.Subscriptions.SingleAsync(item => item.Id == second.SubscriptionId)).PayerEmail);
+        Assert.Contains(await reread.SubscriptionEvents.ToListAsync(), item => item.Action == "payer_email_changed");
+    }
+
+    [Fact]
+    public async Task Cambiar_de_mail_no_le_cuesta_la_semana_gratis()
+    {
+        // La semana se quemó al abrir el primer checkout, que nadie llegó a pagar. Sin
+        // devolverla, corregir el mail dejaría a la persona sin prueba gratis.
+        RouteMercadoPago();
+        var service = Service();
+        var user = CreateUser();
+
+        await service.StartCheckoutAsync(user, Context(), "device-abc", null, default);
+        var second = await service.StartCheckoutAsync(user, Context(), "device-abc", "otra@hotmail.com", default);
+
+        Assert.True(second.TrialApplied);
+        Assert.Contains("free_trial", _http.Requests.Where(request => request.Method == HttpMethod.Post).Last().Body);
+
+        var reread = _db.NewContext();
+        var claim = await reread.TrialClaims.SingleAsync();
+        Assert.Equal(second.SubscriptionId, claim.SubscriptionId);
+    }
+
+    [Fact]
+    public async Task Si_Mercado_Pago_no_cancela_el_anterior_no_se_abre_otro()
+    {
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+            PayerEmail = "ana@gmail.com",
+        });
+        _http.Route(request => request.Method == HttpMethod.Put
+            ? new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{}") }
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"pre-2","status":"pending","init_point":"https://mp.test/subscribe/pre-2"}""", Encoding.UTF8, "application/json"),
+            });
+
+        await Assert.ThrowsAsync<MercadoPagoException>(() =>
+            Service().StartCheckoutAsync(user, Context(), null, "otra@hotmail.com", default));
+
+        Assert.DoesNotContain(_http.Requests, request => request.Method == HttpMethod.Post);
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("pendiente", stored.Status);
+        Assert.Equal("https://mp.test/subscribe/pre-1", stored.CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task Un_pago_en_curso_no_se_reemplaza_por_otro_mail()
+    {
+        RouteMercadoPago();
+        var user = CreateUser(subscriptions: new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+            PayerEmail = "ana@gmail.com",
+            LastPaymentStatusDetail = "pending_contingency",
+        });
+
+        var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() =>
+            Service().StartCheckoutAsync(user, Context(), null, "otra@hotmail.com", default));
+
+        Assert.Equal("payment_in_progress", error.Code);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task El_webhook_vincula_por_el_mail_con_el_que_se_abrio_el_checkout()
+    {
+        var user = CreateUser(subscriptions: new Subscription { Status = "pendiente", PayerEmail = "otra@hotmail.com" });
+        RouteMercadoPago(preapproval:
+            """{"id":"pre-9","status":"authorized","payer_email":"Otra@Hotmail.com","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("preapproval", "updated", "pre-9", "{}", default);
+
+        Assert.Equal("pre-9", (await _db.NewContext().Subscriptions.SingleAsync()).ExternalSubscriptionId);
     }
 
     // =======================================================================
@@ -1710,7 +1901,7 @@ public class SubscriptionServiceTests : IDisposable
         // en vez de dejarle al pagador un segundo para autorizar.
         RouteMercadoPago();
 
-        var result = await Service().StartCheckoutAsync(CreateUser(), Context(), null, default);
+        var result = await Service().StartCheckoutAsync(CreateUser(), Context(), null, null, default);
 
         var create = _http.Requests.Single(request =>
             request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
@@ -1851,7 +2042,7 @@ public class SubscriptionServiceTests : IDisposable
         var service = Service();
         var user = CreateUser();
 
-        await service.StartCheckoutAsync(user, Context(), "device-abc", default);
+        await service.StartCheckoutAsync(user, Context(), "device-abc", null, default);
         // Se abre sin id externo: Mercado Pago nunca llegó a autorizar nada.
         user.Subscriptions[0].ExternalSubscriptionId = null;
         await _db.Context.SaveChangesAsync();

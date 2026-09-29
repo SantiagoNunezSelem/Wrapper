@@ -110,7 +110,18 @@ public static class SubscriptionEndpoints
             CheckoutResult result;
             try
             {
-                result = await subscriptions.StartCheckoutAsync(user, http, request?.DeviceId, cancellationToken);
+                result = await subscriptions.StartCheckoutAsync(
+                    user,
+                    http,
+                    request?.DeviceId,
+                    request?.PayerEmail,
+                    cancellationToken);
+            }
+            catch (SubscriptionConflictException exception) when (exception.Code == "invalid_payer_email")
+            {
+                return Results.Json(
+                    new { message = exception.Message, code = exception.Code },
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             catch (SubscriptionConflictException exception)
             {
@@ -611,7 +622,12 @@ public static class SubscriptionEndpoints
 
 internal sealed record WebhookNotification(string Topic, string? Action, string DataId);
 
-public sealed record CheckoutRequest(string? DeviceId);
+/// <param name="PayerEmail">
+/// The address of the Mercado Pago account that will pay. Mercado Pago refuses any other
+/// account on the checkout page, so it is asked for rather than assumed from the login.
+/// Null keeps the open checkout's, or the signed-in address.
+/// </param>
+public sealed record CheckoutRequest(string? DeviceId, string? PayerEmail = null);
 
 public sealed record CheckoutStartResponse(string InitPoint, Guid SubscriptionId, bool Resumed);
 
@@ -666,6 +682,9 @@ public sealed record SubscriptionResponse(
     DateTime? AccessUntilUtc,
     // The unfinished checkout to send the payer back to, when there is one.
     string? CheckoutUrl,
+    // Who that checkout was opened for. Mercado Pago only lets that account pay it, so
+    // the screen names it: "lo abrimos a nombre de…" is the whole clue when it bounced.
+    string? PayerEmail,
     // Mercado Pago's status_detail for the charge that has not settled — what turns
     // "pendiente" into a sentence that says what to do about it.
     string? PendingReason,
@@ -710,6 +729,7 @@ public sealed record SubscriptionResponse(
             revokedAt is null && subscription.Status is "trial" or "activa" or "pago_fallido",
             hasAccess ? subscription.NextBillingAtUtc ?? subscription.TrialEndsAtUtc : null,
             subscription.Status == "pendiente" ? subscription.CheckoutUrl : null,
+            subscription.PayerEmail,
             subscription.LastPaymentStatusDetail,
             SubscriptionAccessEvaluator.HasPaymentInFlight(subscription),
             subscription.CreatedAtUtc);

@@ -42,6 +42,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.ExternalSubscriptionId).HasMaxLength(200);
             entity.Property(item => item.ExternalPlanId).HasMaxLength(200);
             entity.Property(item => item.ExternalPayerId).HasMaxLength(100);
+            entity.Property(item => item.PayerEmail).HasMaxLength(320);
             entity.Property(item => item.CurrencyId).HasMaxLength(10);
             entity.Property(item => item.PaymentMethodLabel).HasMaxLength(120);
             entity.Property(item => item.LastPaymentStatusDetail).HasMaxLength(60);

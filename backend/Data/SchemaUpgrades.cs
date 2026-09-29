@@ -65,6 +65,7 @@ public static class SchemaUpgrades
                      ("CheckoutUrl", "TEXT NULL"),
                      ("LastPaymentStatusDetail", "TEXT NULL"),
                      ("PausedAtUtc", "TEXT NULL"),
+                     ("PayerEmail", "TEXT NULL"),
                  })
         {
             await AddColumnIfMissingAsync(db, "Subscriptions", column, definition, cancellationToken);

@@ -31,6 +31,15 @@ public sealed class Subscription
     public string? ExternalPayerId { get; set; }
 
     /// <summary>
+    /// The address this checkout was opened for, sent as <c>payer_email</c>. Mercado Pago
+    /// only lets the account with exactly this address authorise the preapproval, and it
+    /// is often not the one the person signed in here with — so it is chosen on the plan
+    /// card and kept per attempt: a retry with the same address resumes, a different one
+    /// replaces the checkout. Null on rows opened before it was stored.
+    /// </summary>
+    public string? PayerEmail { get; set; }
+
+    /// <summary>
     /// The checkout this subscription was opened with, kept so an interrupted payment can
     /// be resumed from the account screen instead of starting over. Mercado Pago's
     /// <c>init_point</c> for a <c>pending</c> preapproval stays valid until it is

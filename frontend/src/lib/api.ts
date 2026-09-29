@@ -208,13 +208,17 @@ export async function getSubscription(token: string): Promise<SubscriptionOvervi
  * caller's whole job with the result is `window.location.href = initPoint`; whether the
  * subscription actually goes through is unknown here, and shows up later once the payer
  * is sent back (see `syncSubscription`) or the webhook lands.
+ *
+ * `payerEmail` is the Mercado Pago account that will pay — the only one Mercado Pago lets
+ * through. Left out, the server keeps the open checkout's address or the login's; a
+ * different one closes the open checkout and opens a new one for it.
  */
-export async function startCheckout(token: string): Promise<CheckoutStart> {
+export async function startCheckout(token: string, payerEmail?: string): Promise<CheckoutStart> {
   return request<CheckoutStart>(
     '/api/subscription/checkout',
     {
       method: 'POST',
-      body: JSON.stringify({ deviceId: getDeviceId() }),
+      body: JSON.stringify({ deviceId: getDeviceId(), payerEmail }),
     },
     token,
   )
