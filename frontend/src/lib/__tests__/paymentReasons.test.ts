@@ -27,7 +27,8 @@ const values = { amount: '$ 4.990', card: 'visa ···· 6411' }
 
 describe('paymentReasons', () => {
   it.each(['es', 'en'] as const)('cada código documentado tiene su texto en %s', (language) => {
-    const missing = documented.filter((code) => !shellCopy[language].subscriptionPage.pendingReasons[code])
+    const reasons: Record<string, string> = shellCopy[language].subscriptionPage.pendingReasons
+    const missing = documented.filter((code) => !reasons[code])
     expect(missing).toEqual([])
   })
 
