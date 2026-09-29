@@ -290,14 +290,15 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     }
 
     [Fact]
-    public async Task Sin_credenciales_el_checkout_devuelve_502_provider_error()
+    public async Task Sin_credenciales_el_checkout_devuelve_502_provider_misconfigured()
     {
+        // Configuración, no un corte: reintentar no lo arregla, y la pantalla no lo pide.
         var (client, _) = factory.CreateAuthenticatedClient();
 
         var response = await client.PostAsJsonAsync("/api/subscription/checkout", new { deviceId = "device-abc" });
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-        Assert.Equal("provider_error", await CodeOf(response));
+        Assert.Equal("provider_misconfigured", await CodeOf(response));
     }
 
     [Fact]

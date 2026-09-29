@@ -93,6 +93,8 @@ export interface SubscriptionRecord {
   /** Mercado Pago's `status_detail` for a charge that has not settled — `pending_contingency`,
    * `pending_challenge`, `cc_rejected_insufficient_amount`… See `pendingReasons` in the copy. */
   pendingReason: string | null
+  /** What became of that charge, decided on the server from the payment's status. */
+  pendingReasonKind: 'in_progress' | 'declined' | 'cancelled' | 'refunded' | 'disputed' | null
   /** Whether Mercado Pago has a charge for this subscription that has not settled yet.
    * `pendiente` covers two opposite situations — a payment being processed and a checkout
    * the payer opened and walked away from — and this is what tells them apart. Without it

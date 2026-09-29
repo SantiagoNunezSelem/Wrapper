@@ -1447,6 +1447,29 @@ public class SubscriptionServiceTests : IDisposable
         // "Pendiente" a secas no le sirve a nadie; "lo está procesando Mercado Pago, hasta
         // 2 días hábiles" sí.
         Assert.Equal("pending_contingency", stored.LastPaymentStatusDetail);
+        Assert.Equal("in_process", stored.LastPaymentStatus);
+        Assert.True(SubscriptionAccessEvaluator.HasPaymentInFlight(stored));
+    }
+
+    [Fact]
+    public async Task Una_tarjeta_pasada_de_su_limite_no_queda_como_procesando()
+    {
+        // `cc_amount_rate_limit_exceeded` no empieza con cc_rejected: leído por su
+        // redacción figuraba "procesando" para siempre. El status del pago dice rejected.
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        RouteMercadoPago(
+            payment: """
+            {"id":9003,"status":"rejected","status_detail":"cc_amount_rate_limit_exceeded",
+             "date_last_updated":"2025-03-10T10:00:00Z","metadata":{"preapproval_id":"pre-1"}}
+            """,
+            preapproval: """{"id":"pre-1","status":"pending","last_modified":"2025-03-10T10:00:00Z"}""");
+
+        await Service().HandleNotificationAsync("payment", "payment.updated", "9003", "{}", default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("rejected", stored.LastPaymentStatus);
+        Assert.Equal(PaymentOutcomes.Declined, SubscriptionAccessEvaluator.DescribeLastPayment(stored));
+        Assert.False(SubscriptionAccessEvaluator.HasPaymentInFlight(stored));
     }
 
     [Fact]

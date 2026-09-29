@@ -71,6 +71,7 @@ export function VipUnlockPopover({
             payerEmail={defaultPayerEmail(user, overview)}
             payerEmailLocked={Boolean(user.checkoutTestPayerEmail)}
             plan={plan}
+            locale={language === 'es' ? 'es-AR' : 'en-US'}
             trialAvailable={Boolean(overview?.trialAvailable)}
             trialDeniedReason={overview?.trialDeniedReason ?? null}
           />

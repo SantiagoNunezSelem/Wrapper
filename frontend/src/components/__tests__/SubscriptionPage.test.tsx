@@ -2,7 +2,7 @@
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shellCopy } from '../../copy/shellCopy'
-import { startCheckout } from '../../lib/api'
+import { ApiError, startCheckout } from '../../lib/api'
 import { SubscriptionPage } from '../SubscriptionPage'
 import { TooltipProvider } from '../TooltipProvider'
 import type {
@@ -71,6 +71,7 @@ function record(overrides: Partial<SubscriptionRecord> = {}): SubscriptionRecord
     checkoutUrl: null,
     payerEmail: null,
     pendingReason: null,
+    pendingReasonKind: null,
     paymentInProgress: false,
     createdAtUtc: '2026-07-01T00:00:00Z',
     ...overrides,
@@ -218,6 +219,64 @@ describe('SubscriptionPage', () => {
       expect(screen.queryByText(/algo_que_mercado_pago_agregue/)).not.toBeInTheDocument()
     })
 
+    it('un rechazo dice el motivo con la tarjeta y el monto, y qué hacer', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'pago_fallido',
+            amount: 4990,
+            paymentMethodLabel: 'visa ···· 6411',
+            pendingReason: 'cc_rejected_call_for_authorize',
+            pendingReasonKind: 'declined',
+          }),
+        ),
+      )
+
+      expect(screen.getByText(/Tu banco tiene que autorizar el cobro de \$\s?4\.990 con visa ···· 6411\./)).toBeInTheDocument()
+      expect(screen.getByText(copy.reasonActions.call_bank, { exact: false })).toBeInTheDocument()
+    })
+
+    it('una tarjeta pasada de su límite (antes figuraba "procesando") se dice como rechazo', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'pago_fallido',
+            paymentMethodLabel: null,
+            pendingReason: 'cc_amount_rate_limit_exceeded',
+            pendingReasonKind: 'declined',
+          }),
+        ),
+      )
+
+      expect(screen.getByText('El cobro supera el límite de tu tarjeta.', { exact: false })).toBeInTheDocument()
+      expect(screen.getByText(copy.reasonActions.other_method, { exact: false })).toBeInTheDocument()
+    })
+
+    it('una devolución o una disputa se cuentan como lo que son, sin "qué hacer"', () => {
+      renderPage(
+        overview(record({ status: 'activa', pendingReason: 'in_process', pendingReasonKind: 'disputed' })),
+      )
+
+      expect(screen.getByText(copy.disputedReason, { exact: false })).toBeInTheDocument()
+      expect(screen.queryByText(copy.reasonActionLabel, { exact: false })).not.toBeInTheDocument()
+    })
+
+    it('un pago que sigue en curso no pide hacer nada', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'pendiente',
+            hasAccess: false,
+            paymentInProgress: true,
+            pendingReason: 'pending_contingency',
+            pendingReasonKind: 'in_progress',
+          }),
+        ),
+      )
+
+      expect(screen.queryByText(copy.reasonActionLabel, { exact: false })).not.toBeInTheDocument()
+    })
+
     it('sin checkout para retomar no inventa un link muerto', () => {
       renderPage(
         overview(record({ status: 'pendiente', hasAccess: false, paymentInProgress: true, checkoutUrl: null })),
@@ -276,6 +335,7 @@ describe('SubscriptionPage', () => {
             hasAccess: false,
             paymentInProgress: false,
             pendingReason: 'cc_rejected_insufficient_amount',
+            pendingReasonKind: 'declined',
             checkoutUrl: 'https://mp.test/subscribe/pre-1',
           }),
           { canResumeCheckout: true },
@@ -350,6 +410,26 @@ describe('SubscriptionPage', () => {
         payerEmail: 'santi@example.com',
         ...overrides,
       })
+
+    it('si Mercado Pago no responde, lo dice y sugiere reintentar', async () => {
+      checkout.mockRejectedValue(new ApiError('No pudimos…', 502, 'provider_unreachable'))
+      renderPage(overview(null, { canSubscribe: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.buyCta }))
+
+      expect(await screen.findByText(copy.checkoutErrors.provider_unreachable)).toBeInTheDocument()
+    })
+
+    it('nunca muestra el mensaje crudo del servidor', async () => {
+      // Los conflictos llegan con un mensaje en inglés pensado para logs.
+      checkout.mockRejectedValue(new ApiError('This account already has an active subscription.', 409, 'something_new'))
+      renderPage(overview(null, { canSubscribe: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.buyCta }))
+
+      expect(await screen.findByText(copy.genericError)).toBeInTheDocument()
+      expect(screen.queryByText(/active subscription/)).not.toBeInTheDocument()
+    })
 
     it('la tarjeta del plan dice con qué cuenta se va a pagar, y el botón la usa tal cual', async () => {
       renderPage(overview(null, { canSubscribe: true }))
@@ -469,6 +549,30 @@ describe('SubscriptionPage', () => {
       const discard = screen.getByRole('button', { name: copy.discardCheckoutCta })
       expect(discard).toHaveClass('subpage-text-link')
       expect(discard.closest('p')).toHaveTextContent(copy.discardCheckoutPrompt)
+    })
+  })
+
+  describe('prueba gratis en la tarjeta del plan', () => {
+    it('dice cuándo y cuánto es el primer cobro, antes del botón', () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-09-29T12:00:00'))
+
+      renderPage({ ...overview(null, { canSubscribe: true }), trialAvailable: true })
+
+      expect(screen.getByText(copy.trialToday)).toBeInTheDocument()
+      expect(screen.getByText(copy.trialTodayDetail)).toBeInTheDocument()
+      // 7 días desde hoy, con el precio del plan.
+      expect(screen.getByText('6 oct')).toBeInTheDocument()
+      expect(screen.getByText(/^Primer cobro de \$\s?7\.800$/)).toBeInTheDocument()
+      expect(screen.getByText('Si cancelás antes del 6 oct, no se te cobra nada.')).toBeInTheDocument()
+
+      vi.useRealTimers()
+    })
+
+    it('sin prueba disponible no promete ninguna fecha', () => {
+      renderPage(overview(null, { canSubscribe: true }))
+
+      expect(screen.queryByText(copy.trialToday)).not.toBeInTheDocument()
     })
   })
 

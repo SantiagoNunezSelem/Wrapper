@@ -1,7 +1,9 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
+import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
 import { formatMoney } from '../lib/format'
 import { defaultPayerEmail, isPlausibleEmail } from '../lib/payerEmail'
+import { checkoutErrorMessage, describePaymentReason, type PaymentReasonCopy } from '../lib/paymentReasons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PayerEmailPicker, PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
@@ -15,7 +17,8 @@ import type {
 /** Every action the account screen can be waiting on. */
 export type SubscriptionBusyAction = 'cancel' | 'refresh' | 'resume'
 
-export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
+export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReasonCopy {
+  reasonActionLabel: string
   eyebrow: string
   title: string
   lead: string
@@ -267,6 +270,7 @@ export function SubscriptionPage({
             token={token}
             user={user}
             plan={plan}
+            locale={locale}
             overview={overview}
             title={current ? copy.resubscribeTitle : copy.plansTitle}
           />
@@ -351,7 +355,13 @@ function StatusBanner({
   // bounced, and telling them they never completed it is plainly false. It borrows
   // `pago_fallido`'s colours because that is what it is, while the wording stays its own —
   // nothing here was ever paid for, so there is no access to keep.
-  const wasDeclined = isUnfinishedCheckout && /^(cc_)?rejected/.test(current.pendingReason ?? '')
+  const wasDeclined = isUnfinishedCheckout && current.pendingReasonKind === 'declined'
+  const reason = current.pendingReason
+    ? describePaymentReason(copy, current.pendingReason, current.pendingReasonKind, {
+        amount: formatMoney(current.amount, current.currencyId, locale),
+        card: current.paymentMethodLabel,
+      })
+    : null
   const needsAttention =
     wasDeclined || current.status === 'pago_fallido' || (current.status === 'pendiente' && current.paymentInProgress)
   const variant = wasDeclined ? 'pago_fallido' : isUnfinishedCheckout ? 'checkout_abierto' : current.status
@@ -389,11 +399,17 @@ function StatusBanner({
 
       {/* Only ever shown with a real status_detail behind it: inventing a reason is worse
           than saying nothing, and the fallback already covers "no sabemos todavía". */}
-      {current.pendingReason ? (
-        <p className="subpage-banner-reason">
-          <strong>{copy.pendingReasonLabel}:</strong>{' '}
-          {copy.pendingReasons[current.pendingReason] ?? copy.pendingReasonFallback}
-        </p>
+      {reason ? (
+        <div className="subpage-banner-reason">
+          <p>
+            <strong>{copy.pendingReasonLabel}:</strong> {reason.reason}
+          </p>
+          {reason.action ? (
+            <p className="subpage-banner-reason-action">
+              <strong>{copy.reasonActionLabel}:</strong> {reason.action}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {/* One button, nothing competing with it. Checking with Mercado Pago happens on its
@@ -511,13 +527,18 @@ function ResumeCheckout({
     setError('')
 
     try {
-      const { initPoint } = await startCheckout(token, chosen)
-      window.location.href = initPoint
+      const where = await goToCheckout(async () => (await startCheckout(token, chosen)).initPoint)
+      if (where === 'window') {
+        // The new checkout is open in the other window; this screen catches up when the
+        // person comes back to it (see useVistazo).
+        setIsRedirecting(false)
+        setIsEditing(false)
+      }
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'invalid_payer_email') {
         setEmailError(copy.payerEmailInvalid)
       } else {
-        setError(caught instanceof Error ? caught.message : copy.genericError)
+        setError(checkoutErrorMessage(copy.checkoutErrors, copy.genericError, caught))
       }
       setIsRedirecting(false)
     }
@@ -547,7 +568,8 @@ function ResumeCheckout({
       ) : null}
 
       {/* A plain link while the address is unchanged: it is the same Mercado Pago page as
-          before, and a link keeps working without a round trip (or a middle click). */}
+          before, and a link keeps working without a round trip (or a middle click). On a
+          desktop browser a plain click opens it in the checkout window instead. */}
       {isNewAddress ? (
         <button
           type="button"
@@ -558,7 +580,16 @@ function ResumeCheckout({
           {isRedirecting ? copy.redirecting : copy.payerEmailContinue}
         </button>
       ) : (
-        <a className="primary-button subpage-banner-cta" href={checkoutUrl}>
+        <a
+          className="primary-button subpage-banner-cta"
+          href={checkoutUrl}
+          onClick={(event) => {
+            if (prefersCheckoutWindow() && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+              event.preventDefault()
+              void goToCheckout(() => checkoutUrl)
+            }
+          }}
+        >
           {copy.resumeCheckoutCta}
         </a>
       )}
@@ -756,6 +787,7 @@ function PlansSection({
   token,
   user,
   plan,
+  locale,
   overview,
   title,
 }: {
@@ -763,6 +795,7 @@ function PlansSection({
   token: string
   user: UserProfile
   plan: SubscriptionOverview['plan'] | null
+  locale: string
   overview: SubscriptionOverview | null
   title: string
 }) {
@@ -790,6 +823,7 @@ function PlansSection({
               payerEmail={defaultPayerEmail(user, overview)}
               payerEmailLocked={Boolean(user.checkoutTestPayerEmail)}
               plan={plan}
+              locale={locale}
               trialAvailable={Boolean(overview?.trialAvailable)}
               trialDeniedReason={overview?.trialDeniedReason ?? null}
             />
@@ -857,7 +891,15 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
   const date = invoice.paidAtUtc ?? invoice.debitScheduledAtUtc ?? invoice.periodStartUtc ?? invoice.createdAtUtc
   // Only worth a line when the charge did not simply go through — "Aprobado · Acreditado"
   // is noise, "Rechazado · La tarjeta no tenía saldo suficiente" is the whole story.
-  const detail = invoice.status !== 'aprobado' && invoice.statusDetail ? copy.pendingReasons[invoice.statusDetail] : null
+  const detail =
+    invoice.status !== 'aprobado' && invoice.statusDetail
+      ? describePaymentReason(
+          copy,
+          invoice.statusDetail,
+          invoice.status === 'devuelto' ? 'refunded' : null,
+          { amount: formatMoney(invoice.amount, invoice.currencyId, locale), card: invoice.paymentMethodLabel },
+        ).reason
+      : null
 
   return (
     <li>

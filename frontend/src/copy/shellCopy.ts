@@ -258,7 +258,7 @@ export const shellCopy = {
         offline_process: 'Se está procesando sin conexión. Puede demorar un rato.',
         deferred_retry: 'Mercado Pago va a reintentar el cobro.',
         cc_rejected_insufficient_amount: 'La tarjeta no tenía saldo suficiente.',
-        cc_rejected_call_for_authorize: 'Tu banco tiene que autorizar este cobro. Autorizalo desde su app o llamalos.',
+        cc_rejected_call_for_authorize: 'Tu banco tiene que autorizar el cobro de {amount} con {card}.',
         cc_rejected_card_disabled: 'La tarjeta está inhabilitada. Activala con tu banco.',
         cc_rejected_bad_filled_security_code: 'El código de seguridad no coincide.',
         cc_rejected_bad_filled_date: 'La fecha de vencimiento no coincide.',
@@ -277,13 +277,33 @@ export const shellCopy = {
         rejected_by_bank: 'Tu banco rechazó la operación.',
         rejected_high_risk: 'Se rechazó por una evaluación de riesgo.',
         rejected_insufficient_data: 'Faltaron datos para procesar el pago.',
+        cc_amount_rate_limit_exceeded: 'El cobro supera el límite de {card}.',
+        insufficient_amount: 'No había saldo suficiente.',
+        cc_rejected_card_error: 'No se pudo procesar {card}.',
+        bank_error: 'Hubo un error del banco con la transferencia.',
+        rejected_by_regulations: 'El pago se rechazó por una regulación.',
+        rejected_by_biz_rule: 'Mercado Pago rechazó el pago por sus reglas internas.',
+        rejected_other_reason: 'Mercado Pago rechazó el pago sin dar un motivo.',
         expired: 'El pago venció sin completarse.',
         by_payer: 'Cancelaste el pago.',
         by_collector: 'El pago se canceló desde Vistazo.',
+        partially_refunded: 'Se devolvió una parte del pago.',
         accredited: 'Acreditado.',
       },
       pendingReasonFallback: 'Mercado Pago todavía no confirmó el pago.',
       pendingReasonLabel: 'Motivo',
+      // Qué hacer después de un rechazo, agrupado como sugiere la tabla de Mercado Pago.
+      reasonActionLabel: 'Qué hacer',
+      reasonActions: {
+        check_details: 'Revisá los datos de la tarjeta y probá de nuevo.',
+        call_bank: 'Hablá con tu banco o autorizá el cobro desde su app, y después probá de nuevo.',
+        other_method:
+          'Probá con otra tarjeta o medio de pago. Reintentar enseguida con la misma puede bloquearla por un rato.',
+        retry_later: 'Probá de nuevo en un rato, y si tu banco pide una verificación, completala.',
+      },
+      refundedReason: 'Este pago se devolvió.',
+      disputedReason: 'El cobro se desconoció con la tarjeta y está en revisión.',
+      anyCard: 'tu tarjeta',
       /**
        * El checkout que se abrió y nunca se terminó. Por dentro es el mismo `pendiente`
        * que un cobro en curso, pero para el que lo lee no se parecen en nada: uno es
@@ -385,8 +405,19 @@ export const shellCopy = {
       planDurationValue: 'Se renueva automáticamente cada mes',
       planAccessLabel: 'Acceso',
       planAccessValue: 'Todas las métricas Pro, activo apenas se confirma el pago',
-      planTrialNote:
-        '✨ Tu primera suscripción incluye 7 días de prueba gratis. Cancelá antes de que termine y no se te cobra nada.',
+      // La semana gratis como fechas y un monto: cuándo y cuánto, antes del botón.
+      trialToday: 'Hoy',
+      trialTodayDetail: 'Pro completo, sin cargo',
+      trialFirstCharge: 'Primer cobro de {amount}',
+      trialCancelBefore: 'Si cancelás antes del {date}, no se te cobra nada.',
+      checkoutHintWindow: 'Mercado Pago se abre en otra ventana. Cuando termines se cierra sola y seguís acá.',
+      checkoutHintRedirect: 'Te llevamos a Mercado Pago y, cuando termines, volvés acá.',
+      checkoutWindowWaiting: 'Seguí en la ventana de Mercado Pago. Cuando termines, esta pantalla se actualiza sola.',
+      checkoutWindowReopen: 'Ir a la ventana',
+      // El cartel de cobro rechazado que se ve en toda la app, no sólo en la cuenta.
+      paymentIssueBannerText: 'No pudimos cobrar tu suscripción. Mercado Pago lo va a reintentar y mientras tanto seguís con Pro.',
+      paymentIssueBannerCta: 'Revisar',
+      paymentIssueBannerDismiss: 'Cerrar aviso',
       planBenefitsLabel: 'Qué incluye',
       planBenefits: [
         'Detector de Red Flags y Tono Picante, verificados con IA',
@@ -406,6 +437,16 @@ export const shellCopy = {
       },
       redirecting: 'Te llevamos a Mercado Pago...',
       genericError: 'No pudimos abrir el pago con Mercado Pago. Probá de nuevo.',
+      // Por qué no se abrió el checkout. Sólo "no respondió" invita a reintentar: una
+      // integración mal armada no se arregla reintentando.
+      checkoutErrors: {
+        provider_unreachable: 'Mercado Pago no respondió. Probá de nuevo en unos minutos: no se te cobró nada.',
+        provider_misconfigured:
+          'El pago con Mercado Pago no está disponible en este momento. No es un problema de tu cuenta ni de tu tarjeta, y no se te cobró nada.',
+        provider_error: 'No pudimos abrir el pago con Mercado Pago. No se te cobró nada.',
+        already_active: 'Tu cuenta ya tiene Pro activo: no hace falta pagar de nuevo.',
+        payment_in_progress: 'Mercado Pago todavía está procesando un pago tuyo. Esperá a que se confirme antes de abrir otro.',
+      },
       invoicesTitle: 'Historial de pagos',
       noInvoices: 'Todavía no hay cobros registrados.',
       invoiceStatuses: {
@@ -783,7 +824,7 @@ export const shellCopy = {
         offline_process: 'It is being processed offline. This can take a while.',
         deferred_retry: 'Mercado Pago will retry the charge.',
         cc_rejected_insufficient_amount: 'The card did not have enough funds.',
-        cc_rejected_call_for_authorize: 'Your bank has to authorise this charge. Do it from their app or call them.',
+        cc_rejected_call_for_authorize: 'Your bank has to authorise the {amount} charge on {card}.',
         cc_rejected_card_disabled: 'The card is disabled. Activate it with your bank.',
         cc_rejected_bad_filled_security_code: "The security code doesn't match.",
         cc_rejected_bad_filled_date: "The expiry date doesn't match.",
@@ -802,13 +843,31 @@ export const shellCopy = {
         rejected_by_bank: 'Your bank declined the operation.',
         rejected_high_risk: 'Declined by a risk assessment.',
         rejected_insufficient_data: 'Some data was missing to process the payment.',
+        cc_amount_rate_limit_exceeded: 'The charge is over the limit of {card}.',
+        insufficient_amount: 'There were not enough funds.',
+        cc_rejected_card_error: "We couldn't process {card}.",
+        bank_error: 'The bank had an error with the transfer.',
+        rejected_by_regulations: 'The payment was declined due to a regulation.',
+        rejected_by_biz_rule: 'Mercado Pago declined the payment under its internal rules.',
+        rejected_other_reason: 'Mercado Pago declined the payment without giving a reason.',
         expired: 'The payment expired without being completed.',
         by_payer: 'You cancelled the payment.',
         by_collector: 'The payment was cancelled from Vistazo.',
+        partially_refunded: 'Part of the payment was refunded.',
         accredited: 'Credited.',
       },
       pendingReasonFallback: 'Mercado Pago has not confirmed the payment yet.',
       pendingReasonLabel: 'Reason',
+      reasonActionLabel: 'What to do',
+      reasonActions: {
+        check_details: 'Check the card details and try again.',
+        call_bank: "Talk to your bank or approve the charge in its app, then try again.",
+        other_method: 'Try another card or payment method. Retrying right away with the same one can get it blocked for a while.',
+        retry_later: 'Try again in a while, and if your bank asks for a verification, complete it.',
+      },
+      refundedReason: 'This payment was refunded.',
+      disputedReason: 'The charge was disputed with the card and is under review.',
+      anyCard: 'your card',
       // A checkout that was opened and never finished. Stored as the same `pendiente` as
       // a charge in flight, but they are opposite messages — "your money is on its way"
       // versus "nothing happened" — and telling someone who only closed a tab that they
@@ -890,8 +949,17 @@ export const shellCopy = {
       planDurationValue: 'Renews automatically every month',
       planAccessLabel: 'Access',
       planAccessValue: 'Every Pro metric, active as soon as the payment is confirmed',
-      planTrialNote:
-        "✨ Your first subscription includes a 7-day free trial. Cancel before it ends and you won't be charged anything.",
+      trialToday: 'Today',
+      trialTodayDetail: 'Full Pro, no charge',
+      trialFirstCharge: 'First charge of {amount}',
+      trialCancelBefore: "Cancel before {date} and you won't be charged anything.",
+      checkoutHintWindow: 'Mercado Pago opens in another window. When you finish it closes itself and you carry on here.',
+      checkoutHintRedirect: "We'll take you to Mercado Pago and bring you back here when you're done.",
+      checkoutWindowWaiting: "Carry on in the Mercado Pago window. When you're done, this screen updates on its own.",
+      checkoutWindowReopen: 'Go to the window',
+      paymentIssueBannerText: "We couldn't charge your subscription. Mercado Pago will try again, and you keep Pro in the meantime.",
+      paymentIssueBannerCta: 'Review',
+      paymentIssueBannerDismiss: 'Dismiss',
       planBenefitsLabel: "What's included",
       planBenefits: [
         'Red Flag Detector and Spicy Tone, verified with AI',
@@ -911,6 +979,14 @@ export const shellCopy = {
       },
       redirecting: 'Taking you to Mercado Pago...',
       genericError: "We couldn't open Mercado Pago checkout. Please try again.",
+      checkoutErrors: {
+        provider_unreachable: "Mercado Pago didn't answer. Try again in a few minutes: nothing was charged.",
+        provider_misconfigured:
+          "Paying with Mercado Pago isn't available right now. It's not a problem with your account or your card, and nothing was charged.",
+        provider_error: "We couldn't open the Mercado Pago payment. Nothing was charged.",
+        already_active: 'Your account already has Pro active: no need to pay again.',
+        payment_in_progress: 'Mercado Pago is still processing a payment of yours. Wait for it to be confirmed before opening another.',
+      },
       invoicesTitle: 'Payment history',
       noInvoices: 'No charges recorded yet.',
       invoiceStatuses: {

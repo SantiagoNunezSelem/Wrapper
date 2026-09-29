@@ -46,6 +46,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.CurrencyId).HasMaxLength(10);
             entity.Property(item => item.PaymentMethodLabel).HasMaxLength(120);
             entity.Property(item => item.LastPaymentStatusDetail).HasMaxLength(60);
+            entity.Property(item => item.LastPaymentStatus).HasMaxLength(30);
             // Mercado Pago's checkout URLs carry a signed preference id and run long.
             entity.Property(item => item.CheckoutUrl).HasMaxLength(1000);
             // SQLite has no decimal type; EF maps it to TEXT by default, which sorts and
