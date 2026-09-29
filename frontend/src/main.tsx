@@ -4,6 +4,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
 import App from './App.tsx'
 import { TooltipProvider } from './components/TooltipProvider.tsx'
+import { finishCheckoutInWindow } from './lib/checkoutWindow.ts'
 import { loadRecaptchaScript } from './lib/recaptcha.ts'
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? 'missing-google-client-id'
@@ -22,12 +23,16 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <TooltipProvider>
-        <App />
-      </TooltipProvider>
-    </GoogleOAuthProvider>
-  </StrictMode>,
-)
+// La ventana de Mercado Pago que vuelve a Vistazo avisa a la pestaña que la abrió y se
+// cierra: no tiene sentido levantar la app entera adentro de ella.
+if (!finishCheckoutInWindow()) {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <GoogleOAuthProvider clientId={googleClientId}>
+        <TooltipProvider>
+          <App />
+        </TooltipProvider>
+      </GoogleOAuthProvider>
+    </StrictMode>,
+  )
+}

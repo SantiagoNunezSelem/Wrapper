@@ -281,8 +281,11 @@ public sealed class MercadoPagoClient(
                     (int)response.StatusCode,
                     Truncate(payload, 800));
 
+                var providerMessage = ExtractMessage(payload);
                 throw new MercadoPagoException(
-                    $"Mercado Pago rejected {method} {path} ({(int)response.StatusCode}). {ExtractMessage(payload)}");
+                    $"Mercado Pago rejected {method} {path} ({(int)response.StatusCode}). {providerMessage}",
+                    (int)response.StatusCode,
+                    providerMessage);
             }
 
             if (string.IsNullOrWhiteSpace(payload))
@@ -327,6 +330,19 @@ public sealed class MercadoPagoException : Exception
 {
     public MercadoPagoException(string message) : base(message) { }
     public MercadoPagoException(string message, Exception inner) : base(message, inner) { }
+
+    public MercadoPagoException(string message, int statusCode, string providerMessage) : base(message)
+    {
+        StatusCode = statusCode;
+        ProviderMessage = providerMessage;
+    }
+
+    /// <summary>The HTTP status Mercado Pago answered with. Null when it never answered —
+    /// a timeout or a connection that could not be made.</summary>
+    public int? StatusCode { get; }
+
+    /// <summary>Mercado Pago's own explanation, as it came (English, not for the screen).</summary>
+    public string? ProviderMessage { get; }
 }
 
 // --------------------------------------------------------------------------------

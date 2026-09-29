@@ -56,6 +56,15 @@ public sealed class Subscription
     /// </summary>
     public string? LastPaymentStatusDetail { get; set; }
 
+    /// <summary>
+    /// The <c>status</c> of that same payment (<c>rejected</c>, <c>in_process</c>,
+    /// <c>refunded</c>, <c>charged_back</c>…). This, not the detail, is what says whether
+    /// money is still on its way: the detail explains, the status decides. Guessing from
+    /// the detail's wording read <c>cc_amount_rate_limit_exceeded</c>, a refund or a
+    /// dispute as "still processing". Null on rows written before it was stored.
+    /// </summary>
+    public string? LastPaymentStatus { get; set; }
+
     /// <summary>When the subscription was paused, so "reanudar" can say since when.</summary>
     public DateTime? PausedAtUtc { get; set; }
 

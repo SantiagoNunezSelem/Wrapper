@@ -752,6 +752,7 @@ public sealed class SubscriptionService(
         if (unsettled is null)
         {
             subscription.LastPaymentStatusDetail = null;
+            subscription.LastPaymentStatus = null;
             return;
         }
 
@@ -763,6 +764,7 @@ public sealed class SubscriptionService(
                 unsettled.StatusDetail = detail;
                 unsettled.UpdatedAtUtc = DateTime.UtcNow;
                 subscription.LastPaymentStatusDetail = detail;
+                subscription.LastPaymentStatus = payment.Status;
             }
         }
         catch (MercadoPagoException exception)
@@ -967,11 +969,13 @@ public sealed class SubscriptionService(
         if (payment.Status is "approved")
         {
             subscription.LastPaymentStatusDetail = null;
+            subscription.LastPaymentStatus = null;
             subscription.LastPaymentAtUtc = payment.DateApproved ?? payment.DateLastUpdated ?? DateTime.UtcNow;
         }
         else
         {
             subscription.LastPaymentStatusDetail = payment.StatusDetail;
+            subscription.LastPaymentStatus = payment.Status;
         }
 
         // Then the preapproval, the authority on trial-vs-active and on when the next

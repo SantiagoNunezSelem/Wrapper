@@ -4,6 +4,7 @@ import { useVistazo } from './app/useVistazo'
 import { DesktopShell } from './shells/desktop/DesktopShell'
 import { MobileShell } from './shells/mobile/MobileShell'
 import { lazyPanel } from './components/lazyPanel'
+import { PaymentIssueBanner } from './components/PaymentIssueBanner'
 import { TestPayerBanner } from './components/TestPayerBanner'
 import { isAdminPath } from './admin/route'
 
@@ -59,6 +60,14 @@ function App() {
         email={vistazo.user?.checkoutTestPayerEmail ?? null}
         title={vistazo.copy.subscriptionPage.testPayerBannerTitle}
         body={vistazo.copy.subscriptionPage.testPayerBannerBody}
+      />
+      {/* Not on the account screen, which already says it in full. */}
+      <PaymentIssueBanner
+        visible={!isAdminRoute && vistazo.route !== 'subscription' && vistazo.user?.subscriptionState === 'pago_fallido'}
+        text={vistazo.copy.subscriptionPage.paymentIssueBannerText}
+        cta={vistazo.copy.subscriptionPage.paymentIssueBannerCta}
+        dismiss={vistazo.copy.subscriptionPage.paymentIssueBannerDismiss}
+        onReview={vistazo.goToSubscriptionPage}
       />
       {isAdminRoute ? (
         <AdminApp

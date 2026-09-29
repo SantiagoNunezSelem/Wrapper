@@ -1,6 +1,9 @@
 import { useId, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
+import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
+import { formatMoney } from '../lib/format'
 import { isPlausibleEmail } from '../lib/payerEmail'
+import { checkoutErrorMessage } from '../lib/paymentReasons'
 import type { SubscriptionPlan } from '../types'
 
 export interface PlanPurchaseFlowCopy {
@@ -10,7 +13,14 @@ export interface PlanPurchaseFlowCopy {
   planDurationValue: string
   planAccessLabel: string
   planAccessValue: string
-  planTrialNote: string
+  trialToday: string
+  trialTodayDetail: string
+  trialFirstCharge: string
+  trialCancelBefore: string
+  checkoutHintWindow: string
+  checkoutHintRedirect: string
+  checkoutWindowWaiting: string
+  checkoutWindowReopen: string
   planBenefitsLabel: string
   planBenefits: readonly string[]
   payerEmailLabel: string
@@ -26,6 +36,8 @@ export interface PlanPurchaseFlowCopy {
   paymentsDisabled: string
   redirecting: string
   genericError: string
+  /** By the code the server answers with when a checkout does not open. */
+  checkoutErrors: Record<string, string>
 }
 
 /**
@@ -34,10 +46,10 @@ export interface PlanPurchaseFlowCopy {
  * opens — same component, same behaviour, no navigation between them.
  *
  * Buying itself is not something that happens on this page: the button opens a checkout
- * on Mercado Pago's side and immediately sends the browser to their hosted page (card
- * form, 3-D Secure, all of it lives there, never embedded here). There is nothing to show
- * afterwards in this component — this tab is about to navigate away — so the only local
- * state is the wait for that redirect URL and whatever error stops it from arriving.
+ * on Mercado Pago's side and sends the person to their hosted page (card form, 3-D
+ * Secure, all of it lives there, never embedded here). On a desktop browser that page
+ * opens in a window of its own and this one stays, saying where the payment went; on a
+ * phone or in the installed app the tab itself goes there (see lib/checkoutWindow).
  *
  * The one thing asked before leaving is which Mercado Pago account will pay. Mercado Pago
  * only lets the account whose address the checkout was opened for authorise it, and it
@@ -51,11 +63,13 @@ export function PlanPurchaseFlow({
   payerEmail,
   payerEmailLocked,
   plan,
+  locale,
   trialAvailable,
   trialDeniedReason,
 }: {
   copy: PlanPurchaseFlowCopy
   token: string
+  locale: string
   /** Pre-filled address; see `defaultPayerEmail`. */
   payerEmail: string
   /** `MercadoPago:TestPayerEmail` is set: the server ignores anything typed, so no field. */
@@ -73,6 +87,11 @@ export function PlanPurchaseFlow({
   const [emailError, setEmailError] = useState('')
   const email = typedEmail ?? payerEmail
 
+  // Set once the checkout is running in a window of its own: this page stays, so it has
+  // to say where the payment went, and offer a way back to that window.
+  const [openWindowUrl, setOpenWindowUrl] = useState<string | null>(null)
+  const inWindow = prefersCheckoutWindow()
+
   async function handleBuy() {
     const chosen = email.trim()
     if (!payerEmailLocked && !isPlausibleEmail(chosen)) {
@@ -85,14 +104,21 @@ export function PlanPurchaseFlow({
     setError('')
 
     try {
-      const { initPoint } = await startCheckout(token, payerEmailLocked ? undefined : chosen)
-      window.location.href = initPoint
+      let initPoint = ''
+      const where = await goToCheckout(async () => {
+        initPoint = (await startCheckout(token, payerEmailLocked ? undefined : chosen)).initPoint
+        return initPoint
+      })
+      if (where === 'window') {
+        setOpenWindowUrl(initPoint)
+        setIsRedirecting(false)
+      }
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'invalid_payer_email') {
         setIsEditingEmail(true)
         setEmailError(copy.payerEmailInvalid)
       } else {
-        setError(caught instanceof Error ? caught.message : copy.genericError)
+        setError(checkoutErrorMessage(copy.checkoutErrors, copy.genericError, caught))
       }
       setIsRedirecting(false)
     }
@@ -111,7 +137,7 @@ export function PlanPurchaseFlow({
         </div>
       </dl>
 
-      {trialAvailable ? <p className="plan-card-trial">{copy.planTrialNote}</p> : null}
+      {trialAvailable && plan ? <TrialTimeline copy={copy} plan={plan} locale={locale} /> : null}
 
       <div className="plan-card-benefits">
         <p className="plan-card-benefits-label">{copy.planBenefitsLabel}</p>
@@ -133,7 +159,7 @@ export function PlanPurchaseFlow({
             isEditing={isEditingEmail}
             locked={payerEmailLocked}
             error={emailError}
-            disabled={isRedirecting}
+            disabled={isRedirecting || openWindowUrl !== null}
             onEdit={() => setIsEditingEmail(true)}
             onChange={(value) => {
               setTypedEmail(value)
@@ -146,9 +172,25 @@ export function PlanPurchaseFlow({
             }}
           />
 
-          <button type="button" className="primary-button plan-card-cta" onClick={handleBuy} disabled={isRedirecting}>
-            {isRedirecting ? copy.redirecting : trialAvailable ? copy.buyTrialCta : copy.buyCta}
-          </button>
+          {openWindowUrl ? (
+            <div className="plan-window-wait" role="status">
+              <p>{copy.checkoutWindowWaiting}</p>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void goToCheckout(() => openWindowUrl)}
+              >
+                {copy.checkoutWindowReopen}
+              </button>
+            </div>
+          ) : (
+            <>
+              <button type="button" className="primary-button plan-card-cta" onClick={handleBuy} disabled={isRedirecting}>
+                {isRedirecting ? copy.redirecting : trialAvailable ? copy.buyTrialCta : copy.buyCta}
+              </button>
+              <p className="plan-card-hint">{inWindow ? copy.checkoutHintWindow : copy.checkoutHintRedirect}</p>
+            </>
+          )}
         </>
       ) : (
         <p className="plan-card-hint">{copy.paymentsDisabled}</p>
@@ -275,6 +317,51 @@ function PayerEmailField({
       <span id={`${id}-hint`} className="plan-payer-field-hint">
         {copy.payerEmailHint}
       </span>
+    </div>
+  )
+}
+
+/**
+ * "Hoy: sin cargo · 6 oct: primer cobro de $ 4.990" — the free week as dates and an
+ * amount, before the button rather than after it. "7 días gratis" alone leaves the one
+ * question that matters (when do I get charged, and how much) for the person to work out.
+ *
+ * The date is counted from today, which is when Mercado Pago starts the week if the
+ * checkout is finished now; it is an estimate for a page, the account screen shows the
+ * real one once the subscription exists.
+ */
+function TrialTimeline({
+  copy,
+  plan,
+  locale,
+}: {
+  copy: Pick<PlanPurchaseFlowCopy, 'trialToday' | 'trialTodayDetail' | 'trialFirstCharge' | 'trialCancelBefore'>
+  plan: SubscriptionPlan
+  locale: string
+}) {
+  const firstCharge = new Date()
+  if (plan.trialFrequencyType === 'months') {
+    firstCharge.setMonth(firstCharge.getMonth() + plan.trialFrequency)
+  } else {
+    firstCharge.setDate(firstCharge.getDate() + plan.trialFrequency)
+  }
+
+  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(firstCharge)
+  const amount = formatMoney(plan.amount, plan.currencyId, locale)
+
+  return (
+    <div className="plan-trial">
+      <ol className="plan-trial-steps">
+        <li className="is-now">
+          <span className="plan-trial-when">{copy.trialToday}</span>
+          <span className="plan-trial-what">{copy.trialTodayDetail}</span>
+        </li>
+        <li>
+          <span className="plan-trial-when">{date}</span>
+          <span className="plan-trial-what">{copy.trialFirstCharge.replace('{amount}', amount)}</span>
+        </li>
+      </ol>
+      <p className="plan-trial-note">{copy.trialCancelBefore.replace('{date}', date)}</p>
     </div>
   )
 }

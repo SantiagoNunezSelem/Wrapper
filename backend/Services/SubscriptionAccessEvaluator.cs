@@ -55,35 +55,67 @@ public static class SubscriptionAccessEvaluator
     }
 
     /// <summary>
-    /// Prefixes of the <c>status_detail</c> values that mean the attempt is <b>over</b>:
-    /// the card was declined, the payment expired, someone cancelled it. Money was never
-    /// taken and none is coming, so a subscription sitting on these is not waiting on
-    /// anything — it is a checkout that did not go through, and the screen should say so
-    /// and offer to try again rather than promise that Pro is about to switch itself on.
+    /// What became of the last charge Mercado Pago reported for this subscription and did
+    /// not approve — see <see cref="PaymentOutcomes"/>. Null when there is none: nothing was
+    /// ever charged, or the last charge went through.
+    ///
+    /// Decided by the payment's <c>status</c>, which Mercado Pago documents as a short,
+    /// closed list. The <c>status_detail</c> only explains it, and reading the outcome off
+    /// the detail's wording went wrong in both directions: a card over its limit
+    /// (<c>cc_amount_rate_limit_exceeded</c>), a refund or a dispute all read as "still
+    /// processing", which told people to wait for money that was never coming.
+    ///
+    /// Rows stored before the status was kept fall back to the detail, and a detail we do
+    /// not recognise there still counts as in progress: of the two ways to be wrong,
+    /// "lo estamos siguiendo" about a dead payment is the cheaper one.
     /// </summary>
-    private static readonly string[] SettledWithoutPayment =
-        ["cc_rejected", "rejected", "expired", "by_payer", "by_collector"];
+    public static string? DescribeLastPayment(Subscription subscription)
+    {
+        if (subscription.LastPaymentStatusDetail is not { Length: > 0 } detail)
+        {
+            return null;
+        }
+
+        return subscription.LastPaymentStatus switch
+        {
+            "pending" or "in_process" or "authorized" => PaymentOutcomes.InProgress,
+            "rejected" => PaymentOutcomes.Declined,
+            "cancelled" => PaymentOutcomes.Cancelled,
+            "refunded" => PaymentOutcomes.Refunded,
+            "charged_back" or "in_mediation" => PaymentOutcomes.Disputed,
+            "approved" => null,
+            _ => FromDetail(detail),
+        };
+    }
+
+    /// <summary>The fallback for rows with no stored status: the detail's own meaning, per
+    /// Mercado Pago's table of <c>status_detail</c> values.</summary>
+    private static string FromDetail(string detail)
+    {
+        if (detail.StartsWith("cc_rejected", StringComparison.OrdinalIgnoreCase) ||
+            detail.StartsWith("rejected", StringComparison.OrdinalIgnoreCase) ||
+            detail is "bank_error" or "insufficient_amount" or "cc_amount_rate_limit_exceeded")
+        {
+            return PaymentOutcomes.Declined;
+        }
+
+        return detail switch
+        {
+            "expired" or "by_payer" or "by_collector" => PaymentOutcomes.Cancelled,
+            "refunded" or "by_admin" or "partially_refunded" => PaymentOutcomes.Refunded,
+            "settled" or "reimbursed" => PaymentOutcomes.Disputed,
+            _ => PaymentOutcomes.InProgress,
+        };
+    }
 
     /// <summary>
     /// Whether Mercado Pago has a charge for this subscription that is still going
     /// somewhere. This is the difference between "tu pago se está procesando" and
     /// "abriste el checkout y no lo terminaste", which the local <c>pendiente</c> status
-    /// covers alike.
-    ///
-    /// <see cref="Models.Subscription.LastPaymentStatusDetail"/> is the signal: it is only
-    /// ever written from a payment Mercado Pago actually reported, and cleared again the
-    /// moment nothing is outstanding (see
-    /// <c>SubscriptionService.RefreshPendingReasonAsync</c>), so a checkout nobody
-    /// completed never gets one.
-    ///
-    /// A detail we do not recognise counts as in flight, deliberately. Mercado Pago adds
-    /// these over time, and of the two ways to be wrong about a new one, telling someone
-    /// "lo estamos siguiendo" about a payment that is already dead is far cheaper than
-    /// telling someone whose money is genuinely in motion that nothing happened.
+    /// covers alike. See <see cref="DescribeLastPayment"/>.
     /// </summary>
     public static bool HasPaymentInFlight(Subscription subscription) =>
-        subscription.LastPaymentStatusDetail is { Length: > 0 } detail &&
-        !SettledWithoutPayment.Any(prefix => detail.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        DescribeLastPayment(subscription) == PaymentOutcomes.InProgress;
 
     /// <summary>
     /// Whether Mercado Pago may still charge this subscription: linked to a preapproval,
@@ -140,4 +172,17 @@ public static class SubscriptionAccessEvaluator
 
         return ordered.FirstOrDefault(HasVipAccess) ?? ordered.FirstOrDefault();
     }
+}
+
+/// <summary>
+/// What became of a charge that was not approved, for the account screen to word it:
+/// still moving, refused, cancelled, given back, or disputed through the card.
+/// </summary>
+public static class PaymentOutcomes
+{
+    public const string InProgress = "in_progress";
+    public const string Declined = "declined";
+    public const string Cancelled = "cancelled";
+    public const string Refunded = "refunded";
+    public const string Disputed = "disputed";
 }

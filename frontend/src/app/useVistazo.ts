@@ -27,6 +27,7 @@ import {
   toggleDevSubscription,
   updatePreferredLanguage,
 } from '../lib/api'
+import { CHECKOUT_WINDOW_OPENED, onCheckoutReturn } from '../lib/checkoutWindow'
 import {
   isAiDisabled as readAiDisabled,
   isLocalhost,
@@ -670,6 +671,46 @@ export function useVistazo() {
   function handleRefreshSubscription() {
     return runSubscriptionAction('refresh', syncSubscription)
   }
+
+  // Checkout in a window of its own (see lib/checkoutWindow): when that window comes back
+  // from Mercado Pago it says so over the channel, and this tab does what a same-tab
+  // return does. If the person comes back to this window without finishing — they closed
+  // the other one, or changed their mind — it re-reads anyway: the checkout already exists
+  // on the server, and the screen should say so instead of offering the plan again.
+  useEffect(() => {
+    if (!token) {
+      return
+    }
+
+    let awaitingWindow = false
+
+    const stopListening = onCheckoutReturn(() => {
+      awaitingWindow = false
+      setCheckoutPollsLeft(checkoutPollAttempts)
+      void handleRefreshSubscription()
+    })
+
+    function handleOpened() {
+      awaitingWindow = true
+    }
+
+    function handleFocus() {
+      if (!awaitingWindow) {
+        return
+      }
+      awaitingWindow = false
+      void handleRefreshSubscription()
+    }
+
+    window.addEventListener(CHECKOUT_WINDOW_OPENED, handleOpened)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      stopListening()
+      window.removeEventListener(CHECKOUT_WINDOW_OPENED, handleOpened)
+      window.removeEventListener('focus', handleFocus)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
   // Coming back from Mercado Pago, the payment is often not settled yet: the browser
   // beats the webhook, and their own processing can take another few seconds. Without

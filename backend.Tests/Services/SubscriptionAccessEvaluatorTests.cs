@@ -232,6 +232,78 @@ public class SubscriptionAccessEvaluatorTests
         Assert.True(SubscriptionAccessEvaluator.HasPaymentInFlight(unknown));
     }
 
+    // -----------------------------------------------------------------------
+    // Qué pasó con el cobro: lo decide el `status` del pago, no la redacción del
+    // `status_detail`. Los casos salen de la tabla de Mercado Pago ("Consulta sobre el
+    // estado de un pago").
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("in_process", "pending_contingency", PaymentOutcomes.InProgress)]
+    [InlineData("pending", "pending_challenge", PaymentOutcomes.InProgress)]
+    [InlineData("in_process", "deferred_retry", PaymentOutcomes.InProgress)]
+    [InlineData("authorized", "pending_capture", PaymentOutcomes.InProgress)]
+    [InlineData("rejected", "cc_rejected_insufficient_amount", PaymentOutcomes.Declined)]
+    [InlineData("rejected", "cc_amount_rate_limit_exceeded", PaymentOutcomes.Declined)]
+    [InlineData("rejected", "insufficient_amount", PaymentOutcomes.Declined)]
+    [InlineData("rejected", "bank_error", PaymentOutcomes.Declined)]
+    [InlineData("rejected", "algo_que_mercado_pago_agregue", PaymentOutcomes.Declined)]
+    [InlineData("cancelled", "expired", PaymentOutcomes.Cancelled)]
+    [InlineData("refunded", "by_admin", PaymentOutcomes.Refunded)]
+    [InlineData("charged_back", "in_process", PaymentOutcomes.Disputed)]
+    [InlineData("in_mediation", "pending", PaymentOutcomes.Disputed)]
+    public void El_status_del_pago_decide_que_paso(string status, string detail, string expected)
+    {
+        var subscription = Sub("pendiente");
+        subscription.LastPaymentStatus = status;
+        subscription.LastPaymentStatusDetail = detail;
+
+        Assert.Equal(expected, SubscriptionAccessEvaluator.DescribeLastPayment(subscription));
+    }
+
+    [Theory]
+    // Los que antes se leían como "procesando" por no empezar con cc_rejected/rejected:
+    // le decían a la persona que esperara una plata que nunca iba a llegar.
+    [InlineData("cc_amount_rate_limit_exceeded")]
+    [InlineData("insufficient_amount")]
+    [InlineData("refunded")]
+    [InlineData("charged_back")]
+    public void Un_limite_de_tarjeta_una_devolucion_o_una_disputa_no_son_un_pago_en_curso(string status)
+    {
+        var subscription = Sub("pendiente");
+        subscription.LastPaymentStatus = status is "refunded" or "charged_back" ? status : "rejected";
+        subscription.LastPaymentStatusDetail = status is "refunded" or "charged_back" ? "by_admin" : status;
+
+        Assert.False(SubscriptionAccessEvaluator.HasPaymentInFlight(subscription));
+        Assert.Equal("inactiva", SubscriptionAccessEvaluator.GetVisibleState(UserWith(subscription)));
+    }
+
+    [Theory]
+    // Filas guardadas antes de que se guardara el status: se lee el detail según la tabla.
+    [InlineData("cc_amount_rate_limit_exceeded", PaymentOutcomes.Declined)]
+    [InlineData("bank_error", PaymentOutcomes.Declined)]
+    [InlineData("by_payer", PaymentOutcomes.Cancelled)]
+    [InlineData("refunded", PaymentOutcomes.Refunded)]
+    [InlineData("settled", PaymentOutcomes.Disputed)]
+    [InlineData("pending_contingency", PaymentOutcomes.InProgress)]
+    [InlineData("algo_que_mercado_pago_agregue", PaymentOutcomes.InProgress)]
+    public void Sin_status_guardado_se_lee_el_detail(string detail, string expected)
+    {
+        var subscription = Sub("pendiente");
+        subscription.LastPaymentStatusDetail = detail;
+
+        Assert.Equal(expected, SubscriptionAccessEvaluator.DescribeLastPayment(subscription));
+    }
+
+    [Fact]
+    public void Sin_ningun_cobro_reportado_no_hay_nada_que_describir()
+    {
+        var subscription = Sub("pendiente");
+        subscription.LastPaymentStatus = "rejected";
+
+        Assert.Null(SubscriptionAccessEvaluator.DescribeLastPayment(subscription));
+    }
+
     [Fact]
     public void Ninguno_de_los_dos_da_acceso_Pro()
     {

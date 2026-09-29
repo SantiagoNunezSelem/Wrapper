@@ -2177,6 +2177,17 @@ button.chat-bubble-divider.is-expandable:active {
   color: var(--vz-text-soft);
   font-size: 0.85rem;
   line-height: 1.45;
+  display: grid;
+  gap: 6px;
+}
+
+.subpage-banner-reason p {
+  margin: 0;
+}
+
+/* The next step after a refusal — quieter than the reason, which is the news. */
+.subpage-banner-reason-action {
+  color: var(--vz-text-muted);
 }
 
 .subpage-banner-actions {
@@ -2394,14 +2405,69 @@ button.chat-bubble-divider.is-expandable:active {
   font-size: 0.88rem;
 }
 
-.plan-card-trial {
-  margin: 0;
-  padding: 11px 14px;
+/* The free week as two dates: today (on) and the first charge. Same violet tint the
+   trial note always had, so it still reads as "the free part". */
+.plan-trial {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
   border-radius: 10px;
   background: rgba(192, 132, 252, 0.1);
   border: 1px solid rgba(192, 132, 252, 0.22);
+}
+
+.plan-trial-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-trial-steps li {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 2px solid rgba(192, 132, 252, 0.25);
+}
+
+.plan-trial-steps li.is-now {
+  border-top-color: var(--vz-brand-violet);
+}
+
+.plan-trial-when {
+  font-weight: 700;
   color: #e9d5ff;
+  font-size: 0.9rem;
+}
+
+.plan-trial-what {
+  font-size: 0.8rem;
+  color: var(--vz-text-muted);
+}
+
+.plan-trial-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--vz-text-dim);
+}
+
+/* While Mercado Pago is open in its own window: where the payment went, and a way back. */
+.plan-window-wait {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--vz-surface-6);
+  text-align: center;
+}
+
+.plan-window-wait p {
+  margin: 0;
   font-size: 0.85rem;
+  color: var(--vz-text-soft);
 }
 
 .plan-card-benefits-label {
@@ -2965,4 +3031,60 @@ a.subpage-banner-cta {
 
 .test-payer-banner-text strong {
   font-weight: 700;
+}
+
+/* A declined charge, on every screen but the account one. Same bar as the test-payer
+   banner, in the danger colours, and closable. */
+.payment-issue-banner {
+  position: sticky;
+  top: 0;
+  z-index: 190;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px 9px 16px;
+  background: var(--vz-danger-bg);
+  border-bottom: 1px solid var(--vz-danger-border);
+  color: var(--vz-danger-text);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  backdrop-filter: blur(8px);
+}
+
+.payment-issue-banner-text {
+  flex: 1;
+  margin: 0;
+}
+
+.payment-issue-banner-cta {
+  flex: none;
+  padding: 5px 12px;
+  border-radius: var(--vz-radius-pill);
+  border: 1px solid currentColor;
+  background: none;
+  color: inherit;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.payment-issue-banner-cta:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.payment-issue-banner-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.payment-issue-banner-close:hover {
+  opacity: 1;
 }

@@ -41,6 +41,51 @@ public static class SubscriptionEndpoints
     // Sending the payer around that loop is how a broken setup looks like a flaky network.
     private const string ProviderErrorMessage = "No pudimos abrir el checkout de Mercado Pago. No se te cobró nada.";
 
+    private const string ProviderUnreachableMessage =
+        "Mercado Pago no respondió. Probá de nuevo en unos minutos: no se te cobró nada.";
+
+    private const string ProviderMisconfiguredMessage =
+        "El pago con Mercado Pago no está disponible en este momento. No es un problema de tu cuenta ni de tu tarjeta, y no se te cobró nada.";
+
+    /// <summary>
+    /// Answers Mercado Pago gave this project when the integration itself was wrong —
+    /// test and real accounts mixed, a flow that needs a card token. Mercado Pago does not
+    /// publish a closed list of these, so only ones actually seen are here; anything else
+    /// stays the generic message.
+    /// </summary>
+    private static readonly string[] MisconfigurationMessages =
+    [
+        "Both payer and collector must be real or test users",
+        "card_token_id is required",
+        "Card token service not found",
+    ];
+
+    /// <summary>
+    /// Why a checkout did not open, as a code the screen can word (and the message for
+    /// clients that do not know the code). Separating "Mercado Pago did not answer" from
+    /// "our setup is wrong" is the point: only the first is worth retrying, and telling
+    /// someone to retry the second sends them round a loop that never clears.
+    /// </summary>
+    internal static (string Code, string Message) DescribeCheckoutFailure(MercadoPagoException exception)
+    {
+        if (exception.InnerException is HttpRequestException ||
+            exception.StatusCode is >= 500 ||
+            (exception.StatusCode is null && exception.Message.StartsWith("Mercado Pago did not respond", StringComparison.Ordinal)))
+        {
+            return ("provider_unreachable", ProviderUnreachableMessage);
+        }
+
+        if (exception.StatusCode is 401 or 403 ||
+            exception.Message.StartsWith("Mercado Pago is not configured", StringComparison.Ordinal) ||
+            (exception.ProviderMessage is { } said &&
+             MisconfigurationMessages.Any(known => said.Contains(known, StringComparison.OrdinalIgnoreCase))))
+        {
+            return ("provider_misconfigured", ProviderMisconfiguredMessage);
+        }
+
+        return ("provider_error", ProviderErrorMessage);
+    }
+
     /// <summary>
     /// Shown when re-reading the state from Mercado Pago fails. Separate from
     /// <see cref="ProviderErrorMessage"/> because nothing was being opened and nothing was
@@ -132,9 +177,8 @@ public static class SubscriptionEndpoints
             catch (MercadoPagoException exception)
             {
                 logger.LogError(exception, "Checkout failed for user {UserId}.", user.Id);
-                return Results.Json(
-                    new { message = ProviderErrorMessage, code = "provider_error" },
-                    statusCode: StatusCodes.Status502BadGateway);
+                var (code, message) = DescribeCheckoutFailure(exception);
+                return Results.Json(new { message, code }, statusCode: StatusCodes.Status502BadGateway);
             }
 
             return Results.Ok(new CheckoutStartResponse(result.RedirectUrl, result.SubscriptionId, result.Resumed));
@@ -688,6 +732,10 @@ public sealed record SubscriptionResponse(
     // Mercado Pago's status_detail for the charge that has not settled — what turns
     // "pendiente" into a sentence that says what to do about it.
     string? PendingReason,
+    // What became of that charge (PaymentOutcomes): in_progress, declined, cancelled,
+    // refunded or disputed. Decided from the payment's status, so the screen never has to
+    // guess it from the reason's wording.
+    string? PendingReasonKind,
     // Whether Mercado Pago still has this charge going somewhere. The local status says
     // "pendiente" both for that and for a checkout the payer opened and walked away from
     // (a declined card included), and those are opposite messages: one is "tu plata está
@@ -731,6 +779,7 @@ public sealed record SubscriptionResponse(
             subscription.Status == "pendiente" ? subscription.CheckoutUrl : null,
             subscription.PayerEmail,
             subscription.LastPaymentStatusDetail,
+            SubscriptionAccessEvaluator.DescribeLastPayment(subscription),
             SubscriptionAccessEvaluator.HasPaymentInFlight(subscription),
             subscription.CreatedAtUtc);
     }
