@@ -251,7 +251,7 @@ public class AdminAccessServiceTests : IDisposable
         user.VipUntilUtc = DateTime.UtcNow.AddDays(5);
 
         var error = await Assert.ThrowsAsync<SubscriptionConflictException>(() =>
-            Subscriptions().StartCheckoutAsync(user, new DefaultHttpContext(), null, default));
+            Subscriptions().StartCheckoutAsync(user, new DefaultHttpContext(), null, null, default));
 
         Assert.Equal("already_active", error.Code);
         Assert.Empty(_http.Requests);

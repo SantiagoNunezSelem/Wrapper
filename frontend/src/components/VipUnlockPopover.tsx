@@ -1,5 +1,6 @@
 import { formatMoney } from '../lib/format'
 import { ModalShell } from './ModalShell'
+import { defaultPayerEmail } from '../lib/payerEmail'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type { Language, SubscriptionOverview, SubscriptionPlan, UserProfile } from '../types'
 
@@ -67,7 +68,8 @@ export function VipUnlockPopover({
           <PlanPurchaseFlow
             copy={copy}
             token={token}
-            userEmail={user.email}
+            payerEmail={defaultPayerEmail(user, overview)}
+            payerEmailLocked={Boolean(user.checkoutTestPayerEmail)}
             plan={plan}
             trialAvailable={Boolean(overview?.trialAvailable)}
             trialDeniedReason={overview?.trialDeniedReason ?? null}

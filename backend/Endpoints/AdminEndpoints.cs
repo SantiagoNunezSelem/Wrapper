@@ -201,9 +201,11 @@ public static class AdminEndpoints
             AdminReportsService reports,
             AdminAuditService audit,
             MercadoPagoAccountProbe probe,
+            FreeTrialProbe freeTrial,
             CancellationToken cancellationToken) =>
             Results.Ok(await reports.GetSystemReportAsync(
                 await probe.GetAsync(cancellationToken),
+                await freeTrial.CheckAsync(cancellationToken),
                 await audit.GetRecentAsync(50, cancellationToken),
                 DateTime.UtcNow,
                 cancellationToken)));

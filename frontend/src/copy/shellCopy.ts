@@ -25,7 +25,7 @@ export const shellCopy = {
   es: {
     title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' },
     landingSubtitle: 'La verdad de tu grupo, en gráficos.',
-    heroCaption: 'El resumen que tu grupo no pidió.',
+    heroCaption: 'El resumen que nadie pidió.',
     whatItDoesTitle: '¿Para qué sirve?',
     whatItDoesBody:
       'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión. Las dos métricas Pro con IA son la única excepción, y te pedimos permiso antes.',
@@ -296,8 +296,10 @@ export const shellCopy = {
       checkoutRejectedStatus: 'Pago rechazado',
       checkoutRejectedHint:
         'Mercado Pago no pudo cobrar la tarjeta, así que la suscripción no quedó activa. No se te cobró nada.',
-      checkoutOpenNext: 'Podés retomarlo donde lo dejaste o empezar de nuevo cuando quieras.',
-      checkoutOpenPaidNote: 'Si en realidad ya pagaste, tocá "Actualizar estado" y lo buscamos en Mercado Pago.',
+      checkoutOpenNext: 'Podés retomarlo donde lo dejaste.',
+      // Sin botón de "Actualizar estado": la pantalla vuelve a preguntarle a Mercado Pago
+      // sola (al volver del checkout y al volver a esta pestaña).
+      checkoutOpenPaidNote: 'Si ya pagaste, no tenés que hacer nada: lo detectamos solos en unos minutos.',
       /**
        * El cartel de `MercadoPago:TestPayerEmail`. No se puede cerrar a propósito: existe
        * justamente para que no se olvide puesto, y un aviso que se descarta es un aviso
@@ -308,7 +310,19 @@ export const shellCopy = {
       testPayerBannerBody:
         'Todos los checkouts se abren a nombre de {email}, no de quien esté usando la app. Sacá MercadoPago__TestPayerEmail antes de cobrar de verdad.',
       resumeCheckoutCta: 'Terminar el pago',
-      resumeCheckoutHint: 'Te llevamos a la misma página de Mercado Pago donde lo dejaste.',
+      /**
+       * Mercado Pago solo deja pagar a la cuenta cuyo mail es el del checkout, y cuando no
+       * coincide rebota en su propia página sin avisarnos. Por eso el mail está siempre a
+       * la vista con un "Cambiar" al lado, en la tarjeta del plan y en el pago sin terminar.
+       */
+      payerEmailContinue: 'Continuar con este mail',
+      payerEmailCancel: 'Cancelar',
+      payerEmailLabel: 'Vas a pagar con la cuenta de Mercado Pago',
+      payerEmailChange: 'Cambiar',
+      payerEmailInputLabel: 'Mail con el que entrás a Mercado Pago',
+      payerEmailHint:
+        'Tiene que ser el mail de tu cuenta de Mercado Pago, o no te va a dejar pagar. Tu cuenta de Vistazo no cambia.',
+      payerEmailInvalid: 'Revisá el mail: no parece válido.',
       alreadyPaidNote:
         'Si ya pagaste, puede tardar unos minutos. Lo revisamos solos cada tanto y te activamos apenas Mercado Pago confirme.',
       checkingStatus: 'Buscando tu pago...',
@@ -340,6 +354,7 @@ export const shellCopy = {
         'Todavía no se completó ningún pago, así que no hay nada que cobrar. Vamos a cerrar este intento y podés arrancar uno nuevo cuando quieras.',
       // "Cancelar renovación" no aplica sobre un intento: no hay renovación todavía, y
       // llamarlo así da a entender que existe una suscripción andando.
+      discardCheckoutPrompt: '¿Ya no lo querés?',
       discardCheckoutCta: 'Descartar este intento',
       discardCheckoutTitle: '¿Descartar este intento de pago?',
       discardCheckoutYes: 'Sí, descartar',
@@ -350,7 +365,6 @@ export const shellCopy = {
       cancelledDone: 'Listo: cancelamos la renovación automática.',
       resumeCta: 'Reanudar suscripción',
       resuming: 'Reanudando...',
-      refreshCta: 'Actualizar estado',
       refreshing: 'Actualizando...',
       cancelling: 'Cancelando...',
       billedBy: 'Renovación automática',
@@ -496,7 +510,7 @@ export const shellCopy = {
     ],
     footerPrivacy:
       'Tu chat se procesa en tu dispositivo y nunca se sube entero. No compartimos nada sin tu permiso.',
-    footerRights: 'Hecho sin nada mejor que hacer un domingo.',
+    footerRights: 'Hecho sin nada mejor que hacer.',
     /* Textos que sólo existen en el shell de mobile: pestañas, hoja de subida,
        modo historia. Viven acá y no adentro de los componentes, para que sigan
        la misma regla que el resto — un solo lugar, los dos idiomas. */
@@ -804,13 +818,20 @@ export const shellCopy = {
       checkoutRejectedStatus: 'Payment declined',
       checkoutRejectedHint:
         'Mercado Pago could not charge the card, so the subscription never started. Nothing was charged.',
-      checkoutOpenNext: 'Pick it up where you left it, or start over whenever you like.',
-      checkoutOpenPaidNote: 'If you did pay after all, hit "Check again" and we will look it up on Mercado Pago.',
+      checkoutOpenNext: 'Pick it up where you left it.',
+      checkoutOpenPaidNote: "If you already paid, there's nothing to do: we'll pick it up on our own in a few minutes.",
       testPayerBannerTitle: 'Test mode: payments are not real',
       testPayerBannerBody:
         'Every checkout opens as {email}, not as whoever is using the app. Clear MercadoPago__TestPayerEmail before taking real payments.',
       resumeCheckoutCta: 'Finish the payment',
-      resumeCheckoutHint: 'We take you back to the same Mercado Pago page you left.',
+      payerEmailContinue: 'Continue with this email',
+      payerEmailCancel: 'Cancel',
+      payerEmailLabel: "You'll pay with the Mercado Pago account",
+      payerEmailChange: 'Change',
+      payerEmailInputLabel: 'Email you use for Mercado Pago',
+      payerEmailHint:
+        "It has to be your Mercado Pago account's email, or it won't let you pay. Your Vistazo account doesn't change.",
+      payerEmailInvalid: "Check the email: it doesn't look valid.",
       alreadyPaidNote:
         'If you already paid, it can take a few minutes. We keep checking on our own and turn Pro on the moment Mercado Pago confirms it.',
       checkingStatus: 'Looking for your payment...',
@@ -838,6 +859,7 @@ export const shellCopy = {
         "You're on the free trial: the first {amount} charge on {date} will not happen. You keep Pro access until then.",
       cancelConfirmPendingBody:
         "No payment has gone through, so there is nothing to charge. We'll close this attempt and you can start a new one whenever you want.",
+      discardCheckoutPrompt: "Don't want it anymore?",
       discardCheckoutCta: 'Discard this attempt',
       discardCheckoutTitle: 'Discard this payment attempt?',
       discardCheckoutYes: 'Yes, discard',
@@ -848,7 +870,6 @@ export const shellCopy = {
       cancelledDone: 'Done: automatic renewal cancelled.',
       resumeCta: 'Resume subscription',
       resuming: 'Resuming...',
-      refreshCta: 'Refresh status',
       refreshing: 'Refreshing...',
       cancelling: 'Cancelling...',
       billedBy: 'Automatic renewal',
@@ -994,7 +1015,7 @@ export const shellCopy = {
     ],
     footerPrivacy:
       'Your chat is processed on your device and never fully uploaded. Nothing is shared without your permission.',
-    footerRights: 'Made with nothing better to do on a Sunday.',
+    footerRights: 'Made with nothing better to do.',
     mobile: {
       tabs: { home: 'Home', metrics: 'Metrics', history: 'History', account: 'Account' },
       openMenu: 'Open menu',

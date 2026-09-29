@@ -178,6 +178,7 @@ public sealed class AdminReportsService(
 
     public async Task<SystemReport> GetSystemReportAsync(
         MercadoPagoAccount? seller,
+        IntegrationStatus? freeTrial,
         IReadOnlyList<AdminAuditDto> audit,
         DateTime now,
         CancellationToken cancellationToken)
@@ -196,6 +197,8 @@ public sealed class AdminReportsService(
             new("webhook_secret", string.IsNullOrWhiteSpace(mp.WebhookSecret) ? IntegrationStates.Bad : IntegrationStates.Ok, null),
             new("back_url", mp.HasPublicBackUrl ? IntegrationStates.Ok : IntegrationStates.Warn, mp.BackUrl),
             new("test_payer", string.IsNullOrWhiteSpace(mp.TestPayerEmail) ? IntegrationStates.Ok : IntegrationStates.Warn, mp.TestPayerEmail is { Length: > 0 } email ? email : null),
+            // Read back from Mercado Pago by FreeTrialProbe; see there for why it matters.
+            freeTrial ?? new(FreeTrialProbe.Key, IntegrationStates.Off, null),
             new("google_ai", ai.IsConfigured ? IntegrationStates.Ok : IntegrationStates.Bad, ai.Model),
             new("ai_prices", ai.InputPricePerMillionUsd > 0 || ai.OutputPricePerMillionUsd > 0 ? IntegrationStates.Ok : IntegrationStates.Off, null),
             new("recaptcha", captcha.IsConfigured ? IntegrationStates.Ok : captcha.IsPartiallyConfigured ? IntegrationStates.Bad : IntegrationStates.Off, null),

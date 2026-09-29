@@ -2440,6 +2440,120 @@ button.chat-bubble-divider.is-expandable:active {
   text-align: center;
 }
 
+/* Which Mercado Pago account the checkout opens for. Shown filled in so most people
+   just press the button; "Cambiar" swaps it for the field below. */
+.plan-payer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--vz-surface-5);
+  background: var(--vz-surface-1);
+}
+
+.plan-payer-text {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-payer-label {
+  font-size: 0.75rem;
+  color: var(--vz-text-dim);
+}
+
+.plan-payer-email {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--vz-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.plan-payer-change {
+  flex: none;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  color: var(--vz-brand-cyan);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plan-payer-change:hover {
+  text-decoration: underline;
+}
+
+.plan-payer-field {
+  display: grid;
+  gap: 6px;
+}
+
+.plan-payer-field-label {
+  font-size: 0.8rem;
+  color: var(--vz-text-muted);
+}
+
+.plan-payer-field-error {
+  font-size: 0.8rem;
+  color: var(--vz-danger-text);
+}
+
+.plan-payer-field-hint {
+  font-size: 0.75rem;
+  color: var(--vz-text-dim);
+  line-height: 1.45;
+}
+
+.plan-payer-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* An unfinished checkout's way back: the payer line and one full-width button. */
+.subpage-banner-resume {
+  display: grid;
+  gap: 12px;
+}
+
+.subpage-banner-cta {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+a.subpage-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Secondary actions inside fine print ("¿Ya no lo querés? Descartar"): a link in the
+   sentence, not a second button competing with the one above. */
+.subpage-text-link {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--vz-text-muted);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.subpage-text-link:hover {
+  color: var(--vz-text-soft);
+}
+
+.subpage-text-link:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .plan-card-hint {
   margin: 0;
   font-size: 0.8rem;

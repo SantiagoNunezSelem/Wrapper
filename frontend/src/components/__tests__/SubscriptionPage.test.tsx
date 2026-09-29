@@ -1,7 +1,8 @@
 ﻿import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shellCopy } from '../../copy/shellCopy'
+import { startCheckout } from '../../lib/api'
 import { SubscriptionPage } from '../SubscriptionPage'
 import { TooltipProvider } from '../TooltipProvider'
 import type {
@@ -10,6 +11,13 @@ import type {
   SubscriptionRecord,
   UserProfile,
 } from '../../types'
+
+// Only the checkout call is replaced: the tests below check which address it is opened
+// for, and a real request (or a real redirect) has no place in a component test.
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/api')>()),
+  startCheckout: vi.fn(),
+}))
 
 const copy = shellCopy.es.subscriptionPage
 
@@ -61,6 +69,7 @@ function record(overrides: Partial<SubscriptionRecord> = {}): SubscriptionRecord
     autoRenewEnabled: true,
     accessUntilUtc: '2026-09-01T00:00:00Z',
     checkoutUrl: null,
+    payerEmail: null,
     pendingReason: null,
     paymentInProgress: false,
     createdAtUtc: '2026-07-01T00:00:00Z',
@@ -317,6 +326,178 @@ describe('SubscriptionPage', () => {
       await userEvent.click(screen.getByRole('button', { name: copy.discardCheckoutYes }))
 
       expect(handlers.onCancel).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // Mercado Pago solo deja pagar a la cuenta cuyo mail es el del checkout, y cuando no
+  // coincide rebota en su propia página, sin salida y sin avisarnos. Por eso el mail se
+  // muestra (y se puede cambiar) antes de salir, y otra vez si la persona vuelve sin pagar.
+  describe('mail de Mercado Pago', () => {
+    const checkout = vi.mocked(startCheckout)
+
+    beforeEach(() => {
+      checkout.mockReset()
+      checkout.mockResolvedValue({ initPoint: '#mercado-pago', subscriptionId: 's2', resumed: false })
+    })
+
+    const unfinished = (overrides: Partial<SubscriptionRecord> = {}) =>
+      record({
+        status: 'pendiente',
+        hasAccess: false,
+        autoRenewEnabled: false,
+        paymentInProgress: false,
+        checkoutUrl: 'https://mp.test/subscribe/pre-1',
+        payerEmail: 'santi@example.com',
+        ...overrides,
+      })
+
+    it('la tarjeta del plan dice con qué cuenta se va a pagar, y el botón la usa tal cual', async () => {
+      renderPage(overview(null, { canSubscribe: true }))
+
+      expect(screen.getByText(copy.payerEmailLabel)).toBeInTheDocument()
+      expect(screen.getByText('santi@example.com')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: copy.buyCta }))
+
+      expect(checkout).toHaveBeenCalledWith('token', 'santi@example.com')
+    })
+
+    it('"Cambiar" deja abrir el pago a nombre de otra cuenta', async () => {
+      renderPage(overview(null, { canSubscribe: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailChange }))
+      const field = screen.getByLabelText(copy.payerEmailInputLabel)
+      await userEvent.clear(field)
+      await userEvent.type(field, 'otra.cuenta@hotmail.com')
+      await userEvent.click(screen.getByRole('button', { name: copy.buyCta }))
+
+      expect(checkout).toHaveBeenCalledWith('token', 'otra.cuenta@hotmail.com')
+    })
+
+    it('un mail que no es un mail no sale de la pantalla', async () => {
+      renderPage(overview(null, { canSubscribe: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailChange }))
+      const field = screen.getByLabelText(copy.payerEmailInputLabel)
+      await userEvent.clear(field)
+      await userEvent.type(field, 'otra.cuenta')
+      await userEvent.click(screen.getByRole('button', { name: copy.buyCta }))
+
+      expect(checkout).not.toHaveBeenCalled()
+      expect(screen.getByText(copy.payerEmailInvalid)).toBeInTheDocument()
+    })
+
+    it('si ya hubo un intento, ofrece el mail de ese intento y no el de Google', () => {
+      renderPage(overview(unfinished({ payerEmail: 'otra@hotmail.com' }), { canSubscribe: true }))
+
+      expect(screen.getAllByText('otra@hotmail.com', { exact: false }).length).toBeGreaterThan(0)
+      expect(screen.queryByText('santi@example.com')).not.toBeInTheDocument()
+    })
+
+    it('con el comprador de prueba forzado no hay nada que cambiar', () => {
+      renderPage(overview(null, { canSubscribe: true }), {
+        user: { ...user, checkoutTestPayerEmail: 'test_user_1@testuser.com' },
+      })
+
+      expect(screen.getByText('test_user_1@testuser.com')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: copy.payerEmailChange })).not.toBeInTheDocument()
+    })
+
+    it('al volver sin pagar, muestra con qué cuenta y UN solo botón', () => {
+      // Nada compitiendo con "Terminar el pago": ni un "Actualizar estado" (eso pasa solo),
+      // ni la tarjeta del plan con su propio "Empezar" (haría lo mismo con otro nombre).
+      renderPage(overview(unfinished(), { canResumeCheckout: true, canSubscribe: true, canCancel: true }))
+
+      expect(screen.getByText('santi@example.com')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: copy.resumeCheckoutCta })).toHaveAttribute(
+        'href',
+        'https://mp.test/subscribe/pre-1',
+      )
+      expect(screen.queryByRole('button', { name: /actualizar estado/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: copy.buyCta })).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.planName)).not.toBeInTheDocument()
+    })
+
+    it('"Cambiar" en el pago sin terminar lo abre a nombre de otra cuenta', async () => {
+      renderPage(overview(unfinished(), { canResumeCheckout: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailChange }))
+      const field = screen.getByLabelText(copy.payerEmailInputLabel)
+      await userEvent.clear(field)
+      await userEvent.type(field, 'otra@hotmail.com')
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailContinue }))
+
+      expect(checkout).toHaveBeenCalledWith('token', 'otra@hotmail.com')
+    })
+
+    it('con el mismo mail sigue siendo el link de siempre, sin abrir otro checkout', async () => {
+      renderPage(overview(unfinished(), { canResumeCheckout: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailChange }))
+
+      expect(screen.getByRole('link', { name: copy.resumeCheckoutCta })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: copy.payerEmailContinue })).not.toBeInTheDocument()
+    })
+
+    it('"Cancelar" vuelve a la línea con el mail original', async () => {
+      renderPage(overview(unfinished(), { canResumeCheckout: true }))
+
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailChange }))
+      await userEvent.type(screen.getByLabelText(copy.payerEmailInputLabel), 'xx')
+      await userEvent.click(screen.getByRole('button', { name: copy.payerEmailCancel }))
+
+      expect(screen.getByText('santi@example.com')).toBeInTheDocument()
+      expect(screen.queryByLabelText(copy.payerEmailInputLabel)).not.toBeInTheDocument()
+    })
+
+    it('con un pago en curso deja volver al checkout, pero no cambiar de cuenta', () => {
+      // `pending_challenge`: el banco pide que la persona confirme, y eso se hace en la
+      // misma página de Mercado Pago. Abrirlo para otra cuenta dejaría ese cobro colgado.
+      renderPage(
+        overview(unfinished({ paymentInProgress: true, pendingReason: 'pending_challenge' }), {
+          canResumeCheckout: true,
+        }),
+      )
+
+      expect(screen.getByRole('link', { name: copy.resumeCheckoutCta })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: copy.payerEmailChange })).not.toBeInTheDocument()
+    })
+
+    it('descartar es un link dentro de la letra chica, no otro botón grande', () => {
+      renderPage(overview(unfinished(), { canResumeCheckout: true, canCancel: true }))
+
+      const discard = screen.getByRole('button', { name: copy.discardCheckoutCta })
+      expect(discard).toHaveClass('subpage-text-link')
+      expect(discard.closest('p')).toHaveTextContent(copy.discardCheckoutPrompt)
+    })
+  })
+
+  describe('re-chequeo automático', () => {
+    function returnToTab() {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+
+    it('al volver a la pestaña con algo pendiente, le vuelve a preguntar a Mercado Pago', () => {
+      const handlers = renderPage(
+        overview(record({ status: 'pendiente', hasAccess: false, checkoutUrl: 'https://mp.test/x' }), {
+          canResumeCheckout: true,
+        }),
+      )
+
+      returnToTab()
+      // Una vez por minuto como mucho: cada chequeo llega hasta Mercado Pago.
+      returnToTab()
+
+      expect(handlers.onRefresh).toHaveBeenCalledTimes(1)
+    })
+
+    it('sin nada pendiente no molesta a Mercado Pago', () => {
+      const handlers = renderPage(overview(record()))
+
+      returnToTab()
+
+      expect(handlers.onRefresh).not.toHaveBeenCalled()
     })
   })
 

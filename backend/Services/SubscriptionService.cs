@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
 using backend.Data;
@@ -82,16 +83,23 @@ public sealed class SubscriptionService(
     /// payer is charged nothing; see <see cref="OpenProviderCheckoutAsync"/> for why there
     /// is no second route.
     /// </summary>
+    /// <param name="payerEmail">
+    /// The Mercado Pago account the person says they will pay with. Null keeps whatever
+    /// the open checkout was created for, or the signed-in address when there is none.
+    /// </param>
     public async Task<CheckoutResult> StartCheckoutAsync(
         User user,
         HttpContext http,
         string? deviceId,
+        string? payerEmail,
         CancellationToken cancellationToken)
     {
         if (!client.IsConfigured)
         {
             throw new MercadoPagoException("Mercado Pago is not configured: set MercadoPago:AccessToken.");
         }
+
+        var requestedPayerEmail = NormalizePayerEmail(payerEmail);
 
         // Anything still granting Pro blocks a second checkout, not only "activa" and
         // "trial": a cancelled subscription keeps the period it already paid for, and
@@ -111,13 +119,25 @@ public sealed class SubscriptionService(
         // very real chance of two monthly charges.
         if (FindResumableCheckout(user) is { CheckoutUrl: { Length: > 0 } resumeUrl } resumable)
         {
-            return new CheckoutResult(
-                resumable.Status,
-                resumable.Id,
-                resumable.TrialWasApplied,
-                null,
-                resumeUrl,
-                Resumed: true);
+            var openedFor = resumable.PayerEmail ?? PayerEmailFor(user, null);
+
+            if (requestedPayerEmail is null ||
+                string.Equals(PayerEmailFor(user, requestedPayerEmail), openedFor, StringComparison.OrdinalIgnoreCase))
+            {
+                return new CheckoutResult(
+                    resumable.Status,
+                    resumable.Id,
+                    resumable.TrialWasApplied,
+                    null,
+                    resumeUrl,
+                    Resumed: true);
+            }
+
+            // Resuming is the one thing that cannot help here: that link belongs to the
+            // other address, and Mercado Pago will turn this person away from it every
+            // time ("Tu e-mail no coincide con el de la suscripción"). It is closed before
+            // the new one opens, so there are never two authorisable checkouts at once.
+            await ReplaceCheckoutAsync(user, resumable, cancellationToken);
         }
 
         var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
@@ -134,9 +154,10 @@ public sealed class SubscriptionService(
             Amount = _options.TransactionAmount,
             CurrencyId = _options.CurrencyId,
             TrialWasApplied = eligibility.IsEligible,
+            PayerEmail = PayerEmailFor(user, requestedPayerEmail),
         };
 
-        var redirectUrl = await OpenProviderCheckoutAsync(user, subscription, eligibility.IsEligible, cancellationToken);
+        var redirectUrl = await OpenProviderCheckoutAsync(subscription, eligibility.IsEligible, cancellationToken);
 
         subscription.CheckoutUrl = redirectUrl;
 
@@ -179,6 +200,82 @@ public sealed class SubscriptionService(
             .FirstOrDefault();
 
     /// <summary>
+    /// The address a checkout is opened for. <c>MercadoPago:TestPayerEmail</c> wins over
+    /// everything, because against a test seller no other payer is accepted at all; then
+    /// the one the person typed; then the one they signed in with, which is what most
+    /// people also use for Mercado Pago.
+    /// </summary>
+    private string PayerEmailFor(User user, string? chosen) =>
+        !string.IsNullOrWhiteSpace(_options.TestPayerEmail) ? _options.TestPayerEmail
+        : chosen ?? user.Email;
+
+    /// <summary>
+    /// Trims and lower-cases a typed payer address, or refuses it. Blank means "not
+    /// chosen" and comes back null. The check is deliberately just "is this an address":
+    /// only Mercado Pago knows which accounts exist, and it says so on its own page.
+    /// </summary>
+    private static string? NormalizePayerEmail(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+
+        if (normalized.Length > 320 ||
+            !MailAddress.TryCreate(normalized, out var parsed) ||
+            parsed.Address != normalized ||
+            !parsed.Host.Contains('.'))
+        {
+            throw new SubscriptionConflictException("invalid_payer_email", "That is not a valid email address.");
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Closes an unfinished checkout so it can be opened again for another Mercado Pago
+    /// account. Cancelled at Mercado Pago first: if that fails, nothing here changes and
+    /// no second checkout is opened, since two authorisable preapprovals for one account
+    /// is how a customer ends up charged twice a month.
+    ///
+    /// The free week goes back the same way it does for "Descartar": nobody got a day of
+    /// it, and the new checkout claims it again straight away.
+    /// </summary>
+    private async Task ReplaceCheckoutAsync(User user, Subscription previous, CancellationToken cancellationToken)
+    {
+        // A charge Mercado Pago is still working on is money possibly on its way. Closing
+        // the row under it would strand that payment; the screen does not offer this then.
+        if (SubscriptionAccessEvaluator.HasPaymentInFlight(previous))
+        {
+            throw new SubscriptionConflictException(
+                "payment_in_progress",
+                "Mercado Pago is still processing a payment for this checkout.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(previous.ExternalSubscriptionId))
+        {
+            await client.CancelSubscriptionAsync(previous.ExternalSubscriptionId, cancellationToken);
+        }
+
+        if (await NothingWasEverCollectedAsync(previous, cancellationToken))
+        {
+            await trialEligibility.ReleaseAsync(user, previous, cancellationToken);
+        }
+
+        previous.Status = "cancelada";
+        previous.CancelledAtUtc = DateTime.UtcNow;
+        previous.CheckoutUrl = null;
+        previous.UpdatedAtUtc = DateTime.UtcNow;
+        RecordEvent(previous, "cancel", "payer_email_changed", null, "Checkout replaced to pay with a different Mercado Pago account.");
+
+        // Saved on its own: once Mercado Pago has cancelled it, a failure opening the next
+        // one must not leave this row still offering a link that no longer works.
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Asks Mercado Pago for a checkout URL: one preapproval for this payer, whose id and
     /// <c>external_reference</c> are stamped on the local row before the redirect.
     ///
@@ -192,13 +289,12 @@ public sealed class SubscriptionService(
     /// can retry; a charge nobody can match is money we cannot account for.
     /// </summary>
     private async Task<string> OpenProviderCheckoutAsync(
-        User user,
         Subscription subscription,
         bool withTrial,
         CancellationToken cancellationToken)
     {
         var preapproval = await client.CreateSubscriptionAsync(
-            string.IsNullOrWhiteSpace(_options.TestPayerEmail) ? user.Email : _options.TestPayerEmail,
+            subscription.PayerEmail!,
             subscription.Id.ToString(),
             withTrial,
             cancellationToken);
@@ -481,7 +577,7 @@ public sealed class SubscriptionService(
 
             if (pending is not null)
             {
-                var candidates = await client.SearchSubscriptionsByPayerEmailAsync(user.Email, cancellationToken);
+                var candidates = await client.SearchSubscriptionsByPayerEmailAsync(pending.PayerEmail ?? user.Email, cancellationToken);
                 var found = candidates
                     .Where(candidate => candidate.Id is not null && candidate.PreapprovalPlanId == pending.ExternalPlanId)
                     .OrderByDescending(candidate => candidate.DateCreated)
@@ -1479,11 +1575,13 @@ public sealed class SubscriptionService(
         // failed partway (e.g. the process crashed after Mercado Pago accepted the
         // subscription but before the response was saved). The email Mercado Pago shares
         // with the seller is the best remaining signal: match it to whichever account most
-        // recently opened a checkout that never got linked.
+        // recently opened a checkout that never got linked — by the address the checkout
+        // was opened for first, since that is the one Mercado Pago knows.
         var normalizedEmail = payerEmail.Trim().ToLowerInvariant();
 
         return await db.Subscriptions
-            .Where(item => item.ExternalSubscriptionId == null && item.User!.Email == normalizedEmail)
+            .Where(item => item.ExternalSubscriptionId == null &&
+                           (item.PayerEmail == normalizedEmail || item.User!.Email == normalizedEmail))
             .OrderByDescending(item => item.CreatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
     }

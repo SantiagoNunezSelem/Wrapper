@@ -1,7 +1,9 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
+import { ApiError, startCheckout } from '../lib/api'
 import { formatMoney } from '../lib/format'
+import { defaultPayerEmail, isPlausibleEmail } from '../lib/payerEmail'
 import { ConfirmDialog } from './ConfirmDialog'
-import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
+import { PayerEmailPicker, PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
   SubscriptionInvoice,
@@ -34,7 +36,7 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   checkoutRejectedStatus: string
   checkoutRejectedHint: string
   resumeCheckoutCta: string
-  resumeCheckoutHint: string
+  payerEmailContinue: string
   alreadyPaidNote: string
   checkingStatus: string
   currentPlanTitle: string
@@ -58,6 +60,7 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   cancelConfirmBody: string
   cancelConfirmTrialBody: string
   cancelConfirmPendingBody: string
+  discardCheckoutPrompt: string
   discardCheckoutCta: string
   discardCheckoutTitle: string
   discardCheckoutYes: string
@@ -68,7 +71,6 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy {
   cancelledDone: string
   resumeCta: string
   resuming: string
-  refreshCta: string
   refreshing: string
   cancelling: string
   billedBy: string
@@ -146,6 +148,33 @@ export function SubscriptionPage({
   const plan = overview?.plan ?? null
   const actions = overview?.actions ?? null
   const locale = language === 'es' ? 'es-AR' : 'en-US'
+  const hasResumableCheckout = current?.status === 'pendiente' && Boolean(actions?.canResumeCheckout)
+  const isWaitingOnProvider = current?.status === 'pendiente'
+
+  // Re-checks with Mercado Pago when the person comes back to this tab — the usual
+  // moment after paying in another tab or the Mercado Pago app. Only while something is
+  // pending, and at most once a minute, since each check reaches Mercado Pago.
+  const refreshRef = useRef(onRefresh)
+  useEffect(() => {
+    refreshRef.current = onRefresh
+  })
+  const lastAutoRefresh = useRef(0)
+  useEffect(() => {
+    if (!isWaitingOnProvider) {
+      return
+    }
+
+    function handleVisible() {
+      if (document.visibilityState !== 'visible' || Date.now() - lastAutoRefresh.current < 60_000) {
+        return
+      }
+      lastAutoRefresh.current = Date.now()
+      refreshRef.current()
+    }
+
+    document.addEventListener('visibilitychange', handleVisible)
+    return () => document.removeEventListener('visibilitychange', handleVisible)
+  }, [isWaitingOnProvider])
 
   return (
     <div className="subpage">
@@ -204,7 +233,8 @@ export function SubscriptionPage({
               busyAction={busyAction}
               canResumeCheckout={Boolean(actions?.canResumeCheckout)}
               canCancel={Boolean(actions?.canCancel)}
-              onRefresh={onRefresh}
+              token={token}
+              payerEmailLocked={Boolean(user?.checkoutTestPayerEmail)}
               onCancel={onCancel}
             />
 
@@ -228,11 +258,14 @@ export function SubscriptionPage({
           </>
         ) : null}
 
-        {user && token && (actions?.canSubscribe ?? current === null) ? (
+        {/* Not while a checkout is waiting to be finished: the banner's "Terminar el pago"
+            is already the way to buy, and a second "Empezar" below it does the same thing
+            under another name. */}
+        {user && token && (actions?.canSubscribe ?? current === null) && !hasResumableCheckout ? (
           <PlansSection
             copy={copy}
             token={token}
-            userEmail={user.email}
+            user={user}
             plan={plan}
             overview={overview}
             title={current ? copy.resubscribeTitle : copy.plansTitle}
@@ -289,7 +322,8 @@ function StatusBanner({
   busyAction,
   canResumeCheckout,
   canCancel,
-  onRefresh,
+  token,
+  payerEmailLocked,
   onCancel,
 }: {
   current: SubscriptionRecord
@@ -299,7 +333,9 @@ function StatusBanner({
   busyAction: SubscriptionBusyAction | null
   canResumeCheckout: boolean
   canCancel: boolean
-  onRefresh: () => void
+  token: string | null
+  /** `MercadoPago:TestPayerEmail` is set: the address is shown but cannot be changed. */
+  payerEmailLocked: boolean
   onCancel: () => void
 }) {
   // Closing an unfinished attempt lives here because the plan card it used to live in is
@@ -360,34 +396,45 @@ function StatusBanner({
         </p>
       ) : null}
 
+      {/* One button, nothing competing with it. Checking with Mercado Pago happens on its
+          own (on the way back from the checkout, when the tab regains focus, and on the
+          server's timer), so there is no "Actualizar estado" to press; and giving up on
+          the attempt is a quiet link, not a second button of the same weight. */}
       {current.status === 'pendiente' ? (
         <>
-          <div className="subpage-banner-actions">
-            {canResumeCheckout && current.checkoutUrl ? (
-              <a className="primary-button" href={current.checkoutUrl}>
-                {copy.resumeCheckoutCta}
-              </a>
-            ) : null}
-            <button type="button" className="ghost-button" onClick={onRefresh} disabled={isBusy}>
-              {busyAction === 'refresh' ? copy.checkingStatus : copy.refreshCta}
-            </button>
-            {canCancel ? (
+          {canResumeCheckout && current.checkoutUrl ? (
+            <ResumeCheckout
+              copy={copy}
+              token={token}
+              checkoutUrl={current.checkoutUrl}
+              // With a charge already moving (a bank asking the payer to confirm, say),
+              // going back to the same page is still the way forward — but opening it
+              // for another account would abandon money that may be on its way.
+              openedFor={isUnfinishedCheckout ? current.payerEmail : null}
+              payerEmailLocked={payerEmailLocked}
+              disabled={isBusy}
+            />
+          ) : null}
+          <p className="subpage-banner-fineprint" aria-live="polite">
+            {busyAction === 'refresh'
+              ? copy.checkingStatus
+              : isUnfinishedCheckout
+                ? copy.checkoutOpenPaidNote
+                : copy.alreadyPaidNote}
+          </p>
+          {canCancel ? (
+            <p className="subpage-banner-fineprint">
+              {copy.discardCheckoutPrompt}{' '}
               <button
                 type="button"
-                className="ghost-button"
+                className="subpage-text-link"
                 onClick={() => setDiscarding(true)}
                 disabled={isBusy}
               >
                 {busyAction === 'cancel' ? copy.cancelling : copy.discardCheckoutCta}
               </button>
-            ) : null}
-          </div>
-          {canResumeCheckout && current.checkoutUrl ? (
-            <p className="subpage-banner-fineprint">{copy.resumeCheckoutHint}</p>
+            </p>
           ) : null}
-          <p className="subpage-banner-fineprint">
-            {isUnfinishedCheckout ? copy.checkoutOpenPaidNote : copy.alreadyPaidNote}
-          </p>
         </>
       ) : null}
 
@@ -410,6 +457,114 @@ function StatusBanner({
         />
       ) : null}
     </section>
+  )
+}
+
+/**
+ * The way back into an unfinished checkout: who it was opened for, and one button.
+ *
+ * Mercado Pago never tells us a checkout was turned away because the address did not
+ * match — the payer just comes back with nothing done. So the address is always on
+ * show, with "Cambiar" next to it (the "¿no es tu cuenta?" pattern), rather than a
+ * warning that blames it. Left alone, the button goes straight back to the same
+ * Mercado Pago page; with a different address typed in, it opens a new checkout for
+ * that account instead — the server closes the old one first, so two are never payable
+ * at once.
+ */
+function ResumeCheckout({
+  copy,
+  token,
+  checkoutUrl,
+  openedFor,
+  payerEmailLocked,
+  disabled,
+}: {
+  copy: SubscriptionPageCopy
+  token: string | null
+  checkoutUrl: string
+  /** Null on checkouts opened before the address was stored. */
+  openedFor: string | null
+  payerEmailLocked: boolean
+  disabled: boolean
+}) {
+  const [typedEmail, setTypedEmail] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [emailError, setEmailError] = useState('')
+  const [error, setError] = useState('')
+  const [isRedirecting, setIsRedirecting] = useState(false)
+
+  const email = typedEmail ?? openedFor ?? ''
+  const isNewAddress =
+    isEditing && !payerEmailLocked && email.trim().toLowerCase() !== (openedFor ?? '').toLowerCase()
+
+  async function openForNewAddress() {
+    const chosen = email.trim()
+    if (!isPlausibleEmail(chosen)) {
+      setEmailError(copy.payerEmailInvalid)
+      return
+    }
+    if (!token) {
+      return
+    }
+
+    setIsRedirecting(true)
+    setError('')
+
+    try {
+      const { initPoint } = await startCheckout(token, chosen)
+      window.location.href = initPoint
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'invalid_payer_email') {
+        setEmailError(copy.payerEmailInvalid)
+      } else {
+        setError(caught instanceof Error ? caught.message : copy.genericError)
+      }
+      setIsRedirecting(false)
+    }
+  }
+
+  return (
+    <div className="subpage-banner-resume">
+      {openedFor && token ? (
+        <PayerEmailPicker
+          copy={copy}
+          email={email}
+          isEditing={isEditing}
+          locked={payerEmailLocked}
+          error={emailError}
+          disabled={disabled || isRedirecting}
+          onEdit={() => setIsEditing(true)}
+          onChange={(value) => {
+            setTypedEmail(value)
+            setEmailError('')
+          }}
+          onCancelEdit={() => {
+            setIsEditing(false)
+            setTypedEmail(null)
+            setEmailError('')
+          }}
+        />
+      ) : null}
+
+      {/* A plain link while the address is unchanged: it is the same Mercado Pago page as
+          before, and a link keeps working without a round trip (or a middle click). */}
+      {isNewAddress ? (
+        <button
+          type="button"
+          className="primary-button subpage-banner-cta"
+          onClick={() => void openForNewAddress()}
+          disabled={disabled || isRedirecting}
+        >
+          {isRedirecting ? copy.redirecting : copy.payerEmailContinue}
+        </button>
+      ) : (
+        <a className="primary-button subpage-banner-cta" href={checkoutUrl}>
+          {copy.resumeCheckoutCta}
+        </a>
+      )}
+
+      {error ? <p className="plan-flow-error">{error}</p> : null}
+    </div>
   )
 }
 
@@ -599,14 +754,14 @@ function buildCancelBody(current: SubscriptionRecord, copy: SubscriptionPageCopy
 function PlansSection({
   copy,
   token,
-  userEmail,
+  user,
   plan,
   overview,
   title,
 }: {
   copy: SubscriptionPageCopy
   token: string
-  userEmail: string
+  user: UserProfile
   plan: SubscriptionOverview['plan'] | null
   overview: SubscriptionOverview | null
   title: string
@@ -632,7 +787,8 @@ function PlansSection({
             <PlanPurchaseFlow
               copy={copy}
               token={token}
-              userEmail={userEmail}
+              payerEmail={defaultPayerEmail(user, overview)}
+              payerEmailLocked={Boolean(user.checkoutTestPayerEmail)}
               plan={plan}
               trialAvailable={Boolean(overview?.trialAvailable)}
               trialDeniedReason={overview?.trialDeniedReason ?? null}

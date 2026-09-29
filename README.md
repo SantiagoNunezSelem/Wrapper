@@ -119,6 +119,23 @@ alojada de Mercado Pago a autorizarla:
    con `status: "pending"`, `payer_email`, `back_url`, el `auto_recurring` (con
    `free_trial` cuando corresponde) y —lo importante— `external_reference` con el id de
    la fila local.
+
+   > **`free_trial` no está documentado para suscripciones sin plan**: la referencia de
+   > `POST /preapproval` no lo lista, sólo `/preapproval_plan`. Si Mercado Pago lo ignorara,
+   > se le cobraría el día uno a quien le prometimos la semana gratis. Por eso el panel admin
+   > (Sistema → Integraciones → **Prueba gratis en Mercado Pago**, `FreeTrialProbe`) relee de
+   > Mercado Pago el último checkout real abierto con prueba y marca error si no la guardó.
+   > Mirarlo después del primer checkout con prueba en producción.
+
+   El `payer_email` **no es un dato de contacto**: Mercado Pago solo deja autorizar el
+   preapproval a la cuenta que tiene exactamente ese mail, y a cualquier otra la rebota
+   en su propia página ("Tu e-mail no coincide con el de la suscripción"). Por eso la
+   tarjeta del plan muestra el mail con el que se va a abrir el pago (el de Google por
+   defecto) y deja cambiarlo antes de salir. El mail elegido queda guardado en la fila
+   (`PayerEmail`). Si se pide el checkout con el mismo mail, se retoma el que ya estaba
+   abierto. Si se pide con otro, el anterior se cancela en Mercado Pago y se abre uno
+   nuevo, así nunca hay dos que se puedan pagar a la vez. Un checkout sin terminar
+   también ofrece "Pagar con otro mail" desde el cartel de estado.
 2. Mercado Pago devuelve el `id` del preapproval y un `init_point`. El id se guarda
    **antes** de mandar a nadie a pagar; el navegador va al `init_point`.
 3. El pagador autoriza en la página de Mercado Pago y el preapproval pasa de `pending` a
@@ -130,7 +147,7 @@ todos al `init_point` compartido del *plan*. Ese link es anónimo: Mercado Pago 
 suscripción de su lado con un id que nunca vemos y sin `external_reference`, así que lo
 único que quedaba para volver a la fila local era el **mail de la cuenta de Mercado Pago
 del pagador** — que muy seguido no es el mismo Gmail con el que se logueó en Vistazo.
-Cuando difieren, ni el webhook ni "Actualizar estado" pueden vincularlos: la tarjeta se
+Cuando difieren, ni el webhook ni la sincronización pueden vincularlos: la tarjeta se
 cobra y la app dice "pendiente" para siempre.
 
 > **Nota sobre el 404 `"Card token service not found"`.** Ese error aparecía al usar
@@ -211,8 +228,8 @@ checkout desde el propio sitio de Mercado Pago en vez de por API):
 | Vendedor | `3587267082` | `TESTUSER4000554943837637660` | `eiukCdxpbt` | `267082` |
 
 > **Para ejercitar el checkout entero contra el vendedor de prueba hace falta
-> `MercadoPago:TestPayerEmail`.** El `payer_email` que manda el checkout es el mail de
-> Google del que está logueado, y ése es un pagador *real*: contra un vendedor de prueba
+> `MercadoPago:TestPayerEmail`.** El `payer_email` que manda el checkout es, por defecto,
+> el mail de Google del que está logueado, y ése es un pagador *real*: contra un vendedor de prueba
 > Mercado Pago lo rechaza con `400 Both payer and collector must be real or test users`.
 > El mail del comprador de prueba es un `@testuser.com` generado, con el que no se puede
 > entrar por Google, así que se pasa por configuración:
@@ -310,7 +327,10 @@ a más lenta:
    Pago** si la última consulta tiene más de 20 segundos. Es la red que faltaba: quien pagó
    y no volvió por el `back_url` entra a la app y lo primero que hace la app es ir a
    fijarse, en vez de mostrarle un "pendiente" guardado de antes.
-3. El botón **Actualizar estado** vuelve a leer todo desde Mercado Pago a pedido.
+3. **Volver a la pestaña con algo pendiente también vuelve a preguntar** (como mucho una
+   vez por minuto): es el momento típico después de pagar en otra pestaña o en la app de
+   Mercado Pago. Por eso ya no hay un botón de "Actualizar estado" que competía con
+   "Terminar el pago".
 4. Un **reconciliador en segundo plano** (`SubscriptionReconciliationService`) repasa cada
    15 minutos las suscripciones que están en movimiento —pendientes recientes, cobros
    rechazados, renovaciones vencidas— y aplica lo que Mercado Pago diga. Una notificación
@@ -321,7 +341,7 @@ a más lenta:
 > guardado. Todo checkout que abre lo tiene —se guarda antes del redirect— así que la red
 > cubre todo lo que se abre hoy. Lo que queda afuera son las filas viejas creadas por el
 > link compartido del plan, de cuando existía ese camino: no tienen id, y sólo se pueden
-> vincular buscando por el mail del pagador (**Actualizar estado** lo intenta).
+> vincular buscando por el mail del pagador (la sincronización lo intenta).
 
 ### 3.1. Cuando igual queda en "pendiente": `GET /api/subscription/diagnostics`
 
@@ -380,7 +400,8 @@ historial de cobros y la auditoría.
 | Acción | Endpoint | Qué hace de verdad |
 | --- | --- | --- |
 | Terminar un pago a medias | — (link guardado) | Vuelve al mismo `init_point`. Abrir un checkout nuevo estando uno pendiente **no crea otro**: se retoma, porque dos suscripciones autorizables son dos cobros mensuales. |
-| Actualizar estado | `POST /api/subscription/sync` | Relee el preapproval, sus cobros y el `status_detail` del pago que no cerró. |
+| Cambiar la cuenta de Mercado Pago | `POST /api/subscription/checkout` con otro `payerEmail` | Cancela en Mercado Pago el checkout sin terminar y abre uno nuevo a nombre de ese mail. No se ofrece con un cobro en curso. |
+| Sincronizar | `POST /api/subscription/sync` | Relee el preapproval, sus cobros y el `status_detail` del pago que no cerró. Lo dispara la pantalla sola (al volver del checkout, al abrirla y al volver a la pestaña), no un botón. |
 | Cancelar renovación | `POST /api/subscription/cancel` | Cancela en Mercado Pago. **El acceso NO se corta**: se conserva hasta el final del período pago. |
 | Reanudar | `POST /api/subscription/resume` | Vuelve a poner en marcha una suscripción pausada. La app no ofrece pausar, pero el pagador puede hacerlo desde su propia cuenta de Mercado Pago, y quien quedó pausado necesita una forma de volver. |
 | Cambiar la tarjeta | — (link externo) | Mercado Pago no expone API para reemplazar la tarjeta de un preapproval existente; se linkea a la cuenta del pagador. |
@@ -411,10 +432,10 @@ Dos detalles que valen por sí solos:
   | --- | --- | --- |
   | Panel de `/suscripcion` | "Procesando el pago", en ámbar | "Pago sin terminar", neutro, y **dice que no se cobró nada** |
   | Chip del menú de cuenta / mobile | "Procesando el pago" | "Sin suscripción" (`GetVisibleState` no lo reporta como pendiente) |
-  | Acciones | Terminar el pago · Actualizar estado | …y además vuelve a ofrecer el plan, para que la pantalla no sea un callejón sin salida |
+  | Acciones | Terminar el pago | Terminar el pago, con la cuenta de Mercado Pago a la vista y "Cambiar" · "Descartar este intento" como link. La tarjeta del plan **no** se muestra: su "Empezar" haría lo mismo que "Terminar el pago" con otro nombre |
 
-  Las dos siguen ofreciendo retomar el checkout guardado y "Actualizar estado": si alguien
-  pagó y todavía no nos enteramos, la salida está a un toque.
+  Las dos siguen ofreciendo retomar el checkout guardado, y si alguien pagó y todavía no
+  nos enteramos, la pantalla vuelve a preguntarle a Mercado Pago sola.
 
 Qué botones existen lo decide el **backend** (`overview.actions`), no la pantalla: si no,
 las reglas se separan entre el shell de escritorio y el móvil, y la UI termina ofreciendo
