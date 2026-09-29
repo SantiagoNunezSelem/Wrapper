@@ -25,7 +25,7 @@ export const shellCopy = {
   es: {
     title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' },
     landingSubtitle: 'La verdad de tu grupo, en gráficos.',
-    heroCaption: 'El resumen que tu grupo no pidió.',
+    heroCaption: 'El resumen que nadie pidió.',
     whatItDoesTitle: '¿Para qué sirve?',
     whatItDoesBody:
       'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión. Las dos métricas Pro con IA son la única excepción, y te pedimos permiso antes.',
@@ -510,7 +510,7 @@ export const shellCopy = {
     ],
     footerPrivacy:
       'Tu chat se procesa en tu dispositivo y nunca se sube entero. No compartimos nada sin tu permiso.',
-    footerRights: 'Hecho sin nada mejor que hacer un domingo.',
+    footerRights: 'Hecho sin nada mejor que hacer.',
     /* Textos que sólo existen en el shell de mobile: pestañas, hoja de subida,
        modo historia. Viven acá y no adentro de los componentes, para que sigan
        la misma regla que el resto — un solo lugar, los dos idiomas. */
@@ -1015,7 +1015,7 @@ export const shellCopy = {
     ],
     footerPrivacy:
       'Your chat is processed on your device and never fully uploaded. Nothing is shared without your permission.',
-    footerRights: 'Made with nothing better to do on a Sunday.',
+    footerRights: 'Made with nothing better to do.',
     mobile: {
       tabs: { home: 'Home', metrics: 'Metrics', history: 'History', account: 'Account' },
       openMenu: 'Open menu',
