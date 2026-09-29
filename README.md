@@ -120,6 +120,13 @@ alojada de Mercado Pago a autorizarla:
    `free_trial` cuando corresponde) y —lo importante— `external_reference` con el id de
    la fila local.
 
+   > **`free_trial` no está documentado para suscripciones sin plan**: la referencia de
+   > `POST /preapproval` no lo lista, sólo `/preapproval_plan`. Si Mercado Pago lo ignorara,
+   > se le cobraría el día uno a quien le prometimos la semana gratis. Por eso el panel admin
+   > (Sistema → Integraciones → **Prueba gratis en Mercado Pago**, `FreeTrialProbe`) relee de
+   > Mercado Pago el último checkout real abierto con prueba y marca error si no la guardó.
+   > Mirarlo después del primer checkout con prueba en producción.
+
    El `payer_email` **no es un dato de contacto**: Mercado Pago solo deja autorizar el
    preapproval a la cuenta que tiene exactamente ese mail, y a cualquier otra la rebota
    en su propia página ("Tu e-mail no coincide con el de la suscripción"). Por eso la

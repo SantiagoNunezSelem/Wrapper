@@ -175,7 +175,7 @@ public class AdminReportsServiceTests : IDisposable
         var mp = new MercadoPagoOptions { AccessToken = "APP_USR-1", BackUrl = "http://localhost:5173" };
         Save(new SubscriptionEvent { Topic = "checkout", Action = "no_trial", Notes = "trial denied: device_used", CreatedAtUtc = DateTime.UtcNow.AddDays(-1) });
 
-        var report = await Service(mp).GetSystemReportAsync(new MercadoPagoAccount(1, "TESTUSER1"), [], DateTime.UtcNow, default);
+        var report = await Service(mp).GetSystemReportAsync(new MercadoPagoAccount(1, "TESTUSER1"), null, [], DateTime.UtcNow, default);
         var state = report.Integrations.ToDictionary(item => item.Key, item => item.State);
 
         Assert.Equal("Testing", report.Environment);
@@ -193,7 +193,7 @@ public class AdminReportsServiceTests : IDisposable
     [Fact]
     public async Task Sistema_sin_credenciales_de_Mercado_Pago_lo_marca_como_error()
     {
-        var report = await Service().GetSystemReportAsync(null, [], DateTime.UtcNow, default);
+        var report = await Service().GetSystemReportAsync(null, null, [], DateTime.UtcNow, default);
 
         Assert.Equal(IntegrationStates.Bad, report.Integrations.Single(item => item.Key == "mercadopago").State);
     }

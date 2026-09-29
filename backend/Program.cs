@@ -97,6 +97,7 @@ builder.Services.AddScoped<AdminReportsService>();
 builder.Services.AddScoped<AdminAuditService>();
 builder.Services.AddScoped<AdminAccessService>();
 builder.Services.AddScoped<MercadoPagoAccountProbe>();
+builder.Services.AddScoped<FreeTrialProbe>();
 // The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
 // notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
 // there are no credentials.
