@@ -23,7 +23,7 @@ export const landingMockupStats = {
 
 export const shellCopy = {
   es: {
-    title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' },
+    title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' }, 
     landingSubtitle: 'La verdad de tu grupo, en gráficos.',
     heroCaption: 'El resumen que nadie pidió.',
     whatItDoesTitle: '¿Para qué sirve?',
