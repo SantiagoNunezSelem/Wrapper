@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
 import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
 import { useModalDismiss } from '../../components/useModalDismiss'
+import { useSheetDrag } from './useSheetDrag'
 import { WhatsAppRedirectConfirm } from '../../components/WhatsAppRedirectConfirm'
 import { detectDefaultTutorialPlatform } from '../../lib/detectPlatform'
 import { usePwaInstall } from '../../lib/usePwaInstall'
@@ -29,6 +30,7 @@ export function ExportTutorialSheet({
 
   // Escape, scroll de fondo y foco: los mismos que el resto de los diálogos.
   const panelRef = useModalDismiss<HTMLElement>(onClose)
+  useSheetDrag(panelRef, onClose)
 
   const steps = copy.steps[platform]
   const active = steps[step]

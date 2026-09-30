@@ -21,6 +21,7 @@ import { MetricSheet } from './MetricSheet'
 import { MobileDrawer } from './MobileDrawer'
 import { MobileTabBar, type MobileTab } from './MobileTabBar'
 import { MobileAccount, MobileHistory, MobileHome } from './MobileViews'
+import { useSheetDrag } from './useSheetDrag'
 import './mobile.css'
 
 // Tres pantallas que sólo aparecen después de un toque, y entre las tres son la mayor
@@ -616,6 +617,7 @@ function AuthSheet({
   children: React.ReactNode
 }) {
   const panelRef = useModalDismiss<HTMLElement>(onClose)
+  useSheetDrag(panelRef, onClose)
 
   return (
     <div className="m-layer" role="dialog" aria-modal="true" aria-label={title}>
