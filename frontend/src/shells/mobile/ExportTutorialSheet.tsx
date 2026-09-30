@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
 import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { useSheetDrag } from './useSheetDrag'
 import { WhatsAppRedirectConfirm } from '../../components/WhatsAppRedirectConfirm'
-import { detectDefaultTutorialPlatform } from '../../lib/detectPlatform'
+import { detectDefaultTutorialPlatform, isIosTutorialEnabled } from '../../lib/detectPlatform'
 import { usePwaInstall } from '../../lib/usePwaInstall'
+import { preloadTutorialVideos } from '../../lib/tutorialVideos'
 import { openWhatsAppApp } from '../../lib/whatsappLink'
 
 /**
@@ -31,6 +32,14 @@ export function ExportTutorialSheet({
   // Escape, scroll de fondo y foco: los mismos que el resto de los diálogos.
   const panelRef = useModalDismiss<HTMLElement>(onClose)
   useSheetDrag(panelRef, onClose)
+
+  // Los videos de los pasos siguientes empiezan a bajar apenas se abre el tutorial,
+  // mientras se lee el paso 1 (que no tiene video) — ver lib/tutorialVideos.
+  useEffect(() => {
+    if (platform === 'android') {
+      preloadTutorialVideos()
+    }
+  }, [platform])
 
   const steps = copy.steps[platform]
   const active = steps[step]
@@ -93,14 +102,17 @@ export function ExportTutorialSheet({
         </header>
 
         <div className="m-sheet-body">
-          <div className="m-tutorial-os-toggle" role="tablist" aria-label="OS">
-            <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
-              {copy.os.ios}
-            </button>
-            <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
-              {copy.os.android}
-            </button>
-          </div>
+          {/* Oculto mientras el tutorial de iOS no esté listo — ver isIosTutorialEnabled. */}
+          {isIosTutorialEnabled ? (
+            <div className="m-tutorial-os-toggle" role="tablist" aria-label="OS">
+              <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
+                {copy.os.ios}
+              </button>
+              <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
+                {copy.os.android}
+              </button>
+            </div>
+          ) : null}
 
           <div className="m-tutorial-art">
             {active.install ? (

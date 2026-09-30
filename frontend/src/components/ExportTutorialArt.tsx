@@ -1,5 +1,6 @@
-import type { JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { prefersReducedMotion } from '../lib/prefersReducedMotion'
+import { tutorialVideoSources, tutorialVideoUrl } from '../lib/tutorialVideos'
 
 /**
  * Ilustraciones del tutorial "¿Cómo exporto mi chat?" — SVG original propio
@@ -540,6 +541,46 @@ function cropFor(step: number, platform: ExportTutorialPlatform): [number, numbe
  * la lista de pasos). `chrome=false` recorta sólo la franja relevante del
  * paso, sin marco, pensado para ir dentro de la hoja de mobile.
  */
+/**
+ * Un video del tutorial con un spinner encima hasta que llega el primer cuadro. Los
+ * MP4 pesan varios MB y sin esto el paso quedaba vacío unos segundos, como si
+ * estuviera roto. El contenedor ya tiene la proporción del video (1080×1350), así que
+ * el spinner ocupa el mismo lugar que el video y nada salta cuando aparece.
+ */
+function TutorialVideo({ src, label }: { src: string; label: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Si el video ya estaba en caché, `loadeddata` puede dispararse antes de que React
+  // enganche el handler: se mira el estado directamente al montar.
+  useEffect(() => {
+    if ((videoRef.current?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setIsLoading(false)
+    }
+  }, [])
+
+  return (
+    <div className={`tutorial-video ${isLoading ? 'is-loading' : ''}`}>
+      <video
+        ref={videoRef}
+        // Precargado en memoria si el tutorial ya lo bajó (ver lib/tutorialVideos).
+        src={tutorialVideoUrl(src)}
+        className="tutorial-gif"
+        aria-label={label}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        onLoadedData={() => setIsLoading(false)}
+        // Sin video no tiene sentido dejar el spinner girando para siempre.
+        onError={() => setIsLoading(false)}
+      />
+      {isLoading ? <span className="tutorial-video-spinner" role="status" aria-label={label} /> : null}
+    </div>
+  )
+}
+
 export function ExportTutorialArt({
   step,
   platform,
@@ -552,17 +593,9 @@ export function ExportTutorialArt({
   // Pasos 2 y 3 de Android (el paso 1 es "instalar la app", sin video): grabaciones
   // reales en vez de la ilustración SVG de abajo, que sólo sigue en pie para iOS.
   if (platform === 'android' && (step === 1 || step === 2)) {
-    return (
-      <video
-        src={step === 1 ? '/tutorial/export-android-step2.mp4' : '/tutorial/export-android-step3.mp4'}
-        className="tutorial-gif"
-        aria-label={`Paso ${step + 1}`}
-        autoPlay
-        loop
-        muted
-        playsInline
-      />
-    )
+    const src = step === 1 ? tutorialVideoSources[0] : tutorialVideoSources[1]
+    // `key`: al pasar de un paso al otro el spinner vuelve a arrancar desde cero.
+    return <TutorialVideo key={src} src={src} label={`Paso ${step + 1}`} />
   }
 
   if (chrome) {

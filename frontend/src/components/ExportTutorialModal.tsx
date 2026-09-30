@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { detectDefaultTutorialPlatform } from '../lib/detectPlatform'
+import { useEffect, useState } from 'react'
+import { detectDefaultTutorialPlatform, isIosTutorialEnabled } from '../lib/detectPlatform'
 import { usePwaInstall } from '../lib/usePwaInstall'
+import { preloadTutorialVideos } from '../lib/tutorialVideos'
 import { openWhatsAppApp } from '../lib/whatsappLink'
 import { ExportTutorialArt, type ExportTutorialPlatform } from './ExportTutorialArt'
 import { ModalShell } from './ModalShell'
@@ -48,6 +49,14 @@ export function ExportTutorialModal({
   const [step, setStep] = useState(0)
   const [isWhatsAppConfirmOpen, setIsWhatsAppConfirmOpen] = useState(false)
   const { canInstall, isInstalled, install } = usePwaInstall()
+
+  // Los videos de los pasos siguientes empiezan a bajar apenas se abre el tutorial,
+  // mientras se lee el paso 1 (que no tiene video) — ver lib/tutorialVideos.
+  useEffect(() => {
+    if (platform === 'android') {
+      preloadTutorialVideos()
+    }
+  }, [platform])
 
   const steps = copy.steps[platform]
   const activeStep = steps[step]
@@ -99,14 +108,17 @@ export function ExportTutorialModal({
         <p className="eyebrow">{copy.eyebrow}</p>
         <h2>{copy.title}</h2>
 
-        <div className="tutorial-os-toggle" role="tablist" aria-label="OS">
-          <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
-            {copy.os.ios}
-          </button>
-          <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
-            {copy.os.android}
-          </button>
-        </div>
+        {/* Oculto mientras el tutorial de iOS no esté listo — ver isIosTutorialEnabled. */}
+        {isIosTutorialEnabled ? (
+          <div className="tutorial-os-toggle" role="tablist" aria-label="OS">
+            <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
+              {copy.os.ios}
+            </button>
+            <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
+              {copy.os.android}
+            </button>
+          </div>
+        ) : null}
 
         <div className="tutorial-body">
           <div className="tutorial-steps">

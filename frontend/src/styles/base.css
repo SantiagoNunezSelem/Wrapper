@@ -3107,3 +3107,54 @@ a.subpage-banner-cta {
   opacity: 1;
 }
 
+
+/* ==========================================================================
+   Video del tutorial de exportación (TutorialVideo, en ExportTutorialArt)
+   ==========================================================================
+   El contenedor reserva la proporción del video (1080×1350) desde antes de que
+   cargue, y el spinner va centrado ahí adentro: sólo en la sección del video, no
+   sobre toda la pantalla. */
+
+.tutorial-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1080 / 1350;
+  border-radius: var(--vz-radius-md);
+  overflow: hidden;
+  background: var(--vz-surface-2);
+}
+
+/* Más específico que `.tutorial-art .tutorial-gif` (desktop) y
+   `.m-tutorial-art .tutorial-gif` (mobile), que le ponen height: auto. */
+.tutorial-video > video.tutorial-gif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+  transition: opacity 200ms ease;
+}
+
+.tutorial-video.is-loading > video.tutorial-gif {
+  opacity: 0;
+}
+
+.tutorial-video-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 3px solid var(--vz-surface-5);
+  border-top-color: var(--vz-brand-cyan);
+  animation: overlaySpin 800ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-video-spinner {
+    animation-duration: 2.4s;
+  }
+}

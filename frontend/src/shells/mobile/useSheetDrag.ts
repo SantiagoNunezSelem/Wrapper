@@ -2,7 +2,7 @@ import { useEffect, useRef, type RefObject } from 'react'
 import { prefersReducedMotion } from '../../lib/prefersReducedMotion'
 
 /** Qué fracción del alto de la hoja hay que arrastrarla para que se cierre. */
-const CLOSE_FRACTION = 0.7
+const CLOSE_FRACTION = 0.3
 /** Cuánto tiene que moverse el dedo antes de decidir si es un arrastre o un scroll. */
 const DRAG_SLOP_PX = 6
 const SETTLE_MS = 220
@@ -11,13 +11,12 @@ const SETTLE_MS = 220
  * Arrastrar una hoja de mobile hacia abajo para cerrarla — el gesto que promete la
  * barrita de arriba (`.m-grabber`).
  *
- * Se mueve la hoja entera y sólo hacia abajo. Pasado el 70% de su alto se cierra
+ * Se mueve la hoja entera y sólo hacia abajo. Pasado el 30% de su alto se cierra
  * (lo mismo que la cruz); si se suelta antes, vuelve a su lugar.
  *
- * El gesto puede arrancar en cualquier parte de la hoja: desde la cabecera siempre, y
- * desde el cuerpo sólo si ya está scrolleado hasta arriba — si no, tirar hacia abajo
- * es scrollear el contenido, como en cualquier hoja nativa. Un movimiento más de
- * costado que vertical (un heatmap que se desliza) tampoco cuenta.
+ * El gesto sólo arranca en la cabecera: la barrita y el título. El contenido (el
+ * número, el subtítulo, los gráficos) nunca mueve la hoja — ahí tirar hacia abajo es
+ * scrollear. Un movimiento más de costado que vertical tampoco cuenta.
  *
  * Eventos táctiles y no pointer events a propósito: es un gesto de teléfono, y con
  * mouse la hoja se sigue cerrando con la cruz, el fondo o Escape.
@@ -61,8 +60,8 @@ export function useSheetDrag(panelRef: RefObject<HTMLElement | null>, onClose: (
       startY = touch.clientY
       offset = 0
       dragging = false
-      const body = (event.target as Element).closest('.m-sheet-body')
-      canDrag = !body || body.scrollTop <= 0
+      const target = event.target as Element
+      canDrag = Boolean(target.closest('.m-grabber, .m-sheet-head'))
     }
 
     function handleMove(event: TouchEvent) {
