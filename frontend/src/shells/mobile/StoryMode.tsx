@@ -461,7 +461,9 @@ export function StoryMode({
 
           {revealed ? (
             <>
-              <strong className="m-story-huge">
+              {/* Un valor largo ("Risa descontrolada") a tamaño de número se partía a mitad
+                  de palabra; con más de ~10 letras baja un escalón. */}
+              <strong className={`m-story-huge ${card.basic.value.length > 10 ? 'is-long' : ''}`}>
                 {heroSplit?.emoji ? <span className="stat-emoji">{heroSplit.emoji} </span> : null}
                 <span className="gradient-text">{statValue}</span>
               </strong>

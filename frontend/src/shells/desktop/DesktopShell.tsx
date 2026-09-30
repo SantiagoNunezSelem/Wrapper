@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Vistazo } from '../../app/useVistazo'
 import { AiConsentModal } from '../../components/AiConsentModal'
 import { DevToolbar } from '../../components/DevToolbar'
@@ -20,7 +20,7 @@ import { VipBadge } from '../../components/VipBadge'
 import { VipUnlockPopover } from '../../components/VipUnlockPopover'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { RenameDialog } from '../../components/RenameDialog'
-import { landingMockupStats, type ShellCopy } from '../../copy/shellCopy'
+import type { ShellCopy } from '../../copy/shellCopy'
 import { formatNumber } from '../../lib/metrics'
 import { useInView } from '../../lib/useInView'
 import { usePwaInstall } from '../../lib/usePwaInstall'
@@ -105,7 +105,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     navigateTo,
     goToSubscriptionPage,
     requestUnlock,
-    requestUpload,
     openFilePicker,
     processFile,
     handleFileSelection,
@@ -162,23 +161,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
   const heroReveal = useInView<HTMLElement>()
   const stepsReveal = useInView<HTMLElement>()
   const examplesReveal = useInView<HTMLElement>()
-  const uploadReveal = useInView<HTMLElement>()
-
-  // La pantalla del teléfono se inclina hacia el cursor — un parallax 3D
-  // chico, amortiguado a ±10deg para que se lea vivo y no como un truco.
-  // Depende del mouse, así que es de este shell y de ningún otro.
-  const [phoneTilt, setPhoneTilt] = useState({ x: 0, y: 0 })
-
-  function handlePhoneTilt(event: MouseEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const relX = (event.clientX - rect.left) / rect.width - 0.5
-    const relY = (event.clientY - rect.top) / rect.height - 0.5
-    setPhoneTilt({ x: relY * -12, y: relX * 12 })
-  }
-
-  function resetPhoneTilt() {
-    setPhoneTilt({ x: 0, y: 0 })
-  }
 
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
@@ -275,7 +257,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           <span className="brand-orb" />
           <div>
             <strong>Vistazo</strong>
-            <small>{copy.heroCaption}</small>
           </div>
         </button>
 
@@ -421,6 +402,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                         card={card}
                         seeMoreLabel={copy.seeMore}
                         unlockLabel={copy.unlock}
+                        tierLabel={copy.proTag}
                         ai={aiPanel}
                         onOpen={openMetricDetail}
                         onUnlock={requestUnlock}
@@ -497,46 +479,19 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
               </h1>
               <p className="lead">{copy.landingSubtitle}</p>
 
-              <div className="landing-actions">
-                <button type="button" className="primary-button" onClick={requestUpload}>
-                  {busyMessage || copy.startNow}
-                </button>
-                {!user ? (
-                  <button type="button" className="ghost-button" onClick={() => setIsAuthModalOpen(true)}>
-                    {copy.login}
-                  </button>
-                ) : null}
-              </div>
+              <p className="landing-trust">{copy.heroTrust}</p>
             </div>
 
-            <div
-              className={`landing-visual reveal ${heroReveal.inView ? 'is-visible' : ''}`}
-              onMouseMove={handlePhoneTilt}
-              onMouseLeave={resetPhoneTilt}
-            >
-              <div className="phone-mockup">
-                <div
-                  className="phone-screen"
-                  style={{ transform: `rotateX(${phoneTilt.x}deg) rotateY(${phoneTilt.y}deg)` }}
-                >
-                  <div className="mockup-glow" />
-                  {landingMockupStats[language].map((stat, index) => (
-                    <div key={stat.label} className={`mockup-stat stat-${['a', 'b', 'c'][index]}`}>
-                      <strong>{stat.value}</strong>
-                      <span>{stat.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <span className="floating-chip chip-1" aria-hidden="true">
-                😂
-              </span>
-              <span className="floating-chip chip-2" aria-hidden="true">
-                🚩
-              </span>
-              <span className="floating-chip chip-3" aria-hidden="true">
-                🔥
-              </span>
+            <div className={`landing-upload reveal ${heroReveal.inView ? 'is-visible' : ''}`}>
+              <FileUploadZone
+                copy={copy.uploadZone}
+                onFileSelect={processFile}
+                isLoading={Boolean(busyMessage)}
+                loadingMessage={busyMessage}
+              />
+              <button type="button" className="landing-howto" onClick={() => setIsExportTutorialOpen(true)}>
+                {copy.howToExport}
+              </button>
             </div>
           </section>
 
@@ -576,6 +531,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                       card={card}
                       seeMoreLabel={copy.seeMore}
                       unlockLabel={copy.unlock}
+                      tierLabel={copy.proTag}
                       onOpen={(selected) => setSelectedMetricId(selected.id)}
                       onUnlock={requestUnlock}
                     />
@@ -583,21 +539,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                 ))}
               </div>
             ))}
-          </section>
-
-          <section className={`upload-strip-section reveal ${uploadReveal.inView ? 'is-visible' : ''}`} ref={uploadReveal.ref}>
-            <div className="upload-strip-info">
-              <h2>{copy.uploadTitle}</h2>
-              <p className="panel-copy">{copy.saveInfo}</p>
-              <p className="panel-copy upload-strip-hint">{copy.uploadHint}</p>
-            </div>
-
-            <FileUploadZone
-              copy={copy.uploadZone}
-              onFileSelect={processFile}
-              isLoading={Boolean(busyMessage)}
-              loadingMessage={busyMessage}
-            />
           </section>
         </main>
       )}
@@ -643,6 +584,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                       void handleGoogleSuccess(credentialResponse)
                     }}
                     onError={() => setError(copy.loadError)}
+                    locale={language}
                   />
                 ) : null}
               </>

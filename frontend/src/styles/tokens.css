@@ -96,7 +96,10 @@
   --vz-shadow-brand: 0 12px 36px rgba(34, 211, 238, 0.25);
 
   /* --- Tipografía -------------------------------------------------------- */
-  --vz-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --vz-font-sans: 'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Títulos y números grandes: la voz "Wrapped" de la marca. Con moderación — el
+     texto corrido sigue en la sans. */
+  --vz-font-display: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
 
   /* --- Fondo de la app ---------------------------------------------------
      El halo violeta arriba y la caída a casi-negro. */

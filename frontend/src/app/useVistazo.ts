@@ -5,7 +5,7 @@ import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
 import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
-import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker } from '../lib/analysisClient'
+import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker, landingPreviewInWorker } from '../lib/analysisClient'
 import {
   analyzeAiMetrics,
   ApiError,
@@ -35,7 +35,6 @@ import {
   setAiDisabled,
   setRecaptchaV3Disabled,
 } from '../lib/devFlags'
-import { getLandingPreviewCards } from '../lib/landingPreview'
 import { executeRecaptchaV3 } from '../lib/recaptcha'
 import {
   aiMetricIds,
@@ -89,9 +88,9 @@ export interface ActiveChat {
  * sentido en un monitor. Cada shell se guarda las suyas.
  */
 export function useVistazo() {
-  const [language, setLanguage] = useState<Language>(
-    navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en',
-  )
+  // Por ahora la app abre siempre en español, sin mirar el idioma del navegador ni el
+  // que la cuenta tenga guardado. El botón ES/EN sigue cambiándolo durante la sesión.
+  const [language, setLanguage] = useState<Language>('es')
   const [user, setUser] = useState<UserProfile | null>(null)
   const [token, setToken] = useState<string | null>(localStorage.getItem(authTokenKey))
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
@@ -519,19 +518,9 @@ export function useVistazo() {
     }
   }
 
-  // The account's saved language wins over whatever was showing before login (browser
-  // default, or a choice made while browsing anonymously): this is what makes a reload
-  // or a login on another device come back with the language the user last picked.
-  useEffect(() => {
-    if (user) {
-      setLanguage(user.preferredLanguage)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, user?.preferredLanguage])
-
-  // The mirror direction: once logged in, toggling the language persists it to the
-  // account instead of only living in this tab. Guarded by the equality check so the
-  // sync above (server -> UI) never bounces back into a network call.
+  // Once logged in, toggling the language persists it to the account. The saved value
+  // is not applied back on load for now — the app always opens in Spanish (see the
+  // `language` state above) — but it keeps being recorded for when it is.
   useEffect(() => {
     if (!token || !user || language === user.preferredLanguage) {
       return
@@ -1468,7 +1457,27 @@ export function useVistazo() {
     return interleave(analysis.freeMetrics, analysis.vipMetrics)
   }, [analysis])
 
-  const landingPreviewCards = useMemo(() => getLandingPreviewCards(language), [language])
+  // Las tarjetas de ejemplo de la landing se calculan con las métricas reales sobre un
+  // chat inventado, en el worker (ver buildLandingPreviewCards). Mientras tanto la lista
+  // queda vacía y cada shell dibuja su propio esqueleto.
+  const [landingPreview, setLandingPreview] = useState<{ language: Language; cards: MetricCardData[] } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    landingPreviewInWorker(language)
+      .then((cards) => {
+        if (!cancelled) setLandingPreview({ language, cards })
+      })
+      .catch(() => {
+        // Sin ejemplos la landing sigue funcionando: sólo no muestra esa sección.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [language])
+  const landingPreviewCards = useMemo(
+    () => (landingPreview?.language === language ? landingPreview.cards : []),
+    [landingPreview, language],
+  )
 
   const selectedMetric = useMemo(
     () => [...interleavedMetrics, ...landingPreviewCards].find((card) => card.id === selectedMetricId) ?? null,

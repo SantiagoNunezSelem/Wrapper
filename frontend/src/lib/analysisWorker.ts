@@ -1,5 +1,6 @@
-import type { ChatMessage, Language } from '../types'
+import type { ChatMessage, Language, MetricCard } from '../types'
 import { buildAllAiCandidates, type AiCandidateSet } from './aiCandidates'
+import { buildLandingPreviewCards } from './landingPreview'
 import {
   applyAiVerdicts,
   computeAnalysisCore,
@@ -38,12 +39,16 @@ export type WorkerRequest =
        * "does this exist anywhere". */
       participants: string[]
     }
+  /** The landing's example cards — see buildLandingPreviewCards. Leaves `cached` alone:
+   * it builds its own sample chat and must never evict the chat on screen. */
+  | { requestId: number; type: 'landingPreview'; language: Language }
 
 export type WorkerResponse =
   | { requestId: number; type: 'analyze'; core: AnalysisCore }
   | { requestId: number; type: 'aiCandidates'; candidateSets: AiCandidateSet[] }
   | { requestId: number; type: 'applyAi'; core: AnalysisCore }
   | { requestId: number; type: 'wordSearch'; count: number; countsByParticipant: Record<string, number> }
+  | { requestId: number; type: 'landingPreview'; cards: MetricCard[] }
   /** The worker no longer holds this chat's messages — the client should resend them. */
   | { requestId: number; type: 'cacheMiss' }
   | { requestId: number; type: 'error'; message: string }
@@ -93,6 +98,10 @@ workerScope.onmessage = (event) => {
 
 async function handle(request: WorkerRequest): Promise<WorkerResponse> {
   const { requestId } = request
+
+  if (request.type === 'landingPreview') {
+    return { requestId, type: 'landingPreview', cards: await buildLandingPreviewCards(request.language) }
+  }
 
   if (request.type === 'analyze') {
     cached = { sourceHash: request.sourceHash, messages: request.messages }
