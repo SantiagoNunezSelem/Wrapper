@@ -1395,6 +1395,12 @@
   object-fit: contain;
 }
 
+/* El mismo tope de 560px de alto que tenía el video suelto, ahora en su contenedor
+   (que tiene proporción 4:5, así que 560px de alto son 448px de ancho). */
+.tutorial-art .tutorial-video {
+  max-width: 448px;
+}
+
 .tutorial-install-panel {
   display: flex;
   flex-direction: column;
