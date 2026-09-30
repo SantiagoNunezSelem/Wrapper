@@ -1162,9 +1162,10 @@
     max-width: none;
   }
 
-  .chart-bar-ranking {
-    grid-template-columns: minmax(min-content, 108px) 1fr auto;
-  }
+  /* Sin override de .chart-bar-ranking acá: este archivo se carga también en el shell
+     de mobile, y un `minmax(min-content, 108px)` estiraba la columna del label a 108px
+     aunque dijera "Fran", dejando las barras cortas. La regla de base.css
+     (fit-content) ya ajusta la columna al label más largo de cada métrica. */
 }
 
 .account-menu-action {

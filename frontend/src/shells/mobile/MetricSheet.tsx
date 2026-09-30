@@ -13,6 +13,7 @@ import { splitLeadingEmoji } from '../../lib/format'
 import { isParticipantBarChart } from '../../lib/metrics'
 import type { ChartData, ChatMessage, MetricCard } from '../../types'
 import { ChevronIcon, SearchIcon } from './icons'
+import { useSheetDrag } from './useSheetDrag'
 
 /** Estas familias de gráfico son anchas por naturaleza: el heatmap anual tiene
  * 53 columnas y pueden ser más según el rango del chat. En 320px encogerlos los
@@ -105,6 +106,7 @@ export function MetricSheet({
       if (event.key === 'ArrowLeft') onPrev()
     },
   })
+  useSheetDrag(panelRef, onClose)
 
   const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic

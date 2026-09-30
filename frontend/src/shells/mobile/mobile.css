@@ -2280,6 +2280,29 @@
   pointer-events: none;
 }
 
+/* La dona mide 140px y con la leyenda abajo no entraba en los 120px de la tarjeta:
+   quedaba cortada por la mitad. En el carrusel va más chica y con la leyenda al
+   costado. */
+.m-demo-chart .chart-donut {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 14px;
+}
+
+.m-demo-chart .chart-donut-svg {
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+}
+
+.m-demo-chart .chart-legend {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 4px;
+  font-size: 0.72rem;
+}
+
 .m-demo-foot {
   margin-top: auto;
   padding-top: 10px;

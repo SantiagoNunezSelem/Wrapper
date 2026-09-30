@@ -1649,10 +1649,13 @@ h3 {
   cursor: pointer;
 }
 
+/* A todo el ancho del grupo: el margen a los costados lo da el padding de
+   .message-group-bubbles, igual a izquierda y derecha. Antes tenía max-width: 92%
+   (como las burbujas de WhatsApp), pero acá todas van alineadas a la izquierda, así
+   que ese 8% sólo quedaba como un hueco extra del lado derecho. */
 .chat-bubble {
   border-radius: var(--vz-radius-sm);
   padding: 8px 12px;
-  max-width: 92%;
   background: var(--vz-surface-2);
 }
 
