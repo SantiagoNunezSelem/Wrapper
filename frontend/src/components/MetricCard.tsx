@@ -31,6 +31,7 @@ export const MetricCard = memo(function MetricCard({
   card,
   seeMoreLabel,
   unlockLabel,
+  tierLabel,
   ai,
   onOpen,
   onUnlock,
@@ -38,6 +39,8 @@ export const MetricCard = memo(function MetricCard({
   card: MetricCardData
   seeMoreLabel: string
   unlockLabel: string
+  /** Name of the paid tier, shown next to the crown in the card's footer ("Pro"). */
+  tierLabel: string
   /** Passed only to viewers with Pro access; everyone else gets the ordinary upsell. */
   ai?: AiPanelProps
   onOpen: (card: MetricCardData) => void
@@ -80,19 +83,22 @@ export const MetricCard = memo(function MetricCard({
   }
 
   return (
+    // The whole card opens the detail. The footer button is still the one element that
+    // takes focus, for keyboard and screen readers; clicks that land on another control
+    // (the locked panel's unlock, the AI retry) keep doing their own job.
     <article
       ref={cardRef}
       className={`metric-card ${card.accent} ${locked || aiBlocked ? 'is-locked' : ''}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest('button, a, input')) {
+          onOpen(card)
+        }
+      }}
     >
       <div className="metric-card-head">
         <h3>{card.title}</h3>
-        {card.tier === 'vip' ? (
-          <span className={`metric-tier-dot ${locked ? 'is-locked' : 'is-unlocked'}`}>
-            <CrownIcon />
-          </span>
-        ) : null}
       </div>
 
       {aiBlocked ? (
@@ -114,9 +120,21 @@ export const MetricCard = memo(function MetricCard({
         </div>
       )}
 
-      <button type="button" className="detail-button" onClick={() => onOpen(card)}>
-        {seeMoreLabel}
-      </button>
+      <div className="metric-card-foot">
+        {card.tier === 'vip' ? (
+          <span className={`metric-tier ${locked ? 'is-locked' : 'is-unlocked'}`}>
+            <span className="metric-tier-dot">
+              <CrownIcon />
+            </span>
+            {tierLabel}
+          </span>
+        ) : (
+          <span />
+        )}
+        <button type="button" className="detail-link" onClick={() => onOpen(card)}>
+          {seeMoreLabel} <span aria-hidden="true">→</span>
+        </button>
+      </div>
     </article>
   )
 })

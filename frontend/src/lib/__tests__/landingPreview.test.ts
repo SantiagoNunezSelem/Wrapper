@@ -1,66 +1,69 @@
-import { describe, expect, it } from 'vitest'
-import { getLandingPreviewCards } from '../landingPreview'
+import { beforeAll, describe, expect, it } from 'vitest'
+import type { MetricCard } from '../../types'
+import { buildLandingPreviewCards, demoIdPrefix, landingPreviewMetricIds } from '../landingPreview'
+import { buildLandingSampleChat } from '../landingSample'
 
-describe('getLandingPreviewCards', () => {
-  it('devuelve tarjetas de ejemplo en los dos idiomas', () => {
-    expect(getLandingPreviewCards('es').length).toBeGreaterThan(0)
-    expect(getLandingPreviewCards('en')).toHaveLength(getLandingPreviewCards('es').length)
+// Calcular las métricas sobre el chat de ejemplo cuesta unos segundos en jsdom: una vez
+// por idioma para todo el archivo.
+const cards: Record<'es' | 'en', MetricCard[]> = { es: [], en: [] }
+
+beforeAll(async () => {
+  cards.es = await buildLandingPreviewCards('es')
+  cards.en = await buildLandingPreviewCards('en')
+}, 60_000)
+
+describe('buildLandingSampleChat', () => {
+  it('es determinístico: la landing muestra siempre los mismos números', () => {
+    expect(buildLandingSampleChat('es')).toBe(buildLandingSampleChat('es'))
   })
 
-  it('ninguna tarjeta de ejemplo se renderiza bloqueada', () => {
+  it('cambia de idioma', () => {
+    expect(buildLandingSampleChat('en')).not.toBe(buildLandingSampleChat('es'))
+  })
+})
+
+describe('buildLandingPreviewCards', () => {
+  it('devuelve todas las métricas elegidas, en orden, en los dos idiomas', () => {
+    const expected = landingPreviewMetricIds.map((id) => `${demoIdPrefix}${id}`)
+
+    expect(cards.es.map((card) => card.id)).toEqual(expected)
+    expect(cards.en.map((card) => card.id)).toEqual(expected)
+  })
+
+  it('intercala métricas gratis y Pro', () => {
+    const tiers = new Set(cards.es.map((card) => card.tier))
+
+    expect(tiers).toEqual(new Set(['free', 'vip']))
+  })
+
+  it('ninguna tarjeta de ejemplo se renderiza bloqueada ni esperando a la IA', () => {
     for (const language of ['es', 'en'] as const) {
-      for (const card of getLandingPreviewCards(language)) {
-        expect(card.hasData, `${card.id} (${language}).hasData`).toBe(true)
+      for (const card of cards[language]) {
         expect(card.basic, `${card.id} (${language}).basic`).toBeDefined()
         expect(card.detail, `${card.id} (${language}).detail`).toBeDefined()
+        expect(card.ai, `${card.id} (${language}).ai`).toBeUndefined()
       }
     }
   })
 
-  it('ninguna tarjeta de ejemplo queda esperando a la IA', () => {
-    for (const card of getLandingPreviewCards('es')) {
-      expect(card.ai, `${card.id}.ai`).toBeUndefined()
+  it('cada detalle trae mensajes de ejemplo adentro', () => {
+    for (const card of cards.es) {
+      const bubbles = card.detail?.groups?.flatMap((group) => group.bubbles) ?? []
+      expect(bubbles.length, `${card.id} bubbles`).toBeGreaterThan(0)
     }
   })
 
-  it('los ids son únicos y están marcados como demo', () => {
-    const ids = getLandingPreviewCards('es').map((card) => card.id)
-
-    expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.every((id) => id.startsWith('demo-'))).toBe(true)
-  })
-
-  it('los ids no chocan con los de las métricas reales', () => {
+  it('los ids nunca chocan con los de las métricas reales', () => {
     // Un id compartido haría que un desbloqueo gratuito de la landing "abriera"
     // una métrica real, o al revés.
-    const ids = getLandingPreviewCards('es').map((card) => card.id)
-
-    expect(ids).not.toContain('spammer')
-    expect(ids).not.toContain('monologuista')
-  })
-
-  it('cada tarjeta trae número, etiqueta y teaser', () => {
-    for (const card of getLandingPreviewCards('es')) {
-      expect(card.basic?.value, `${card.id}.value`).toBeTruthy()
-      expect(card.basic?.label, `${card.id}.label`).toBeTruthy()
-      expect(card.preview, `${card.id}.preview`).toBeTruthy()
-      expect(card.accent, `${card.id}.accent`).toMatch(/^tier-/)
+    for (const card of cards.es) {
+      expect(card.id.startsWith(demoIdPrefix)).toBe(true)
     }
   })
 
   it('el texto cambia entre español e inglés', () => {
-    const es = getLandingPreviewCards('es')
-    const en = getLandingPreviewCards('en')
-
-    for (let index = 0; index < es.length; index += 1) {
-      expect(en[index].id).toBe(es[index].id)
-      expect(en[index].title, `${es[index].id}.title`).not.toBe(es[index].title)
+    for (let index = 0; index < cards.es.length; index += 1) {
+      expect(cards.en[index].title, `${cards.es[index].id}.title`).not.toBe(cards.es[index].title)
     }
-  })
-
-  it('los datos son inventados: no hay ningún hash ni nombre de chat real', () => {
-    const serialized = JSON.stringify(getLandingPreviewCards('es'))
-
-    expect(serialized).not.toMatch(/[0-9a-f]{64}/)
   })
 })

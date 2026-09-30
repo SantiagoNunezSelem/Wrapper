@@ -53,7 +53,7 @@ export const MetricRow = memo(function MetricRow({
         <span className="m-row-dot" aria-hidden="true" />
         <span className="m-row-title">{card.title}</span>
         {/* La corona sólo cuando la Pro está desbloqueada. Si está bloqueada la
-            chapa ya dice VIP, y las dos juntas es el mismo dato dos veces. */}
+            chapa ya dice Pro, y las dos juntas es el mismo dato dos veces. */}
         {card.tier === 'vip' && !locked ? (
           <span className="m-row-crown" aria-hidden="true">
             <CrownIcon />
@@ -80,7 +80,7 @@ export const MetricRow = memo(function MetricRow({
           </span>
           <span className="m-row-chip">
             <LockIcon size={11} />
-            VIP
+            {copy.proTag}
           </span>
         </>
       ) : card.basic ? (

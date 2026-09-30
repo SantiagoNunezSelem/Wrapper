@@ -188,9 +188,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .phone-mockup,
-  .mockup-glow,
-  .floating-chip,
   .ambient-blob,
   .marquee-track {
     animation: none;
@@ -225,6 +222,20 @@ p {
 h1 {
   font-size: clamp(2.6rem, 5vw, 5rem);
   line-height: 0.97;
+}
+
+/* La display va sólo donde la marca "habla fuerte": títulos y los números grandes de
+   cada métrica. Todo lo demás sigue en la sans del token. */
+h1,
+h2,
+.metric-stat strong,
+.m-sheet-hero strong,
+.m-row-value,
+.m-demo-value,
+.m-story-kicker,
+.m-story-huge {
+  font-family: var(--vz-font-display);
+  letter-spacing: -0.02em;
 }
 
 .gradient-text {
@@ -387,6 +398,10 @@ h3 {
   -webkit-line-clamp: 2;
   overflow: hidden;
   flex-shrink: 0;
+  /* Sin tope, el recorte del clamp cae en el padding de abajo y asoma la mitad de
+     una tercera línea. */
+  line-height: 1.45;
+  max-height: calc(2 * 1.45em + 16px);
 }
 
 .metric-chart {
@@ -3088,3 +3103,4 @@ a.subpage-banner-cta {
 .payment-issue-banner-close:hover {
   opacity: 1;
 }
+

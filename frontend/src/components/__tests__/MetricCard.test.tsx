@@ -52,6 +52,7 @@ function renderCard(data: MetricCardData, extra: Partial<Parameters<typeof Metri
       card={data}
       seeMoreLabel="Ver más"
       unlockLabel="Desbloquear con Pro"
+      tierLabel="Pro"
       onOpen={vi.fn()}
       onUnlock={vi.fn()}
       {...extra}
@@ -90,6 +91,7 @@ describe('MetricCard — tarjeta abierta', () => {
         card={card({ basic: { value: '1.240', label: 'caracteres', note: '"che mirá esto"' } })}
         seeMoreLabel="Ver más"
         unlockLabel="Desbloquear con Pro"
+        tierLabel="Pro"
         onOpen={vi.fn()}
         onUnlock={vi.fn()}
       />,
@@ -104,6 +106,16 @@ describe('MetricCard — tarjeta abierta', () => {
     renderCard(data, { onOpen })
 
     await userEvent.click(screen.getByRole('button', { name: 'Ver más' }))
+
+    expect(onOpen).toHaveBeenCalledWith(data)
+  })
+
+  it('un click en cualquier parte de la tarjeta abre el detalle', async () => {
+    const onOpen = vi.fn()
+    const data = card()
+    renderCard(data, { onOpen })
+
+    await userEvent.click(screen.getByText(data.title))
 
     expect(onOpen).toHaveBeenCalledWith(data)
   })
@@ -123,12 +135,14 @@ describe('MetricCard — tarjeta abierta', () => {
         card={card({ tier: 'vip' })}
         seeMoreLabel="Ver más"
         unlockLabel="Desbloquear con Pro"
+        tierLabel="Pro"
         onOpen={vi.fn()}
         onUnlock={vi.fn()}
       />,
     )
 
-    expect(document.querySelector('.metric-tier-dot')).toHaveClass('is-unlocked')
+    expect(document.querySelector('.metric-tier')).toHaveClass('is-unlocked')
+    expect(document.querySelector('.metric-tier')).toHaveTextContent('Pro')
   })
 })
 
@@ -146,7 +160,7 @@ describe('MetricCard — tarjeta bloqueada', () => {
   it('la corona aparece cerrada', () => {
     renderCard(locked)
 
-    expect(document.querySelector('.metric-tier-dot')).toHaveClass('is-locked')
+    expect(document.querySelector('.metric-tier')).toHaveClass('is-locked')
   })
 
   it('el botón de desbloquear dispara onUnlock', async () => {
@@ -156,6 +170,15 @@ describe('MetricCard — tarjeta bloqueada', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Desbloquear con Pro' }))
 
     expect(onUnlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('desbloquear no abre además el detalle', async () => {
+    const onOpen = vi.fn()
+    renderCard(locked, { onOpen })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Desbloquear con Pro' }))
+
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
   it('"Ver más" sigue disponible en una tarjeta bloqueada', () => {

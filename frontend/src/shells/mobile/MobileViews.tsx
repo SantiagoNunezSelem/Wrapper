@@ -1,7 +1,8 @@
+import { ChartRenderer } from '../../components/charts/ChartRenderer'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { formatMoney } from '../../lib/format'
 import { formatNumber } from '../../lib/metrics'
-import type { Language, SavedAnalysis, SubscriptionOverview, UserProfile } from '../../types'
+import type { Language, MetricCard, SavedAnalysis, SubscriptionOverview, UserProfile } from '../../types'
 import { ChatIcon, ChevronIcon, CrownIcon, PencilIcon, TrashIcon, UploadIcon } from './icons'
 
 /* Las cuatro vistas de las pestañas. Son composición pura: cualquier dato o
@@ -16,7 +17,9 @@ export function MobileHome({
   saved,
   language,
   busyMessage,
+  demoCards,
   onUpload,
+  onOpenDemo,
   onOpenSaved,
   onDeleteSaved,
   onRenameSaved,
@@ -26,7 +29,11 @@ export function MobileHome({
   saved: SavedAnalysis[]
   language: Language
   busyMessage: string
+  /** Las tarjetas de ejemplo de la landing (ver buildLandingPreviewCards). Vacías
+   * mientras el worker las calcula. */
+  demoCards: MetricCard[]
   onUpload: () => void
+  onOpenDemo: (card: MetricCard) => void
   onOpenSaved: (item: SavedAnalysis) => void
   onDeleteSaved: (item: SavedAnalysis) => void
   onRenameSaved: (item: SavedAnalysis) => void
@@ -45,6 +52,12 @@ export function MobileHome({
       </header>
 
       <DropZone copy={copy} busyMessage={busyMessage} onUpload={onUpload} />
+
+      {/* Quien ya tiene chats guardados ya sabe cómo se ve un resultado: los ejemplos
+          son para el que todavía no subió nada. */}
+      {saved.length === 0 && demoCards.length > 0 ? (
+        <DemoCarousel copy={copy} cards={demoCards} onOpen={onOpenDemo} />
+      ) : null}
 
       {saved.length > 0 ? (
         <>
@@ -237,6 +250,47 @@ export function MobileAccount({
 }
 
 /* ------------------------------------------------------------------ */
+
+/** Ejemplos deslizables: las mismas tarjetas que la landing de desktop, con las
+ * métricas reales corriendo sobre un chat inventado. Tocar una abre la misma hoja de
+ * detalle que una métrica propia, con los mensajes de adentro. */
+function DemoCarousel({ copy, cards, onOpen }: { copy: ShellCopy; cards: MetricCard[]; onOpen: (card: MetricCard) => void }) {
+  return (
+    <section className="m-demo">
+      <div className="m-demo-head">
+        <p className="m-section-label">{copy.examplesTitle}</p>
+        <p className="m-demo-sub">{copy.examplesSubtitle}</p>
+      </div>
+      <div className="m-demo-track">
+        {cards.map((card) => (
+          <button key={card.id} type="button" className={`m-demo-card ${card.accent}`} onClick={() => onOpen(card)}>
+            <span className="m-demo-tag">{copy.demoTag}</span>
+            <span className="m-demo-title">{card.title}</span>
+            <strong className="m-demo-value">{card.basic?.value}</strong>
+            <span className="m-demo-label">{card.basic?.label}</span>
+            {card.basic?.chart ? (
+              <span className="m-demo-chart" aria-hidden="true">
+                <ChartRenderer chart={card.basic.chart} compact />
+              </span>
+            ) : null}
+            <span className="m-demo-foot">
+              {card.tier === 'vip' ? (
+                <span className="m-demo-tier">
+                  <CrownIcon /> {copy.proTag}
+                </span>
+              ) : (
+                <span />
+              )}
+              <span className="m-demo-more">
+                {copy.seeMore} <ChevronIcon size={13} />
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 /** La zona de subida. Toda ella es el botón: en un teléfono no hay hover ni
  * arrastre, así que un recuadro punteado que no se pueda tocar es decorado. */

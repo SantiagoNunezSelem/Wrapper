@@ -265,7 +265,10 @@
   font-weight: 680;
 }
 
-.m-drop > span {
+/* Sólo el texto de formatos: el ícono y el botón son también <span> hijos directos, y
+   con `.m-drop > span` a secas (0,1,1) esta regla les ganaba a sus propias clases
+   (0,1,0) — el ícono y "Buscar en el teléfono" quedaban en gris, como deshabilitados. */
+.m-drop > span:not(.m-drop-icon, .m-drop-cue) {
   font-size: 0.78rem;
   color: var(--vz-text-faint);
   line-height: 1.45;
@@ -274,14 +277,14 @@
 /* Pista de que la zona entera es tocable. No es un botón aparte: sería el
    mismo gesto dos veces en la misma pantalla. */
 .m-drop-cue {
-  margin-top: 6px;
-  padding: 7px 16px;
-  border: 1px solid rgba(var(--vz-brand-violet-rgb), 0.34);
+  margin-top: 8px;
+  padding: 10px 20px;
   border-radius: var(--vz-radius-pill);
-  background: rgba(var(--vz-brand-violet-rgb), 0.16);
-  color: #e9d5ff;
-  font-size: 0.78rem;
-  font-weight: 680;
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  font-size: 0.84rem;
+  font-weight: 750;
+  box-shadow: var(--vz-shadow-brand);
 }
 
 /* ==========================================================================
@@ -1728,7 +1731,13 @@
   font-weight: 850;
   letter-spacing: -0.045em;
   line-height: 0.98;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.m-story-huge.is-long {
+  font-size: clamp(2rem, 10vw, 2.8rem);
+  line-height: 1.05;
 }
 
 /* Con el nombre ya en la ficha, esta es la línea que describe el número. */
@@ -2167,3 +2176,131 @@
   background: var(--vz-danger-bg);
   color: var(--vz-danger-text);
 }
+/* ==========================================================================
+   Ejemplos de la landing (DemoCarousel)
+   ==========================================================================
+   Deslizables de costado, a sangre: la pista ocupa el ancho del teléfono y la
+   tarjeta siguiente asoma para avisar que hay más. */
+
+.m-demo {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.m-demo-head {
+  display: grid;
+  gap: 4px;
+}
+
+.m-demo-sub {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--vz-text-dim);
+}
+
+.m-demo-track {
+  display: flex;
+  gap: 10px;
+  margin-inline: -12px;
+  padding: 10px 12px 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 12px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.m-demo-track::-webkit-scrollbar {
+  display: none;
+}
+
+.m-demo-card {
+  --vz-tier-ring-alpha: 0.26;
+  position: relative;
+  flex: 0 0 78%;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 14px 12px;
+  border-radius: var(--vz-radius-md);
+  border: 1px solid var(--vz-hairline);
+  background: var(--vz-surface-2);
+  color: var(--vz-text-strong);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.m-demo-card:active {
+  transform: scale(0.985);
+}
+
+.m-demo-tag {
+  position: absolute;
+  top: -9px;
+  left: 12px;
+  padding: 2px 9px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-brand-sweep);
+  color: var(--vz-on-brand);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.m-demo-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--vz-text-dim);
+}
+
+.m-demo-value {
+  margin-top: 4px;
+  font-size: 1.5rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.m-demo-label {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--vz-text-muted);
+}
+
+.m-demo-chart {
+  display: block;
+  margin-top: 6px;
+  max-height: 120px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.m-demo-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.m-demo-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fcd34d;
+}
+
+.m-demo-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--vz-text-strong);
+}
+

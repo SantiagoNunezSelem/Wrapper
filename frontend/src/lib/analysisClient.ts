@@ -1,4 +1,4 @@
-import type { ChatMessage, Language } from '../types'
+import type { ChatMessage, Language, MetricCard } from '../types'
 import type { AiCandidateSet } from './aiCandidates'
 import type { AiMetricId, AnalysisCore } from './metrics'
 import type { WorkerRequest, WorkerResponse } from './analysisWorker'
@@ -168,6 +168,27 @@ export async function applyAiVerdictsInWorker(
   }
 
   return response.core
+}
+
+/** One build per language for the page's lifetime: the sample chat is fixed, so the
+ * cards never change, and toggling the language back shouldn't redo the analysis. */
+const landingPreviewCache = new Map<Language, Promise<MetricCard[]>>()
+
+/** The landing's example cards, computed on the worker — see buildLandingPreviewCards. */
+export function landingPreviewInWorker(language: Language): Promise<MetricCard[]> {
+  let cards = landingPreviewCache.get(language)
+  if (!cards) {
+    cards = send({ type: 'landingPreview', language }).then((response) => {
+      if (response.type !== 'landingPreview') {
+        throw new Error('Unexpected worker response for landingPreview.')
+      }
+      return response.cards
+    })
+    // A failed build shouldn't stick: the next render gets to try again.
+    cards.catch(() => landingPreviewCache.delete(language))
+    landingPreviewCache.set(language, cards)
+  }
+  return cards
 }
 
 /**

@@ -8,19 +8,6 @@
  * de que una pantalla quede con un texto viejo.
  */
 
-export const landingMockupStats = {
-  es: [
-    { value: '76%', label: 'Fran domina la charla' },
-    { value: '00:43', label: 'Pico de mensajes nocturnos' },
-    { value: '9', label: 'Mensajes seguidos sin respuesta' },
-  ],
-  en: [
-    { value: '76%', label: 'Fran dominates the chat' },
-    { value: '12:43 AM', label: 'Late-night message peak' },
-    { value: '9', label: 'Messages in a row with no reply' },
-  ],
-} as const
-
 export const shellCopy = {
   es: {
     title: { prefix: 'Tu chat también merece su propio', highlight: 'Wrapped' }, 
@@ -44,11 +31,13 @@ export const shellCopy = {
       { title: 'Subí tu chat', body: 'Exportá la conversación desde WhatsApp (.txt o .zip) y soltala acá.' },
       { title: 'Se procesa en tu navegador', body: 'Las métricas se calculan ahí mismo: el chat completo nunca se sube.' },
       { title: 'Mirá tu Wrapped', body: 'Recorré tarjetas tipo historia con los datos más divertidos del chat.' },
-      { title: 'Desbloqueá lo picante', body: 'Con VIP accedés a red flags, tono picante, sentimiento y mucho más.' },
+      { title: 'Desbloqueá lo picante', body: 'Con Pro ves red flags, tono picante, quién clava el visto y mucho más.' },
     ],
     examplesTitle: 'Así se sienten las analíticas',
-    examplesSubtitle: 'Estos números son de ejemplo — subí tu chat para ver los tuyos, sin vueltas.',
+    examplesSubtitle: 'Un chat inventado, analizado con las mismas métricas que va a tener el tuyo. Tocá una para ver los mensajes detrás del número.',
     demoTag: 'Ejemplo',
+    heroTrust: 'Se procesa en tu navegador. El chat nunca se sube.',
+    howToExport: '¿Cómo exporto mi chat?',
     setupWarning:
       'Falta configurar VITE_GOOGLE_CLIENT_ID en el frontend o GoogleAuth:AllowedAudience en el backend.',
     loginHeadline: 'Iniciá sesión para ver tu Wrapped',
@@ -56,13 +45,11 @@ export const shellCopy = {
     loginRequiredPreview: 'Tu Wrapped está listo. Iniciá sesión para verlo — es gratis.',
     recaptchaChallengeTitle: 'Un paso más',
     recaptchaChallengeBody: 'Confirmá que sos vos para completar el inicio de sesión.',
-    uploadTitle: 'Subí un .txt o .zip exportado desde WhatsApp',
-    uploadHint: 'Podés subir primero y loguearte después. El procesamiento sigue siendo local.',
-    saveInfo: 'El backend guarda solo el JSON agregado del análisis, nunca el texto crudo del chat.',
+    saveInfo: 'Solo guardamos los resultados, nunca el chat completo.',
     uploadCta: 'Subir archivo',
     startNow: 'Probar ahora',
-    vipOn: 'VIP activo',
-    vipOff: 'VIP bloqueado',
+    vipOn: 'Pro activo',
+    vipOff: 'Pro bloqueado',
     savedTitle: 'Historial guardado',
     noSaved: 'Todavía no hay análisis guardados para este usuario.',
     openSaved: 'Abrir',
@@ -199,7 +186,7 @@ export const shellCopy = {
     adminPanel: 'Panel admin',
     vipPopover: {
       eyebrow: 'Métricas Pro',
-      title: 'Desbloqueá VIP',
+      title: 'Desbloqueá Pro',
       close: 'Cerrar',
       signInPrompt: 'Iniciá sesión con tu cuenta de Google para suscribirte.',
       signInCta: 'Iniciar sesión',
@@ -498,12 +485,13 @@ export const shellCopy = {
       'No encontramos mensajes en este archivo. Puede haber llegado vacío o dañado — probá exportar el chat de nuevo.',
     login: 'Iniciar sesión',
     backToLanding: 'Volver a la landing',
-    seeMore: 'Ver más',
+    seeMore: 'Ver detalle',
+    proTag: 'Pro',
     close: 'Cerrar',
     detailTitle: 'Desglose completo',
     breakdownTitle: 'Por integrante',
     showMore: 'Mostrar más',
-    unlock: 'Desbloquear VIP',
+    unlock: 'Desbloquear Pro',
     freeUnlock: {
       cta: 'Desbloqueo gratis · {n} restantes',
       ctaOne: 'Desbloqueo gratis · 1 restante',
@@ -530,7 +518,7 @@ export const shellCopy = {
     metricsTitle: 'Tu Wrapped completo',
     savePromptTitle: 'Guardá este Wrapped',
     savePromptBody: 'Iniciá sesión con Google para no perderlo y volver a verlo cuando quieras.',
-    reprocessHint: 'Este análisis se guardó sin acceso VIP. Volvé a subir el chat para ver el detalle completo desbloqueado.',
+    reprocessHint: 'Este análisis se guardó sin acceso Pro. Volvé a subir el chat para ver el detalle completo desbloqueado.',
     whyTitle: 'Qué podés descubrir',
     whyCards: [
       {
@@ -546,7 +534,7 @@ export const shellCopy = {
       {
         icon: '🚩',
         title: 'Lo que nadie se anima a preguntar',
-        body: 'Demoras, silencios, red flags y tono picante — desbloqueado con VIP.',
+        body: 'Demoras, silencios, red flags y tono picante — desbloqueado con Pro.',
       },
     ],
     footerPrivacy:
@@ -578,7 +566,7 @@ export const shellCopy = {
         outroTitle: 'métricas Pro te están esperando',
         outroCaption: 'Todavía no viste:',
         outroMore: 'y {n} más',
-        outroCta: 'Desbloquear VIP',
+        outroCta: 'Desbloquear Pro',
         shareTag: 'Mi Wrapped de {chat}, en Vistazo',
         creatingLink: 'Creando link…',
         linkCopied: 'Link copiado',
@@ -617,11 +605,13 @@ export const shellCopy = {
       { title: 'Upload your chat', body: 'Export the conversation from WhatsApp (.txt or .zip) and drop it here.' },
       { title: "It's processed in your browser", body: 'Metrics are computed right there — the full chat is never uploaded.' },
       { title: 'See your Wrapped', body: 'Swipe through story-style cards with the most fun stats from the chat.' },
-      { title: 'Unlock the spicy stuff', body: 'VIP gets you red flags, spicy tone, sentiment, and a lot more.' },
+      { title: 'Unlock the spicy stuff', body: 'Pro gets you red flags, spicy tone, who leaves everyone on read, and a lot more.' },
     ],
     examplesTitle: 'This is how the analytics feel',
-    examplesSubtitle: "These numbers are just an example — upload your chat to see your own, no strings attached.",
+    examplesSubtitle: 'A made-up chat, run through the same metrics yours will get. Tap one to see the messages behind the number.',
     demoTag: 'Example',
+    heroTrust: 'Processed in your browser. Your chat is never uploaded.',
+    howToExport: 'How do I export my chat?',
     setupWarning:
       'VITE_GOOGLE_CLIENT_ID in the frontend or GoogleAuth:AllowedAudience in the backend is still missing.',
     loginHeadline: 'Sign in to see your Wrapped',
@@ -629,13 +619,11 @@ export const shellCopy = {
     loginRequiredPreview: 'Your Wrapped is ready. Sign in to see it — it\'s free.',
     recaptchaChallengeTitle: 'One more step',
     recaptchaChallengeBody: 'Confirm it\'s you to finish signing in.',
-    uploadTitle: 'Upload a WhatsApp-exported .txt or .zip',
-    uploadHint: 'You can upload first and sign in later. Processing still happens locally.',
-    saveInfo: 'The backend stores only aggregated JSON results, never the raw chat text.',
+    saveInfo: 'We only save the results, never the full chat.',
     uploadCta: 'Upload file',
     startNow: 'Try it now',
-    vipOn: 'VIP active',
-    vipOff: 'VIP locked',
+    vipOn: 'Pro active',
+    vipOff: 'Pro locked',
     savedTitle: 'Saved history',
     noSaved: 'There are no saved analyses for this user yet.',
     openSaved: 'Open',
@@ -772,7 +760,7 @@ export const shellCopy = {
     adminPanel: 'Admin panel',
     vipPopover: {
       eyebrow: 'Pro metrics',
-      title: 'Unlock VIP',
+      title: 'Unlock Pro',
       close: 'Close',
       signInPrompt: 'Sign in with Google to subscribe.',
       signInCta: 'Sign in',
@@ -1038,12 +1026,13 @@ export const shellCopy = {
       "We couldn't find any messages in this file. It may have arrived empty or corrupted — try exporting the chat again.",
     login: 'Sign in',
     backToLanding: 'Back to landing',
-    seeMore: 'See more',
+    seeMore: 'See details',
+    proTag: 'Pro',
     close: 'Close',
     detailTitle: 'Full breakdown',
     breakdownTitle: 'By participant',
     showMore: 'Show more',
-    unlock: 'Unlock VIP',
+    unlock: 'Unlock Pro',
     freeUnlock: {
       cta: 'Free unlock · {n} left',
       ctaOne: 'Free unlock · 1 left',
@@ -1070,7 +1059,7 @@ export const shellCopy = {
     metricsTitle: 'Your full Wrapped',
     savePromptTitle: 'Save this Wrapped',
     savePromptBody: "Sign in with Google so you don't lose it — come back to it whenever you want.",
-    reprocessHint: 'This analysis was saved without VIP access. Re-upload the chat to see the full unlocked detail.',
+    reprocessHint: 'This analysis was saved without Pro access. Re-upload the chat to see the full unlocked detail.',
     whyTitle: 'What you can discover',
     whyCards: [
       {
@@ -1086,7 +1075,7 @@ export const shellCopy = {
       {
         icon: '🚩',
         title: 'The stuff nobody asks about out loud',
-        body: 'Delays, silences, red flags, and spicy tone — unlocked with VIP.',
+        body: 'Delays, silences, red flags, and spicy tone — unlocked with Pro.',
       },
     ],
     footerPrivacy:
@@ -1115,7 +1104,7 @@ export const shellCopy = {
         outroTitle: 'Pro metrics are waiting for you',
         outroCaption: "You haven't seen yet:",
         outroMore: 'and {n} more',
-        outroCta: 'Unlock VIP',
+        outroCta: 'Unlock Pro',
         shareTag: 'My Wrapped of {chat}, on Vistazo',
         creatingLink: 'Creating link…',
         linkCopied: 'Link copied',

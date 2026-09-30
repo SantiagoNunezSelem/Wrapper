@@ -16,7 +16,7 @@
 }
 .topbar,
 .panel,
-.landing-visual,
+.landing-upload,
 .account-menu {
   border: 1px solid var(--vz-hairline);
   background: var(--vz-panel);
@@ -205,7 +205,7 @@
 }
 
 .landing-copy,
-.landing-visual,
+.landing-upload,
 .analytics-hero {
   border-radius: 32px;
   padding: 34px;
@@ -215,90 +215,49 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 560px;
+  /* Alto de su contenido, no de la pantalla: antes medía 560px y empujaba la subida
+     cuatro pantallas más abajo. */
+  min-height: 380px;
   background:
     radial-gradient(circle at top left, rgba(192, 132, 252, 0.28), transparent 30%),
     radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.2), transparent 30%),
     rgba(2, 6, 23, 0.55);
 }
 
-.landing-visual {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  min-height: 560px;
-}
-
-.phone-mockup {
-  width: min(360px, 85%);
-  aspect-ratio: 9 / 18;
-  border-radius: 36px;
-  padding: 12px;
-  background: linear-gradient(180deg, #1e293b, #020617);
-  box-shadow:
-    0 0 0 1px var(--vz-surface-4),
-    0 30px 120px rgba(0, 0, 0, 0.35);
-  animation: float 6s ease-in-out infinite;
-  perspective: 800px;
-}
-
-.phone-screen {
-  height: 100%;
-  border-radius: var(--vz-radius-xl);
-  padding: 20px;
-  background:
-    radial-gradient(circle at top, rgba(192, 132, 252, 0.24), transparent 28%),
-    linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(3, 7, 18, 0.98));
-  display: grid;
+/* La subida vive en el hero: es la acción para la que existe la página. */
+.landing-upload {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   gap: 14px;
-  align-content: center;
-  position: relative;
-  overflow: hidden;
-  /* Tilt is applied inline (follows the cursor via JS); the transition here
-     only smooths the snap back to neutral on mouse-leave. */
-  transition: transform 320ms ease;
-  transform-style: preserve-3d;
 }
 
-.mockup-glow {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.1));
-  animation: pulseGlow 3.6s ease-in-out infinite;
+.landing-upload .file-upload-zone {
+  flex: 1;
 }
 
-/* ---------------------------------------------------------------------- */
-/* Floating chips — small emoji badges orbiting the phone mockup at their  */
-/* own pace, purely decorative (aria-hidden), for extra ambient movement.  */
-/* ---------------------------------------------------------------------- */
-
-.floating-chip {
-  position: absolute;
-  font-size: 1.7rem;
-  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
-  animation: chipFloat 6s ease-in-out infinite;
-  pointer-events: none;
+.landing-trust {
+  margin-top: 22px;
+  color: var(--vz-text-muted);
+  font-size: 0.92rem;
 }
 
-.chip-1 {
-  top: 6%;
-  left: 4%;
-  animation-duration: 6.5s;
+.landing-howto {
+  align-self: center;
+  border: 0;
+  background: none;
+  padding: 4px 8px;
+  color: var(--vz-text-dim);
+  font: inherit;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
 }
 
-.chip-2 {
-  top: 58%;
-  right: 2%;
-  animation-duration: 7.5s;
-  animation-delay: 0.6s;
-}
-
-.chip-3 {
-  bottom: 8%;
-  left: 10%;
-  animation-duration: 5.8s;
-  animation-delay: 1.3s;
+.landing-howto:hover,
+.landing-howto:focus-visible {
+  color: var(--vz-text-strong);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -349,7 +308,6 @@
   animation: driftC 30s ease-in-out infinite;
 }
 
-.mockup-stat,
 .why-card,
 .history-item {
   border-radius: var(--vz-radius-lg);
@@ -357,33 +315,6 @@
   border: 1px solid var(--vz-hairline);
 }
 
-
-.mockup-stat {
-  padding: 18px;
-  display: grid;
-  gap: 6px;
-  color: var(--vz-text-strong);
-  position: relative;
-  z-index: 1;
-}
-
-.mockup-stat strong {
-  font-size: 1.6rem;
-  display: block;
-}
-
-.mockup-stat span {
-  color: var(--vz-text-muted);
-  font-size: 0.82rem;
-}
-
-.stat-b {
-  transform: translateX(28px);
-}
-
-.stat-c {
-  transform: translateX(-16px);
-}
 
 .landing-actions {
   margin-top: 26px;
@@ -492,46 +423,11 @@
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
-.upload-strip {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: center;
-}
-
 .analytics-hero {
   display: flex;
   justify-content: space-between;
   gap: 20px;
   align-items: flex-start;
-}
-
-.upload-strip-section {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.upload-strip-info {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.upload-strip-info h2 {
-  font-size: 1.5rem;
-  color: var(--vz-text-strong);
-}
-
-.upload-strip-hint {
-  margin-top: 6px;
-  color: var(--vz-text-dim);
-  font-size: 0.84rem;
 }
 
 /* Hero, the summary/sidebar row, and the metric grid just stack full-width —
@@ -644,8 +540,11 @@
      Para revertir, borrar esta línea. */
   position: relative;
   width: 100%;
-  height: 460px;
+  /* Alto mínimo, no fijo: con 460px fijos las tarjetas de contenido corto quedaban con
+     un hueco vacío arriba del botón. La fila (flex) ya iguala la altura de las tres. */
+  min-height: 340px;
   padding: 20px;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -716,14 +615,62 @@
   flex-shrink: 0;
 }
 
-.metric-tier-dot.is-unlocked {
+.metric-tier.is-unlocked .metric-tier-dot {
   background: linear-gradient(135deg, #facc15, #f59e0b);
   color: #3f2d03;
 }
 
-.metric-tier-dot.is-locked {
+.metric-tier.is-locked .metric-tier-dot {
   background: var(--vz-surface-4);
   color: var(--vz-text-dim);
+}
+
+/* Pie de la tarjeta: nivel a la izquierda, acción a la derecha, siempre abajo. La
+   corona vivía en la esquina del título y chocaba con la chapa "Ejemplo". */
+.metric-card-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vz-hairline);
+}
+
+.metric-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--vz-text-muted);
+}
+
+.metric-tier .metric-tier-dot {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+}
+
+.detail-link {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: var(--vz-text-strong);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detail-link span {
+  display: inline-block;
+  transition: transform 160ms ease;
+}
+
+.metric-card:hover .detail-link span,
+.detail-link:focus-visible span {
+  transform: translateX(3px);
 }
 
 /* .history-panel is .analytics-sidebar's only child now (the account panel
@@ -1067,16 +1014,11 @@
 
 @media (max-width: 1120px) {
   .landing-hero,
-  .upload-strip,
   .analytics-hero,
   .full-wrapped-hero {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .upload-strip-section {
-    gap: 20px;
   }
 
   .file-upload-zone {
@@ -1131,7 +1073,7 @@
   }
 
   .landing-copy,
-  .landing-visual,
+  .landing-upload,
   .analytics-hero {
     padding: 20px;
   }
@@ -1202,19 +1144,6 @@
 
   .summary-stats {
     grid-template-columns: 1fr;
-  }
-
-  .phone-mockup {
-    width: 100%;
-    max-width: 320px;
-  }
-
-  /* On a narrow phone screen the ±28px horizontal offset that makes the stat
-     cards feel dynamic on desktop pushes them right up against — or past —
-     the mockup's own clipped edges. Keep them stacked flush on mobile. */
-  .stat-b,
-  .stat-c {
-    transform: none;
   }
 
   .steps-grid {

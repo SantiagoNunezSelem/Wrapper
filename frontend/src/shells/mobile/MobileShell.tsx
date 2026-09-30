@@ -69,6 +69,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     analysis,
     savedAnalyses,
     interleavedMetrics,
+    landingPreviewCards,
     generatedAt,
     showReprocessHint,
     fileInputRef,
@@ -167,11 +168,17 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     setIsDetailOverStory(false)
   }, [])
 
-  const openMetricIndex = useMemo(
-    () => (openMetricId === null ? -1 : interleavedMetrics.findIndex((card) => card.id === openMetricId)),
-    [openMetricId, interleavedMetrics],
+  /* La hoja de detalle recorre la lista de la que salió la tarjeta: las métricas del
+     chat, o los ejemplos de la landing (ids "demo-…", nunca chocan con las reales). */
+  const sheetMetrics = useMemo(
+    () => (interleavedMetrics.some((card) => card.id === openMetricId) ? interleavedMetrics : landingPreviewCards),
+    [openMetricId, interleavedMetrics, landingPreviewCards],
   )
-  const openMetric = openMetricIndex >= 0 ? interleavedMetrics[openMetricIndex] : null
+  const openMetricIndex = useMemo(
+    () => (openMetricId === null ? -1 : sheetMetrics.findIndex((card) => card.id === openMetricId)),
+    [openMetricId, sheetMetrics],
+  )
+  const openMetric = openMetricIndex >= 0 ? sheetMetrics[openMetricIndex] : null
 
   // Called here rather than inside MetricSheet so its state survives the sheet
   // closing and reopening — this shell stays mounted for the whole session, the
@@ -316,7 +323,9 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 saved={savedAnalyses}
                 language={language}
                 busyMessage={busyMessage}
+                demoCards={landingPreviewCards}
                 onUpload={requestUpload}
+                onOpenDemo={openMetricFromList}
                 onOpenSaved={openSavedAnalysis}
                 onDeleteSaved={requestDeleteAnalysis}
                 onRenameSaved={requestRenameAnalysis}
@@ -436,7 +445,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             <MetricSheet
               card={openMetric}
               index={openMetricIndex}
-              total={interleavedMetrics.length}
+              total={sheetMetrics.length}
               copy={copy}
               ai={aiPanel}
               freeUnlock={freeUnlockFor(openMetric)}
@@ -445,9 +454,9 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               messages={activeChat?.messages}
               wordCloudEditor={wordCloudEditor}
               onClose={closeDetail}
-              onPrev={() => setOpenMetricId(interleavedMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
+              onPrev={() => setOpenMetricId(sheetMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {
-                const next = interleavedMetrics[openMetricIndex + 1]
+                const next = sheetMetrics[openMetricIndex + 1]
                 setOpenMetricId(next ? next.id : null)
               }}
               onUnlock={requestUnlock}
@@ -476,6 +485,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 void handleGoogleSuccess(credentialResponse)
               }}
               onError={() => setError(copy.loadError)}
+              locale={language}
             />
           ) : null}
           {recaptchaSiteKeyV3 ? <RecaptchaNotice language={language} /> : null}
