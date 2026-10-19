@@ -15,42 +15,42 @@ import { tutorialVideoSources, tutorialVideoUrl } from '../lib/tutorialVideos'
 
 export type ExportTutorialPlatform = 'ios' | 'android'
 
-const FONT = 'Inter, system-ui, sans-serif'
+const FONT = 'Roboto, system-ui, sans-serif'
 const GLOW = 'url(#vzglow)'
 const ACCENT = 'url(#vzg)'
 
-const CHAT_BG = '#0b1120'
-const HEADER_BG = '#0f172a'
-const LIST_BG = '#0b1120'
-const HEADER_TEXT = '#f8fafc'
-const HEADER_SUB = '#94a3b8'
-const BUBBLE_IN = '#1f2937'
-const BUBBLE_IN_TEXT = '#e2e8f0'
-const BUBBLE_OUT_TEXT = '#0f172a'
-const TICK_COLOR = '#94a3b8'
-const ACCENT_TEXT = '#c084fc'
-const AVATAR_BG = '#312244'
-const AVATAR_TEXT = '#e9d5ff'
-const DIALOG_BG = '#111827'
-const DIALOG_BORDER = '#1f2937'
-const ROW_BG = '#0f172a'
-const ROW_BORDER = '#1f2937'
-const ROW_BG_ACTIVE = 'rgba(192,132,252,0.14)'
-const TEXT_STRONG = '#f8fafc'
-const TEXT_MUTED = '#94a3b8'
-const TEXT_FAINT = '#64748b'
-const STATUS_ICON = '#e2e8f0'
+const CHAT_BG = '#efeae2'
+const HEADER_BG = '#ffffff'
+const LIST_BG = '#ffffff'
+const HEADER_TEXT = '#111b21'
+const HEADER_SUB = '#667781'
+const BUBBLE_IN = '#ffffff'
+const BUBBLE_IN_TEXT = '#111b21'
+const BUBBLE_OUT_TEXT = '#111b21'
+const TICK_COLOR = '#53bdeb'
+const ACCENT_TEXT = '#0a662a'
+const AVATAR_BG = '#d9fdd3'
+const AVATAR_TEXT = '#0a662a'
+const DIALOG_BG = '#ffffff'
+const DIALOG_BORDER = '#e9edef'
+const ROW_BG = '#ffffff'
+const ROW_BORDER = '#e9edef'
+const ROW_BG_ACTIVE = 'rgba(30,215,96,0.16)'
+const TEXT_STRONG = '#111b21'
+const TEXT_MUTED = '#667781'
+const TEXT_FAINT = '#8696a0'
+const STATUS_ICON = '#111b21'
 const NOTCH_BG = '#05070f'
-const CHIP_BG = '#1f2937'
-const SCRIM = 'rgba(2,6,23,0.6)'
-const DANGER = '#f87171'
+const CHIP_BG = '#f0f2f5'
+const SCRIM = 'rgba(17,27,33,0.4)'
+const DANGER = '#d32f2f'
 
 function Defs() {
   return (
     <defs>
       <linearGradient id="vzg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stopColor="#c084fc" />
-        <stop offset="1" stopColor="#22d3ee" />
+        <stop offset="0" stopColor="#1ed760" />
+        <stop offset="1" stopColor="#1ed760" />
       </linearGradient>
       <filter id="vzglow" x="-60%" y="-60%" width="220%" height="220%">
         <feGaussianBlur stdDeviation="6" result="b" />

@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 // Las fuentes viajan con la app en vez de pedirse a Google Fonts: el token las nombraba
 // pero nunca se cargaban, así que cada sistema caía en la suya (Segoe UI, Roboto, SF).
-import '@fontsource-variable/inter'
-import '@fontsource-variable/bricolage-grotesque'
+import '@fontsource/roboto/400.css'
+import '@fontsource/roboto/500.css'
+import '@fontsource/roboto/700.css'
+import '@fontsource-variable/sora'
 import './index.css'
 import App from './App.tsx'
 import { TooltipProvider } from './components/TooltipProvider.tsx'

@@ -515,7 +515,6 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           <section className={`examples-section reveal ${examplesReveal.inView ? 'is-visible' : ''}`} ref={examplesReveal.ref}>
             <div className="section-heading">
               <h2>{copy.examplesTitle}</h2>
-              <p className="panel-copy">{copy.examplesSubtitle}</p>
             </div>
 
             {chunk(landingPreviewCards, 3).map((row, rowIndex) => (

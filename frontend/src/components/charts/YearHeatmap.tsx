@@ -37,7 +37,7 @@ export function YearHeatmap({ days, unit }: { days: CalendarDay[]; unit?: string
             style={{
               gridColumn: cell.column + 1,
               gridRow: cell.row + 1,
-              background: `rgba(34, 211, 238, ${cell.count === 0 ? 0.08 : 0.28 + (cell.count / max) * 0.72})`,
+              background: `rgba(30, 215, 96, ${cell.count === 0 ? 0.1 : 0.28 + (cell.count / max) * 0.72})`,
             }}
           />
         </Tooltip>

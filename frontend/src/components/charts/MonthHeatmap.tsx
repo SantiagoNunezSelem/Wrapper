@@ -15,7 +15,7 @@ export function MonthHeatmap({ months, unit }: { months: MonthDatum[]; unit?: st
           <div className="chart-month-cell">
             <span
               className="chart-month-swatch"
-              style={{ background: `rgba(34, 211, 238, ${month.count === 0 ? 0.08 : 0.28 + (month.count / max) * 0.72})` }}
+              style={{ background: `rgba(30, 215, 96, ${month.count === 0 ? 0.1 : 0.28 + (month.count / max) * 0.72})` }}
             />
             <span className="chart-month-label">{month.monthLabel}</span>
           </div>

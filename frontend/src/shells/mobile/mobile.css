@@ -32,7 +32,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px calc(10px + env(safe-area-inset-top, 0px));
-  background: rgba(3, 7, 18, 0.82);
+  background: rgba(246, 242, 232, 0.88);
   backdrop-filter: blur(var(--vz-blur));
   border-bottom: 1px solid var(--vz-hairline);
 }
@@ -329,7 +329,7 @@
   border: 1px solid rgba(var(--vz-brand-violet-rgb), 0.3);
   border-radius: var(--vz-radius-pill);
   background: rgba(var(--vz-brand-violet-rgb), 0.14);
-  color: #d8b4fe;
+  color: var(--vz-green-deep);
   font-size: 0.7rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -357,13 +357,13 @@
 
 /* El paso que la gente saltea: sin esto el .zip llega con las fotos adentro. */
 .m-steps li.is-warn .m-step-n {
-  border-color: rgba(251, 191, 36, 0.34);
-  background: rgba(251, 191, 36, 0.14);
-  color: #fcd34d;
+  border-color: rgba(184, 134, 11, 0.32);
+  background: var(--vz-gold-bg);
+  color: var(--vz-gold);
 }
 
 .m-steps li.is-warn .m-step-body strong {
-  color: #fcd34d;
+  color: var(--vz-gold);
 }
 
 .m-privacy-note {
@@ -546,7 +546,7 @@
 .m-row-crown {
   display: inline-flex;
   flex-shrink: 0;
-  color: #fbbf24;
+  color: var(--vz-gold);
 }
 
 .m-row-crown.is-locked {
@@ -602,7 +602,7 @@
   background: linear-gradient(
     90deg,
     var(--vz-surface-4) 25%,
-    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0.9) 50%,
     var(--vz-surface-4) 75%
   );
   background-size: 200% 100%;
@@ -618,10 +618,10 @@
   align-items: center;
   gap: 5px;
   padding: 5px 11px 5px 9px;
-  border: 1px solid rgba(251, 191, 36, 0.32);
+  border: 1px solid rgba(184, 134, 11, 0.32);
   border-radius: var(--vz-radius-pill);
-  background: rgba(251, 191, 36, 0.14);
-  color: #fcd34d;
+  background: var(--vz-gold-bg);
+  color: var(--vz-gold);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -638,7 +638,7 @@
   border: 1px solid rgba(var(--vz-brand-cyan-rgb), 0.26);
   border-radius: var(--vz-radius-xs);
   background: rgba(var(--vz-brand-cyan-rgb), 0.12);
-  color: #67e8f9;
+  color: var(--vz-green-deep);
   font-size: 0.7rem;
   line-height: 1.35;
   max-width: 100%;
@@ -919,7 +919,7 @@
   grid-template-columns: repeat(5, 1fr);
   align-items: end;
   padding: 8px 4px calc(10px + env(safe-area-inset-bottom, 0px));
-  background: rgba(3, 7, 18, 0.94);
+  background: var(--vz-card);
   backdrop-filter: blur(var(--vz-blur));
   border-top: 1px solid var(--vz-hairline);
 }
@@ -987,7 +987,7 @@
   /* La muesca del color del fondo lo despega de la barra y lo hace leer como
      un botón flotante, no como una quinta pestaña. */
   box-shadow:
-    0 0 0 5px rgba(3, 7, 18, 0.94),
+    0 0 0 5px var(--vz-card),
     0 6px 22px rgba(var(--vz-brand-cyan-rgb), 0.5);
   transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -1021,7 +1021,7 @@
   inset: 0;
   width: 100%;
   border: 0;
-  background: rgba(2, 6, 23, 0.7);
+  background: rgba(18, 18, 18, 0.42);
   cursor: pointer;
   animation: mFade 200ms ease;
 }
@@ -2193,11 +2193,6 @@
   gap: 4px;
 }
 
-.m-demo-sub {
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--vz-text-dim);
-}
 
 .m-demo-track {
   display: flex;
@@ -2317,7 +2312,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #fcd34d;
+  color: var(--vz-gold);
 }
 
 .m-demo-more {
@@ -2327,3 +2322,1217 @@
   color: var(--vz-text-strong);
 }
 
+
+
+/* ==========================================================================
+   REDISEÑO "CHAT" — shell mobile
+   ==========================================================================
+
+   Misma estructura, otra piel. La idea que lo ordena todo: la app ES un chat.
+   - Las métricas son mensajes recibidos: burbuja blanca con piquito y el
+     título en el color de "remitente" de cada métrica, como en un grupo.
+   - "Wrapped" en el título va dentro de una burbuja enviada, con doble tilde.
+   - Lo destacado se marca en verde; lo Pro con una píldora negra.
+   - Las hojas se abren sobre el fondo de chat con dibujitos.
+   ========================================================================== */
+
+/* --- Topbar --------------------------------------------------------------- */
+.m-topbar {
+  background: rgba(246, 242, 232, 0.86);
+  border-bottom-color: var(--vz-hairline);
+}
+
+.m-burger i {
+  height: 2.2px;
+  background: var(--vz-text-strong);
+}
+
+.m-burger i:nth-child(2) {
+  width: 13px;
+}
+
+.m-brand-name {
+  font-family: var(--vz-font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.m-avatar {
+  background: var(--vz-green);
+  font-family: var(--vz-font-display);
+  box-shadow: inset 0 0 0 2px rgba(18, 18, 18, 0.06);
+}
+
+.m-signin {
+  min-height: 38px;
+  padding: 8px 15px;
+  border: 0;
+  background: var(--vz-text-strong);
+  color: var(--vz-wall);
+  font-family: var(--vz-font-display);
+  font-weight: 700;
+}
+
+/* --- Ritmo general ---------------------------------------------------------- */
+.m-main {
+  gap: 16px;
+  padding: 16px 16px 28px;
+}
+
+.m-section-label {
+  font-family: var(--vz-font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: var(--vz-text-dim);
+}
+
+.m-link {
+  font-family: var(--vz-font-display);
+  color: var(--vz-green-deep);
+  letter-spacing: 0.08em;
+}
+
+/* --- Hero: "Wrapped" en una burbuja enviada ------------------------------- */
+.m-hero {
+  gap: 10px;
+  padding: 10px 0 4px;
+}
+
+.m-hero h1 {
+  font-size: clamp(2rem, 9vw, 2.35rem);
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+}
+
+.m-hero h1 .gradient-text {
+  position: relative;
+  display: inline-block;
+  margin: 6px 0 0 -4px;
+  padding: 1px 46px 3px 12px;
+  border-radius: 14px;
+  background: var(--vz-bubble-out);
+  color: var(--vz-text-strong);
+  box-shadow: var(--vz-shadow-bubble);
+  animation: mBubbleIn 600ms cubic-bezier(0.34, 1.36, 0.64, 1) 150ms both;
+}
+
+/* El piquito de la burbuja enviada, arriba a la derecha. */
+.m-hero h1 .gradient-text::before {
+  content: '';
+  position: absolute;
+  right: -7px;
+  top: 0;
+  width: 14px;
+  height: 14px;
+  background: var(--vz-bubble-out);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+/* Doble tilde azul: "leído". */
+.m-hero h1 .gradient-text::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 9px;
+  width: 18px;
+  height: 12px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 12' fill='none' stroke='%2353bdeb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m1 6 3 3 6-7M7 8l1 1 6-7'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+
+@keyframes mBubbleIn {
+  from {
+    transform: translateY(8px) scale(0.94);
+    opacity: 0.3;
+  }
+}
+
+.m-hero .lead {
+  margin-top: 2px;
+  font-size: 1.02rem;
+  color: var(--vz-text-muted);
+}
+
+/* --- Zona de subida: un mensaje de "documento" ------------------------------ */
+.m-drop {
+  gap: 6px;
+  padding: 22px 18px 18px;
+  border: 0;
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-drop:active {
+  background: var(--vz-card);
+  border-color: transparent;
+}
+
+.m-drop-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+.m-drop strong {
+  font-family: var(--vz-font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.m-drop > span:not(.m-drop-icon, .m-drop-cue) {
+  font-size: 0.84rem;
+  color: var(--vz-text-dim);
+}
+
+.m-drop-cue {
+  align-self: stretch;
+  margin-top: 10px;
+  padding: 15px 20px;
+  background: var(--vz-green);
+  font-family: var(--vz-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* --- Pasos: cuadrados verdes sobre un hilo punteado ------------------------- */
+.m-steps-block {
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.m-steps-block > .m-section-label {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-transform: none;
+  color: var(--vz-text-strong);
+}
+
+.m-steps li {
+  grid-template-columns: 30px 1fr;
+  gap: 14px;
+  padding: 0 0 18px;
+}
+
+.m-steps li:not(:last-child)::before {
+  left: 14px;
+  top: 34px;
+  bottom: 4px;
+  width: 2px;
+  background: repeating-linear-gradient(var(--vz-green) 0 6px, transparent 6px 11px);
+  opacity: 0.75;
+}
+
+.m-step-n {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--vz-green);
+  color: var(--vz-text-strong);
+  font-family: var(--vz-font-display);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.m-steps li:last-child .m-step-n {
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+}
+
+.m-step-body strong {
+  font-family: var(--vz-font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--vz-text-strong);
+  letter-spacing: -0.015em;
+  padding-top: 4px;
+}
+
+.m-step-body span {
+  font-size: 0.88rem;
+  color: var(--vz-text-muted);
+}
+
+.m-steps li.is-warn .m-step-n {
+  background: var(--vz-gold-bg);
+  color: var(--vz-gold);
+  box-shadow: inset 0 0 0 1px rgba(184, 134, 11, 0.32);
+}
+
+.m-steps li.is-warn .m-step-body strong {
+  color: var(--vz-text-strong);
+}
+
+/* --- Ejemplos (carrusel) ----------------------------------------------------- */
+.m-demo-head .m-section-label {
+  color: var(--vz-green-deep);
+}
+
+
+.m-demo-track {
+  margin-inline: -16px;
+  padding: 14px 16px 10px;
+  scroll-padding-inline: 16px;
+  gap: 12px;
+}
+
+.m-demo-card {
+  --vz-accent: var(--vz-brand-violet-rgb);
+  flex-basis: 80%;
+  gap: 5px;
+  padding: 18px 16px 14px;
+  border: 0;
+  border-radius: var(--vz-radius-bubble);
+  border-top-left-radius: 4px;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+  margin-left: 8px;
+}
+
+.m-demo-card::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 0;
+  width: 10px;
+  height: 12px;
+  background: var(--vz-card);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.m-demo-tag {
+  top: -10px;
+  left: auto;
+  right: 14px;
+  padding: 3px 9px;
+  background: var(--vz-text-strong);
+  color: var(--vz-wall);
+  font-family: var(--vz-font-display);
+  font-size: 0.58rem;
+}
+
+.m-demo-title {
+  font-family: var(--vz-font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgb(var(--vz-accent));
+}
+
+.m-demo-value {
+  font-size: 1.9rem;
+  letter-spacing: -0.045em;
+}
+
+.m-demo-label {
+  font-size: 0.86rem;
+}
+
+.m-demo-foot {
+  border-top: 1px dashed var(--vz-hairline);
+  margin-top: 10px;
+  font-family: var(--vz-font-display);
+}
+
+.m-demo-tier {
+  padding: 3px 9px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+}
+
+.m-demo-more {
+  color: var(--vz-green-deep);
+}
+
+/* --- Resumen del chat -------------------------------------------------------- */
+.m-summary {
+  gap: 0;
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-summary > div {
+  padding: 13px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.m-summary > div + div {
+  border-left: 1px solid var(--vz-hairline);
+}
+
+.m-summary strong {
+  font-family: var(--vz-font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.m-summary-date strong {
+  font-size: 0.84rem;
+  letter-spacing: -0.01em;
+}
+
+.m-summary span {
+  font-size: 0.6rem;
+  color: var(--vz-text-dim);
+}
+
+.m-chips {
+  margin-inline: -16px;
+  padding: 2px 16px 4px;
+}
+
+/* --- Segmento Lista / Historia ----------------------------------------------- */
+.m-segment {
+  padding: 4px;
+  border: 0;
+  background: var(--vz-wall-deep);
+}
+
+.m-segment button {
+  min-height: 42px;
+  font-family: var(--vz-font-display);
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--vz-text-dim);
+}
+
+.m-segment button.is-active {
+  background: var(--vz-card);
+  color: var(--vz-text-strong);
+  box-shadow: 0 1px 2px rgba(18, 18, 18, 0.1);
+}
+
+.m-play {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--vz-green);
+  color: var(--vz-text-strong);
+  font-size: 0.5rem;
+  padding-left: 2px;
+}
+
+/* --- La métrica como mensaje recibido ---------------------------------------- */
+.m-rows {
+  gap: 10px;
+}
+
+.m-row {
+  --vz-accent: var(--vz-brand-violet-rgb);
+  width: calc(100% - 22px);
+  margin-left: 8px;
+  padding: 10px 14px 10px;
+  border: 0;
+  border-radius: var(--vz-radius-bubble);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-bubble);
+}
+
+.m-row::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 0;
+  width: 10px;
+  height: 12px;
+  background: var(--vz-card);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.m-row:active {
+  background: var(--vz-card);
+  transform: scale(0.985);
+}
+
+.m-row-head {
+  margin-bottom: 1px;
+}
+
+/* El punto de color se va: ahora el color está en el nombre, como el remitente
+   de un mensaje en un grupo. */
+.m-row-dot {
+  display: none;
+}
+
+.m-row-title {
+  font-family: var(--vz-font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  text-transform: none;
+  color: rgb(var(--vz-accent));
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+}
+
+.m-row-crown {
+  color: var(--vz-gold);
+}
+
+.m-row-chevron {
+  color: var(--vz-text-faint);
+}
+
+.m-row-value {
+  margin-top: 3px;
+  font-size: 1.55rem;
+  line-height: 1.12;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.m-row-label {
+  margin-top: 2px;
+  font-size: 0.86rem;
+  color: var(--vz-text-muted);
+}
+
+.m-row-skeleton i {
+  height: 12px;
+  background: linear-gradient(90deg, var(--vz-wall) 25%, #fffdf8 50%, var(--vz-wall) 75%);
+  background-size: 200% 100%;
+}
+
+.m-row-chip {
+  right: 14px;
+  border: 0;
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+  font-family: var(--vz-font-display);
+}
+
+/* "Analizando con IA" ya no es un aviso de color: una píldora verde suave con
+   el destello, la misma familia que el resto de la app. */
+.m-row-ai {
+  border: 0;
+  border-radius: 8px;
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+  font-weight: 500;
+}
+
+.m-row-ai.is-unavailable,
+.m-row-ai.is-failed {
+  border: 0;
+}
+
+.m-row.tier-purple, .m-demo-card.tier-purple { --vz-accent: var(--vz-tier-purple); }
+.m-row.tier-pink, .m-demo-card.tier-pink { --vz-accent: var(--vz-tier-pink); }
+.m-row.tier-orange, .m-demo-card.tier-orange { --vz-accent: var(--vz-tier-orange); }
+.m-row.tier-blue, .m-demo-card.tier-blue { --vz-accent: var(--vz-tier-blue); }
+.m-row.tier-cyan, .m-demo-card.tier-cyan { --vz-accent: var(--vz-tier-cyan); }
+.m-row.tier-lime, .m-demo-card.tier-lime { --vz-accent: var(--vz-tier-lime); }
+.m-row.tier-gold, .m-demo-card.tier-gold { --vz-accent: var(--vz-tier-gold); }
+.m-row.tier-rose, .m-demo-card.tier-rose { --vz-accent: var(--vz-tier-rose); }
+.m-row.tier-indigo, .m-demo-card.tier-indigo { --vz-accent: var(--vz-tier-indigo); }
+.m-row.tier-mint, .m-demo-card.tier-mint { --vz-accent: var(--vz-tier-mint); }
+.m-row.tier-slate, .m-demo-card.tier-slate { --vz-accent: var(--vz-tier-slate); }
+.m-row.tier-red, .m-demo-card.tier-red { --vz-accent: var(--vz-tier-red); }
+.m-row.tier-green, .m-demo-card.tier-green { --vz-accent: var(--vz-tier-green); }
+.m-row.tier-yellow, .m-demo-card.tier-yellow { --vz-accent: var(--vz-tier-yellow); }
+.m-row.tier-teal, .m-demo-card.tier-teal { --vz-accent: var(--vz-tier-teal); }
+.m-row.tier-violet, .m-demo-card.tier-violet { --vz-accent: var(--vz-tier-violet); }
+.m-row.tier-magenta, .m-demo-card.tier-magenta { --vz-accent: var(--vz-tier-magenta); }
+.m-row.tier-sky, .m-demo-card.tier-sky { --vz-accent: var(--vz-tier-sky); }
+
+/* La tarjeta de desktop dibuja un anillo con el acento: en la burbuja, no. */
+.m-row,
+.m-row.is-locked,
+.m-demo-card {
+  box-shadow: var(--vz-shadow-bubble);
+}
+
+.m-demo-card {
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-generated {
+  align-self: center;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-bubble);
+  font-size: 0.72rem;
+  color: var(--vz-text-dim);
+}
+
+/* --- Historial ---------------------------------------------------------------- */
+.m-saved-row {
+  border: 0;
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-saved {
+  padding: 12px;
+}
+
+.m-saved-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+.m-saved-body strong {
+  font-family: var(--vz-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.m-saved-body span {
+  font-size: 0.76rem;
+  color: var(--vz-text-dim);
+}
+
+.m-saved-action {
+  width: 42px;
+  border-left-color: var(--vz-wall);
+}
+
+.m-saved-action.is-danger {
+  color: var(--vz-danger-text);
+}
+
+/* --- Cuenta y estados vacíos -------------------------------------------------- */
+.m-card {
+  gap: 12px;
+  padding: 18px;
+  border: 0;
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-account-id strong,
+.m-card-head strong {
+  font-family: var(--vz-font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.m-account-id strong {
+  font-size: 1.1rem;
+}
+
+.m-status {
+  border: 0;
+  background: var(--vz-wall);
+  color: var(--vz-text-dim);
+  font-family: var(--vz-font-display);
+}
+
+.m-status.is-on {
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+.m-card-hint {
+  font-size: 0.86rem;
+  color: var(--vz-text-muted);
+}
+
+.m-signout {
+  align-items: center;
+  font-family: var(--vz-font-display);
+  font-weight: 700;
+}
+
+.m-empty {
+  gap: 12px;
+  margin-top: 24px;
+  padding: 32px 22px;
+  border-radius: var(--vz-radius-xl);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50% 50% 50% 8px;
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+.m-empty strong {
+  font-family: var(--vz-font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.m-empty p {
+  font-size: 0.9rem;
+  color: var(--vz-text-muted);
+}
+
+/* --- Barra inferior ------------------------------------------------------------ */
+.m-tabbar {
+  padding: 6px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--vz-card);
+  border-top-color: var(--vz-hairline);
+  backdrop-filter: none;
+}
+
+.m-tab {
+  gap: 2px;
+  padding: 2px 0;
+  color: var(--vz-text-dim);
+  font-family: var(--vz-font-display);
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+/* La pestaña activa: una píldora verde suave detrás del ícono, en vez de la
+   barrita de degradado. */
+.m-tab-icon {
+  width: 56px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--vz-radius-pill);
+  transition: background 200ms ease;
+}
+
+.m-tab.is-active {
+  color: var(--vz-text-strong);
+  font-weight: 700;
+}
+
+.m-tab.is-active .m-tab-icon {
+  transform: none;
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+.m-tab.is-active::before {
+  display: none;
+}
+
+.m-tab.is-empty {
+  opacity: 0.35;
+}
+
+.m-tabbar .m-fab {
+  width: 58px;
+  height: 58px;
+  margin: -22px auto 0;
+  background: var(--vz-green);
+  box-shadow:
+    0 0 0 5px var(--vz-wall),
+    0 10px 24px -8px rgba(18, 140, 60, 0.6);
+}
+
+/* --- Capas ---------------------------------------------------------------------- */
+.m-scrim {
+  background: rgba(18, 18, 18, 0.42);
+}
+
+/* Menú lateral: crema, con los grupos de opciones como tarjetas blancas. */
+.m-drawer {
+  gap: 10px;
+  padding-inline: 14px;
+  background: var(--vz-wall);
+  border-right: 0;
+  border-radius: 0 26px 26px 0;
+}
+
+.m-drawer-id strong {
+  font-family: var(--vz-font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.m-drawer-nav,
+.m-privacy {
+  padding: 4px;
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-drawer-rule {
+  display: none;
+}
+
+.m-drawer-item,
+.m-privacy summary {
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  color: var(--vz-text-strong);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.m-drawer-item.is-active {
+  background: var(--vz-bubble-out);
+}
+
+.m-drawer-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--vz-wall);
+  color: var(--vz-text-strong);
+}
+
+.m-drawer-item.is-active .m-drawer-icon {
+  background: var(--vz-green);
+}
+
+.m-drawer-value {
+  padding: 4px 9px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-wall);
+  color: var(--vz-text-dim);
+  font-family: var(--vz-font-display);
+  font-size: 0.7rem;
+}
+
+.m-drawer-value.is-on {
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+}
+
+.m-privacy p {
+  padding: 2px 12px 12px 56px;
+  font-size: 0.8rem;
+  color: var(--vz-text-muted);
+}
+
+/* Las hojas inferiores se abren sobre el fondo de chat. */
+.m-sheet {
+  border: 0;
+  border-radius: 28px 28px 0 0;
+  background: var(--vz-app-background);
+  box-shadow: 0 -10px 40px -20px rgba(18, 18, 18, 0.35);
+}
+
+.m-grabber {
+  width: 40px;
+  height: 5px;
+  margin-top: 10px;
+  background: var(--vz-hairline-strong);
+}
+
+.m-sheet-head {
+  padding: 8px 18px 12px;
+  border-bottom: 0;
+}
+
+.m-sheet-title h2 {
+  font-size: 1.25rem;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+}
+
+.m-sheet-title p {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  color: var(--vz-text-muted);
+  line-height: 1.5;
+}
+
+.m-sheet-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: var(--vz-card);
+  color: var(--vz-text-strong);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline);
+}
+
+.m-sheet-body {
+  gap: 16px;
+  padding: 2px 16px 22px;
+}
+
+/* El número protagonista, en su propia tarjeta blanca. */
+.m-sheet-hero {
+  gap: 8px;
+  padding: 18px 16px;
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-sheet-hero strong {
+  font-size: clamp(2.3rem, 12vw, 3.1rem);
+  line-height: 1.04;
+  letter-spacing: -0.05em;
+}
+
+.m-sheet-hero > span {
+  font-size: 0.95rem;
+  color: var(--vz-text-muted);
+}
+
+/* El detalle también va en tarjeta: el chart de abajo, las series, la lista. */
+.m-sheet-detail {
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--vz-radius-lg);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-sheet-detail > .m-section-label:first-child {
+  color: var(--vz-green-deep);
+}
+
+.m-series-item h4 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--vz-text-strong);
+}
+
+.m-sheet-foot {
+  gap: 14px;
+  padding: 10px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--vz-wall);
+  border-top-color: var(--vz-hairline);
+}
+
+.m-sheet-step {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  background: var(--vz-card);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+/* Avanzar es el gesto natural: el botón de "siguiente" es el verde. */
+.m-sheet-step:last-child {
+  background: var(--vz-green);
+  box-shadow: var(--vz-shadow-brand);
+}
+
+.m-sheet-count {
+  min-width: 64px;
+  text-align: center;
+  font-family: var(--vz-font-display);
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--vz-text-strong);
+}
+
+/* --- Modo historia ----------------------------------------------------------------
+   El recorrido es el momento "Wrapped": pantalla llena de color. Verde con
+   lunares como fondo base; según el acento de la métrica en pantalla, algunas
+   pasan a negro o a crema, así 25 pantallas seguidas no se sienten iguales.
+   Los colores de texto se cambian redefiniendo los tokens dentro de .m-story,
+   así cada regla de abajo sigue funcionando sin tocarla. */
+.m-story {
+  --vz-text-strong: #121212;
+  --vz-text-soft: #1b1a17;
+  --vz-text-dim: rgba(18, 18, 18, 0.66);
+  --vz-text-faint: rgba(18, 18, 18, 0.6);
+  --st-dot: rgba(10, 102, 42, 0.35);
+  --st-track: rgba(18, 18, 18, 0.16);
+  --st-done: rgba(18, 18, 18, 0.7);
+  background:
+    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
+    var(--vz-green);
+  transition: background-color 400ms ease;
+}
+
+.m-story:has(.m-story-plate:is(.tier-purple, .tier-indigo, .tier-violet, .tier-slate, .tier-blue, .tier-magenta)) {
+  --vz-text-strong: #f6f2e8;
+  --vz-text-soft: #ece5d4;
+  --vz-text-dim: rgba(246, 242, 232, 0.72);
+  --vz-text-faint: rgba(246, 242, 232, 0.62);
+  --st-dot: rgba(30, 215, 96, 0.14);
+  --st-track: rgba(246, 242, 232, 0.2);
+  --st-done: rgba(246, 242, 232, 0.8);
+  background:
+    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
+    #121212;
+}
+
+.m-story:has(.m-story-plate:is(.tier-gold, .tier-yellow, .tier-orange, .tier-rose)) {
+  --st-dot: #e7dfcc;
+  background:
+    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
+    var(--vz-wall);
+}
+
+.m-story-bars i,
+.m-story-bars i.is-now {
+  background: var(--st-track);
+}
+
+.m-story-bars i.is-done {
+  background: var(--st-done);
+}
+
+.m-story-fill {
+  background: var(--vz-text-strong);
+}
+
+.m-story-x {
+  top: calc(18px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(18, 18, 18, 0.1);
+  color: var(--vz-text-strong);
+}
+
+.m-story-context {
+  font-family: var(--vz-font-display);
+  color: var(--vz-text-strong);
+  opacity: 0.8;
+}
+
+/* El título de la métrica es un mensaje recibido: burbuja blanca con piquito. */
+.m-story-plate {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 10px 14px 11px;
+  margin-left: 8px;
+  border-radius: var(--vz-radius-bubble);
+  background: var(--vz-card);
+  box-shadow: 0 2px 0 rgba(18, 18, 18, 0.12);
+}
+
+.m-story-plate::before {
+  left: -8px;
+  top: 0;
+  bottom: auto;
+  width: 10px;
+  height: 12px;
+  border-radius: 0;
+  background: var(--vz-card);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.m-story-kicker {
+  font-size: clamp(1.05rem, 5vw, 1.25rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #121212;
+}
+
+.m-story-huge {
+  font-size: clamp(3.4rem, 19vw, 5.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+  color: var(--vz-text-strong);
+}
+
+.m-story-huge.is-long {
+  font-size: clamp(2.3rem, 12vw, 3.2rem);
+}
+
+/* Sobre el verde, el resaltado no sería visible: va en negro con texto verde. */
+.m-story .m-story-huge .gradient-text {
+  background: #121212;
+  color: var(--vz-green);
+}
+
+.m-story:has(.m-story-plate:is(.tier-purple, .tier-indigo, .tier-violet, .tier-slate, .tier-blue, .tier-magenta)) .m-story-huge .gradient-text {
+  background: var(--vz-green);
+  color: #121212;
+}
+
+.m-story:has(.m-story-plate:is(.tier-gold, .tier-yellow, .tier-orange, .tier-rose)) .m-story-huge .gradient-text {
+  background: var(--vz-green);
+  color: #121212;
+}
+
+.m-story-label {
+  font-size: 1.12rem;
+  font-weight: 500;
+  color: var(--vz-text-strong);
+}
+
+.m-story-teaser {
+  color: var(--vz-text-dim);
+}
+
+.m-story-typing {
+  padding: 12px 16px;
+  border-radius: var(--vz-radius-bubble);
+  background: var(--vz-card);
+  align-self: flex-start;
+}
+
+.m-story-typing i {
+  width: 8px;
+  height: 8px;
+  background: #8a8274;
+}
+
+.m-story-ticker-name {
+  font-family: var(--vz-font-display);
+}
+
+.m-story-inline {
+  color: var(--vz-text-strong);
+  font-family: var(--vz-font-display);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+}
+
+.m-story-body .m-story-note {
+  position: relative;
+  padding: 9px 13px 9px 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  font-style: normal;
+  color: #121212;
+}
+
+.m-story-body .m-story-note::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 8px 0 0 8px;
+  background: #121212;
+}
+
+.m-story-foot .primary-button {
+  min-height: 56px;
+  background: #121212;
+  color: var(--vz-green);
+  box-shadow: none;
+}
+
+.m-story:has(.m-story-plate:is(.tier-purple, .tier-indigo, .tier-violet, .tier-slate, .tier-blue, .tier-magenta)) .m-story-foot .primary-button {
+  background: var(--vz-green);
+  color: #121212;
+}
+
+.m-story-hint {
+  color: var(--vz-text-strong);
+}
+
+/* --- Tutorial de exportación -------------------------------------------------- */
+.m-tutorial-os-toggle {
+  padding: 4px;
+  border: 0;
+  background: var(--vz-wall-deep);
+}
+
+.m-tutorial-os-toggle button {
+  font-family: var(--vz-font-display);
+  font-weight: 700;
+}
+
+.m-tutorial-os-toggle button.is-active {
+  background: var(--vz-card);
+  box-shadow: 0 1px 2px rgba(18, 18, 18, 0.1);
+}
+
+.m-tutorial-art {
+  border: 0;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.m-tutorial-dot {
+  background: var(--vz-hairline-strong);
+}
+
+.m-tutorial-dot.is-active {
+  background: var(--vz-green);
+}
+
+.m-tutorial-foot {
+  background: var(--vz-wall);
+  border-top-color: var(--vz-hairline);
+}
+
+/* --- Recorrido compartido -------------------------------------------------------- */
+.m-shared-state h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.035em;
+}
+
+.m-shared-state .brand-orb {
+  width: 52px;
+  height: 52px;
+}
+
+/* La nota del recorrido se adapta al fondo de cada pantalla. */
+.m-story {
+  --st-note-bg: rgba(255, 255, 255, 0.6);
+  --st-note-fg: #121212;
+  --st-note-bar: #121212;
+}
+
+.m-story:has(.m-story-plate:is(.tier-purple, .tier-indigo, .tier-violet, .tier-slate, .tier-blue, .tier-magenta)) {
+  --st-note-bg: rgba(246, 242, 232, 0.1);
+  --st-note-fg: #f6f2e8;
+  --st-note-bar: var(--vz-green);
+}
+
+.m-story:has(.m-story-plate:is(.tier-gold, .tier-yellow, .tier-orange, .tier-rose)) {
+  --st-note-bg: var(--vz-card);
+  --st-note-bar: var(--vz-green);
+}
+
+.m-story-body .m-story-note {
+  background: var(--st-note-bg);
+  color: var(--st-note-fg);
+}
+
+.m-story-body .m-story-note::before {
+  background: var(--st-note-bar);
+}
+
+/* En el cierre Pro el número completo es el resaltado (la clase va en el mismo
+   elemento, no en un hijo). */
+.m-story .m-story-huge.gradient-text {
+  align-self: flex-start;
+  padding: 0 0.14em;
+  border-radius: 0.16em;
+  background: var(--vz-green);
+  color: #121212;
+}
+
+/* El número del paso no se achica dentro de la fila flex del tutorial. */
+.m-step-n {
+  flex-shrink: 0;
+}
+
+/* "Cerrar sesión" también va en su tarjeta, como el resto de los grupos. */
+.m-drawer > .m-drawer-item {
+  padding: 13px 14px;
+  border-radius: var(--vz-radius-md);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+  color: var(--vz-danger-text);
+}
+
+.m-drawer > .m-drawer-item .m-drawer-icon {
+  background: var(--vz-danger-bg);
+  color: var(--vz-danger-text);
+}
