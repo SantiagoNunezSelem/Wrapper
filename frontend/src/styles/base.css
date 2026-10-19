@@ -3565,11 +3565,25 @@ button.chat-bubble-divider.is-expandable:hover {
 }
 
 /* --- Página de suscripción --------------------------------------------------- */
-.subpage-section,
-.plan-card,
-.subpage-current {
+/* La sección es la única tarjeta: lo que va adentro (el plan, sus datos) se
+   apoya directo sobre ella, sin una segunda caja con sombra. */
+.subpage-section {
+  border: 0;
   background: var(--vz-card);
   box-shadow: var(--vz-shadow-card);
+}
+
+.subpage-section .plan-card,
+.subpage-section .subpage-current {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.subpage-section .subpage-fact {
+  border: 0;
+  background: var(--vz-wall);
+  box-shadow: none;
 }
 
 .subpage-eyebrow {
