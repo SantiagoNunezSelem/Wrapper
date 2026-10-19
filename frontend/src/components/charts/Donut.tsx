@@ -18,7 +18,7 @@ export function Donut({ items }: { items: DonutDatum[] }) {
   return (
     <div className="chart-donut">
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} className="chart-donut-svg">
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={STROKE} />
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke="#efe8d8" strokeWidth={STROKE} />
         {items.map((item, index) => {
           const fraction = item.value / total
           const dash = fraction * CIRCUMFERENCE

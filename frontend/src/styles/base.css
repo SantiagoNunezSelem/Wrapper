@@ -80,7 +80,7 @@
 }
 
 .primary-button:hover {
-  box-shadow: 0 16px 44px rgba(34, 211, 238, 0.4);
+  box-shadow: 0 16px 44px rgba(30, 215, 96, 0.4);
 }
 
 /* A light sweep across the button on hover — a small "shine" instead of a
@@ -239,7 +239,7 @@ h2,
 }
 
 .gradient-text {
-  background: linear-gradient(120deg, var(--vz-brand-violet), var(--vz-brand-cyan), #f472b6, var(--vz-brand-violet));
+  background: linear-gradient(120deg, var(--vz-brand-violet), var(--vz-brand-cyan), var(--vz-brand-violet));
   background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -263,7 +263,7 @@ h3 {
 
 .lead,
 .panel-copy {
-  color: #d4d4d8;
+  color: var(--vz-text-muted);
   line-height: 1.65;
 }
 
@@ -325,11 +325,11 @@ h3 {
 }
 
 .vip-badge-circle.is-active {
-  /* Mismo ámbar que la corona VIP del shell mobile (`.m-row-crown`, #fbbf24):
+  /* Mismo ámbar que la corona VIP del shell mobile (`.m-row-crown`, var(--vz-gold)):
      un solo color para "esto es VIP" en toda la app, en vez de un verde que
      no aparece en ningún otro lado. */
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  background: var(--vz-gold-bg);
+  color: var(--vz-gold);
 }
 
 .vip-badge-circle.is-locked {
@@ -390,7 +390,7 @@ h3 {
   color: var(--vz-text-soft);
   font-size: 0.84rem;
   font-style: italic;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--vz-surface-2);
   padding: 8px 12px;
   border-radius: var(--vz-radius-xs);
   display: -webkit-box;
@@ -452,7 +452,7 @@ h3 {
   background: linear-gradient(
     90deg,
     var(--vz-surface-4) 25%,
-    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0.9) 50%,
     var(--vz-surface-4) 75%
   );
   background-size: 200% 100%;
@@ -469,7 +469,7 @@ h3 {
   gap: 8px;
   text-align: center;
   padding: 14px;
-  background: rgba(8, 11, 22, 0.46);
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .locked-overlay p {
@@ -485,8 +485,8 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fbbf24;
+  background: var(--vz-hairline-strong);
+  color: var(--vz-gold);
   transition: background 200ms ease, transform 200ms ease;
 }
 
@@ -503,7 +503,7 @@ h3 {
 /* Hovering anywhere on a locked card pops the shackle open a bit — a small,
    playful hint that this is meant to be unlocked. */
 .locked-panel:hover .locked-icon {
-  background: rgba(251, 191, 36, 0.2);
+  background: var(--vz-gold-bg);
   transform: scale(1.06);
 }
 
@@ -518,7 +518,7 @@ h3 {
   width: 32px;
   height: 32px;
   border-radius: var(--vz-radius-pill);
-  border: 3px solid rgba(255, 255, 255, 0.18);
+  border: 3px solid var(--vz-surface-5);
   border-top-color: var(--vz-brand-cyan);
   animation: overlaySpin 0.8s linear infinite;
 }
@@ -535,7 +535,7 @@ h3 {
 
 .unlock-button:hover {
   animation-play-state: paused;
-  box-shadow: 0 0 0 6px rgba(192, 132, 252, 0.18);
+  box-shadow: 0 0 0 6px rgba(30, 215, 96, 0.18);
 }
 
 .unlock-button:disabled {
@@ -549,8 +549,8 @@ h3 {
 /* El desbloqueo gratuito diario no es la venta: se lee como una cortesía, en
    verde y sin el latido del botón de VIP, que es el que tiene que pedir algo. */
 .unlock-button.is-free {
-  background: linear-gradient(135deg, #34d399, #10b981);
-  color: #04231a;
+  background: var(--vz-card);
+  color: var(--vz-green-deep);
   animation: none;
 }
 
@@ -587,14 +587,14 @@ h3 {
 /* An AI-blocked card is not a locked one: the viewer already paid, so it reads as a
    status (and an action) rather than an upsell — cooler palette, no pulsing lock. */
 .ai-panel .locked-overlay {
-  background: rgba(8, 11, 22, 0.62);
+  background: rgba(255, 255, 255, 0.72);
   gap: 6px;
 }
 
 .ai-panel .locked-icon,
 .locked-panel:hover .ai-icon {
-  background: rgba(34, 211, 238, 0.16);
-  color: #67e8f9;
+  background: rgba(30, 215, 96, 0.16);
+  color: var(--vz-green-deep);
 }
 
 .ai-panel-title {
@@ -640,7 +640,7 @@ h3 {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.72);
+  background: rgba(18, 18, 18, 0.42);
   display: grid;
   place-items: center;
   padding: 20px;
@@ -702,7 +702,7 @@ h3 {
   gap: 12px;
   padding: 18px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--vz-surface-2);
 }
 
 .modal-detail-section {
@@ -733,7 +733,7 @@ h3 {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  background: rgba(2, 6, 23, 0.82);
+  background: rgba(246, 242, 232, 0.94);
   backdrop-filter: blur(3px);
   text-align: center;
   padding: 24px;
@@ -743,7 +743,7 @@ h3 {
   width: 56px;
   height: 56px;
   border-radius: var(--vz-radius-pill);
-  border: 4px solid rgba(255, 255, 255, 0.18);
+  border: 4px solid var(--vz-surface-5);
   border-top-color: var(--vz-brand-cyan);
   animation: overlaySpin 0.8s linear infinite;
 }
@@ -781,8 +781,8 @@ h3 {
 .loading-blob {
   width: 44px;
   height: 44px;
-  background: linear-gradient(135deg, var(--vz-brand-violet), var(--vz-brand-cyan) 60%, #f472b6);
-  box-shadow: 0 0 26px rgba(192, 132, 252, 0.35);
+  background: linear-gradient(135deg, var(--vz-brand-violet), var(--vz-brand-cyan));
+  box-shadow: 0 0 26px rgba(30, 215, 96, 0.35);
   animation: blobMorph 3.4s ease-in-out infinite, blobSpin 7s linear infinite;
 }
 
@@ -881,7 +881,7 @@ h3 {
 }
 
 .word-search-input {
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--vz-hairline-strong);
   background: var(--vz-surface-2);
   color: var(--vz-text-strong);
   padding: 10px 16px;
@@ -905,7 +905,7 @@ h3 {
   flex-shrink: 0;
   width: 38px;
   height: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--vz-hairline-strong);
   border-radius: 50%;
   background: var(--vz-surface-2);
   color: var(--vz-text-strong);
@@ -934,7 +934,7 @@ h3 {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.18);
+  border: 2px solid var(--vz-surface-5);
   border-top-color: var(--vz-brand-cyan);
   animation: overlaySpin 0.8s linear infinite;
 }
@@ -1117,7 +1117,7 @@ h3 {
   display: block;
   height: 8px;
   border-radius: var(--vz-radius-pill);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--vz-surface-2);
   overflow: hidden;
 }
 
@@ -1310,8 +1310,8 @@ h3 {
 }
 
 .chart-streak-card.is-first {
-  background: linear-gradient(135deg, rgba(192, 132, 252, 0.16), rgba(34, 211, 238, 0.1));
-  border-color: rgba(192, 132, 252, 0.3);
+  background: linear-gradient(135deg, rgba(30, 215, 96, 0.16), rgba(30, 215, 96, 0.1));
+  border-color: rgba(30, 215, 96, 0.3);
 }
 
 .chart-streak-rank {
@@ -1375,7 +1375,7 @@ h3 {
 .chart-timeline-fill {
   width: 100%;
   border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg, var(--vz-brand-cyan), #6366f1);
+  background: linear-gradient(180deg, var(--vz-brand-cyan), var(--vz-green-deep));
   min-height: 3px;
 }
 
@@ -1403,7 +1403,7 @@ h3 {
 }
 
 .chart-activity-wave-baseline {
-  stroke: rgba(255, 255, 255, 0.07);
+  stroke: var(--vz-surface-2);
 }
 
 .chart-activity-wave-peak-dot {
@@ -1503,7 +1503,7 @@ h3 {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.18);
+  border: 2px solid var(--vz-surface-5);
   border-top-color: var(--vz-brand-cyan);
   animation: overlaySpin 0.7s linear infinite;
 }
@@ -1680,7 +1680,7 @@ button.chat-bubble-divider.is-expandable {
   margin: 2px auto;
   padding: 7px 16px;
   background: var(--vz-surface-2);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--vz-hairline-strong);
   border-radius: var(--vz-radius-pill);
   color: var(--vz-brand-cyan);
   font: inherit;
@@ -1828,16 +1828,16 @@ button.chat-bubble-divider.is-expandable:active {
 @keyframes unlockPulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(192, 132, 252, 0.35);
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.35);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(192, 132, 252, 0);
+    box-shadow: 0 0 0 8px rgba(30, 215, 96, 0);
   }
 }
 
 @keyframes flashNew {
   0% {
-    background: rgba(192, 132, 252, 0.28);
+    background: rgba(30, 215, 96, 0.28);
   }
   100% {
     background: transparent;
@@ -2041,7 +2041,7 @@ button.chat-bubble-divider.is-expandable:active {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #a78bfa;
+  color: var(--vz-green-deep);
 }
 
 .subpage-hero h1 {
@@ -2093,8 +2093,8 @@ button.chat-bubble-divider.is-expandable:active {
 }
 
 .subpage-section {
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--vz-surface-2);
+  background: var(--vz-surface-1);
   border-radius: 16px;
   padding: 22px 24px;
   display: grid;
@@ -2125,14 +2125,14 @@ button.chat-bubble-divider.is-expandable:active {
   margin: 0;
   padding: 10px 14px;
   border-radius: var(--vz-radius-xs);
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--vz-surface-3);
   color: var(--vz-text-muted);
   font-size: 0.85rem;
 }
 
 .subpage-note-success {
   background: rgba(34, 197, 94, 0.12);
-  color: #bbf7d0;
+  color: var(--vz-success-text);
 }
 
 /* ---- Status banner: the "what is happening with my money" block.
@@ -2146,12 +2146,12 @@ button.chat-bubble-divider.is-expandable:active {
   display: grid;
   gap: 10px;
   border: 1px solid var(--vz-hairline);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--vz-surface-1);
 }
 
 .subpage-banner.is-attention {
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.07);
+  border-color: rgba(184, 134, 11, 0.32);
+  background: var(--vz-gold-bg);
 }
 
 .subpage-banner.banner-pago_fallido {
@@ -2191,7 +2191,7 @@ button.chat-bubble-divider.is-expandable:active {
   margin: 0;
   padding: 10px 14px;
   border-radius: var(--vz-radius-xs);
-  background: rgba(15, 23, 42, 0.35);
+  background: var(--vz-card);
   color: var(--vz-text-soft);
   font-size: 0.85rem;
   line-height: 1.45;
@@ -2282,7 +2282,7 @@ button.chat-bubble-divider.is-expandable:active {
   border-radius: var(--vz-radius-pill);
   font-size: 0.78rem;
   font-weight: 700;
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--vz-surface-4);
   color: var(--vz-text-soft);
 }
 
@@ -2291,8 +2291,8 @@ button.chat-bubble-divider.is-expandable:active {
   border-radius: var(--vz-radius-pill);
   font-size: 0.7rem;
   font-weight: 700;
-  background: rgba(192, 132, 252, 0.16);
-  color: #e9d5ff;
+  background: rgba(30, 215, 96, 0.16);
+  color: var(--vz-green-deep);
 }
 
 .subpage-price {
@@ -2349,7 +2349,7 @@ button.chat-bubble-divider.is-expandable:active {
   border: 1px solid var(--vz-hairline);
   border-radius: var(--vz-radius-sm);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--vz-surface-1);
 }
 
 .plan-card-summary {
@@ -2430,8 +2430,8 @@ button.chat-bubble-divider.is-expandable:active {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(192, 132, 252, 0.1);
-  border: 1px solid rgba(192, 132, 252, 0.22);
+  background: rgba(30, 215, 96, 0.1);
+  border: 1px solid rgba(30, 215, 96, 0.22);
 }
 
 .plan-trial-steps {
@@ -2447,7 +2447,7 @@ button.chat-bubble-divider.is-expandable:active {
   display: grid;
   gap: 2px;
   padding-top: 8px;
-  border-top: 2px solid rgba(192, 132, 252, 0.25);
+  border-top: 2px solid rgba(30, 215, 96, 0.25);
 }
 
 .plan-trial-steps li.is-now {
@@ -2456,7 +2456,7 @@ button.chat-bubble-divider.is-expandable:active {
 
 .plan-trial-when {
   font-weight: 700;
-  color: #e9d5ff;
+  color: var(--vz-green-deep);
   font-size: 0.9rem;
 }
 
@@ -2509,14 +2509,14 @@ button.chat-bubble-divider.is-expandable:active {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  color: #d4d9e2;
+  color: var(--vz-text-muted);
   font-size: 0.88rem;
 }
 
 .plan-card-benefits li svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: #4ade80;
+  color: var(--vz-green-deep);
 }
 
 .plan-card-cta {
@@ -2697,7 +2697,7 @@ a.subpage-banner-cta {
   border-radius: var(--vz-radius-pill);
   font-size: 0.7rem;
   font-weight: 700;
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--vz-surface-4);
   color: var(--vz-text-soft);
 }
 
@@ -2829,9 +2829,9 @@ a.subpage-banner-cta {
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--vz-surface-5);
-  background: rgba(15, 23, 42, 0.86);
+  background: var(--vz-card);
   backdrop-filter: blur(16px);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--vz-shadow-panel);
   color: var(--vz-text-dim);
   cursor: grab;
   /* Own axis for the drag gesture: without this, a touch-drag also scrolls the page
@@ -2847,7 +2847,7 @@ a.subpage-banner-cta {
 
 .dev-toolbar-fab[aria-expanded='true'] {
   color: var(--vz-text-soft);
-  border-color: rgba(129, 140, 248, 0.5);
+  border-color: rgba(30, 215, 96, 0.5);
 }
 
 .dev-toolbar-panel {
@@ -2861,9 +2861,9 @@ a.subpage-banner-cta {
   padding: 10px;
   border-radius: 14px;
   border: 1px solid var(--vz-surface-5);
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--vz-card);
   backdrop-filter: blur(16px);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--vz-shadow-panel);
 }
 
 .dev-toolbar-panel-title {
@@ -2881,7 +2881,7 @@ a.subpage-banner-cta {
   gap: 7px;
   padding: 7px 13px;
   border-radius: var(--vz-radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--vz-hairline-strong);
   background: var(--vz-surface-2);
   color: var(--vz-text-soft);
   font: inherit;
@@ -2910,19 +2910,19 @@ a.subpage-banner-cta {
 
 .dev-toggle.is-on {
   border-color: rgba(34, 197, 94, 0.45);
-  color: #86efac;
+  color: var(--vz-success-text);
 }
 
 .dev-toggle.is-off {
   border-color: rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
+  color: var(--vz-danger-text);
 }
 
 /* Un botón que hace algo, no un interruptor con estado: sin verde/rojo, porque
    no hay un "está prendido" que mostrar. */
 .dev-toggle.is-action {
-  border-color: rgba(129, 140, 248, 0.45);
-  color: #c7d2fe;
+  border-color: rgba(30, 215, 96, 0.45);
+  color: var(--vz-green-deep);
 }
 
 /* En pantallas angostas se corre al pie: arriba a la derecha tapaba el
@@ -3157,4 +3157,506 @@ a.subpage-banner-cta {
   .tutorial-video-spinner {
     animation-duration: 2.4s;
   }
+}
+
+
+/* ==========================================================================
+   REDISEÑO "CHAT" — capa compartida
+   ==========================================================================
+
+   Todo lo que cambia de forma (no sólo de color) para los primitivos que usan
+   los dos shells. Los colores ya salen de tokens.css; acá vive el lenguaje
+   visual nuevo: botones píldora verdes, tarjetas blancas como burbujas,
+   Sora en los títulos y el resaltado verde en lugar del texto degradado.
+   ========================================================================== */
+
+h1,
+h2,
+.metric-stat strong,
+.m-sheet-hero strong,
+.m-row-value,
+.m-demo-value,
+.m-story-kicker,
+.m-story-huge {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+h3,
+h4 {
+  font-family: var(--vz-font-display);
+  letter-spacing: -0.01em;
+}
+
+.eyebrow {
+  font-family: var(--vz-font-display);
+  color: var(--vz-green-deep);
+  letter-spacing: 0.14em;
+}
+
+.lead,
+.panel-copy {
+  color: var(--vz-text-muted);
+}
+
+/* --- El texto destacado ----------------------------------------------------
+   Antes un degradado violeta/cyan animado. Ahora, por defecto, verde profundo
+   liso; en los números grandes, un resaltado verde como un marcador sobre el
+   texto. Los títulos lo llevan dentro de una burbuja enviada (en cada shell). */
+.gradient-text {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--vz-green-deep);
+  animation: none;
+}
+
+.metric-stat .gradient-text,
+.m-sheet-hero .gradient-text,
+.m-story-huge .gradient-text,
+.modal-basic .gradient-text {
+  color: var(--vz-text-strong);
+  background: var(--vz-green);
+  padding: 0 0.16em;
+  border-radius: 0.18em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* --- Botones ------------------------------------------------------------- */
+.ghost-button,
+.primary-button,
+.icon-button,
+.detail-button,
+.unlock-button {
+  font-family: var(--vz-font-display);
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+.primary-button {
+  background: var(--vz-green);
+  color: var(--vz-on-brand);
+  box-shadow: var(--vz-shadow-brand);
+}
+
+.primary-button:hover {
+  box-shadow: 0 1px 0 rgba(18, 18, 18, 0.12), 0 14px 30px -10px rgba(18, 140, 60, 0.55);
+}
+
+.primary-button:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.ghost-button,
+.icon-button,
+.detail-button {
+  background: var(--vz-card);
+  color: var(--vz-text-strong);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+.ghost-button:hover,
+.icon-button:hover,
+.detail-button:hover {
+  background: var(--vz-wall);
+}
+
+.icon-only-button {
+  background: var(--vz-card);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline-strong);
+}
+
+.icon-only-button:hover {
+  background: var(--vz-wall);
+}
+
+.unlock-button {
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+}
+
+.unlock-button:hover {
+  box-shadow: 0 0 0 6px rgba(18, 18, 18, 0.1);
+}
+
+.unlock-button.is-free {
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+  box-shadow: inset 0 0 0 1px var(--vz-success-border);
+}
+
+.unlock-button.is-free:hover {
+  box-shadow: inset 0 0 0 1px var(--vz-success-border), 0 0 0 6px rgba(30, 215, 96, 0.14);
+}
+
+@keyframes unlockPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(18, 18, 18, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(18, 18, 18, 0);
+  }
+}
+
+/* --- Chips, tarjetas y paneles -------------------------------------------- */
+.participant-chip {
+  background: var(--vz-card);
+  color: var(--vz-text-soft);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline);
+  font-weight: 500;
+}
+
+.stat-card {
+  background: var(--vz-card);
+  border-color: var(--vz-hairline);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.modal-card {
+  background: var(--vz-wall);
+  border-color: transparent;
+  backdrop-filter: none;
+}
+
+.modal-basic {
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.modal-chart {
+  background: var(--vz-card);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline);
+}
+
+/* La nota de una métrica, como una respuesta citada de WhatsApp: el bloque
+   gris con la barra verde a la izquierda. Antes era un recuadro en cursiva. */
+.metric-note {
+  position: relative;
+  font-style: normal;
+  color: var(--vz-text-muted);
+  background: var(--vz-surface-2);
+  border-radius: 8px;
+  padding: 8px 12px 8px 14px;
+}
+
+.metric-note::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 8px 0 0 8px;
+  background: var(--vz-green);
+}
+
+/* --- Bloqueado / IA -------------------------------------------------------- */
+.locked-overlay {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.locked-icon {
+  background: var(--vz-gold-bg);
+  color: var(--vz-gold);
+}
+
+.locked-panel:hover .locked-icon {
+  background: #ffeab0;
+}
+
+.ai-panel .locked-overlay {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ai-panel .locked-icon,
+.locked-panel:hover .ai-icon {
+  background: var(--vz-bubble-out);
+  color: var(--vz-green-deep);
+}
+
+/* --- Carga --------------------------------------------------------------- */
+.loading-overlay {
+  background: rgba(246, 242, 232, 0.94);
+}
+
+.loading-overlay-spinner,
+.locked-spinner,
+.word-search-spinner {
+  border-color: var(--vz-surface-5);
+  border-top-color: var(--vz-green);
+}
+
+.loading-overlay-title {
+  font-family: var(--vz-font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.loading-blob {
+  background: var(--vz-green);
+  box-shadow: 0 10px 26px -8px rgba(18, 140, 60, 0.55);
+}
+
+.loading-progress-track {
+  background: var(--vz-card);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline);
+}
+
+.loading-progress-fill {
+  background: var(--vz-green);
+}
+
+/* --- Charts -------------------------------------------------------------- */
+.chart-bar-track {
+  background: var(--vz-wall);
+}
+
+.chart-hour-bar-fill {
+  background: var(--vz-green);
+}
+
+.chart-hour-bar.is-night .chart-hour-bar-fill {
+  opacity: 1;
+  background: var(--vz-green-deep);
+}
+
+.chart-hour-peak-badge {
+  background: var(--vz-text-strong);
+  border-color: transparent;
+  color: var(--vz-wall);
+}
+
+.chart-timeline-fill {
+  background: var(--vz-green);
+}
+
+.chart-activity-wave-peak-dot {
+  fill: var(--vz-card);
+  stroke: var(--vz-green-deep);
+}
+
+.chart-streak-card {
+  background: var(--vz-card);
+  border-color: var(--vz-hairline);
+}
+
+.chart-streak-card.is-first {
+  background: var(--vz-bubble-out);
+  border-color: var(--vz-success-border);
+}
+
+.chart-streak-card.is-first .chart-streak-rank {
+  background: var(--vz-green);
+}
+
+.word-search-input,
+.word-search-button {
+  background: var(--vz-card);
+  border-color: var(--vz-hairline-strong);
+}
+
+/* --- Mensajes: burbujas de WhatsApp de verdad ------------------------------ */
+.message-group {
+  background: var(--vz-card);
+  box-shadow: inset 0 0 0 1px var(--vz-hairline);
+}
+
+.message-group-header {
+  font-family: var(--vz-font-display);
+  font-weight: 700;
+  color: var(--vz-text-strong);
+}
+
+.message-group-header:hover {
+  background: var(--vz-surface-1);
+}
+
+/* Al abrir un grupo aparece el "fondo de chat" con los dibujitos, y adentro
+   las burbujas blancas con su piquito. */
+.message-group-bubbles {
+  padding: 12px 12px 14px 20px;
+  background: var(--vz-app-background);
+  border-top: 1px solid var(--vz-hairline);
+}
+
+.chat-bubble {
+  position: relative;
+  border-radius: var(--vz-radius-bubble);
+  padding: 6px 10px 7px;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-bubble);
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 0;
+  width: 8px;
+  height: 11px;
+  background: var(--vz-card);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.chat-bubble-sender {
+  font-family: var(--vz-font-display);
+  color: var(--vz-green-deep);
+}
+
+.chat-bubble-text {
+  color: var(--vz-text);
+  font-size: 0.9rem;
+}
+
+.chat-bubble-divider {
+  align-self: center;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-bubble);
+  color: var(--vz-text-dim);
+  font-size: 0.72rem;
+}
+
+button.chat-bubble-divider.is-expandable {
+  background: var(--vz-card);
+  color: var(--vz-green-deep);
+  border-color: var(--vz-success-border);
+}
+
+button.chat-bubble-divider.is-expandable:hover {
+  background: var(--vz-bubble-out);
+  border-color: var(--vz-green);
+}
+
+/* --- Tooltip: oscuro, como los de un teléfono -------------------------------- */
+.vz-tooltip {
+  background: var(--vz-text-strong);
+  border-color: transparent;
+  color: var(--vz-wall);
+  backdrop-filter: none;
+}
+
+/* --- Marca: el orbe ahora es una burbuja de chat con un ojo ("vistazo") --- */
+.brand-orb {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50% 50% 50% 4px;
+  background: var(--vz-green) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.brand-orb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 42%;
+  height: 42%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--vz-text-strong) 0 32%, #fff 34%);
+}
+
+/* --- Página de suscripción --------------------------------------------------- */
+.subpage-section,
+.plan-card,
+.subpage-current {
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+}
+
+.subpage-eyebrow {
+  font-family: var(--vz-font-display);
+  color: var(--vz-green-deep);
+}
+
+.subpage-price,
+.plan-card-price {
+  font-family: var(--vz-font-display);
+  letter-spacing: -0.03em;
+}
+
+/* Avisos: nada de recuadros amarillos. Tarjeta blanca con la barra lateral de
+   "mensaje citado" — dorada para avisos, roja para errores. */
+.warning-banner,
+.error-banner {
+  position: relative;
+  padding: 12px 16px 12px 18px;
+  border-radius: 12px;
+  background: var(--vz-card);
+  color: var(--vz-text);
+  box-shadow: var(--vz-shadow-card);
+  line-height: 1.45;
+}
+
+.warning-banner::before,
+.error-banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 12px 0 0 12px;
+  background: var(--vz-gold);
+}
+
+.error-banner::before {
+  background: var(--vz-danger-text);
+}
+
+.error-banner {
+  color: var(--vz-danger-text);
+}
+
+/* Estado de la suscripción: tarjeta blanca con la barra lateral de "cita";
+   el color de la barra dice el estado (verde ok, dorado atención, rojo fallo). */
+.subpage-banner,
+.subpage-banner.is-attention,
+.subpage-banner.banner-pago_fallido {
+  position: relative;
+  border: 0;
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+  overflow: hidden;
+}
+
+.subpage-banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--vz-green);
+}
+
+.subpage-banner.is-attention::before {
+  background: var(--vz-gold);
+}
+
+.subpage-banner.banner-pago_fallido::before {
+  background: var(--vz-danger-text);
+}
+
+.subpage-fact {
+  background: var(--vz-wall);
+}
+
+/* El logo de la app es el mismo archivo que el favicon y los íconos instalables
+   (public/favicon.svg): una sola fuente, así nunca quedan distintos. */
+.brand-orb {
+  background: url('/favicon.svg') center / cover no-repeat !important;
+  border-radius: 24% !important;
+}
+
+.brand-orb::after {
+  content: none;
 }

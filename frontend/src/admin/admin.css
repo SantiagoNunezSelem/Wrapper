@@ -521,7 +521,7 @@
   gap: 6px;
   border: 1px solid var(--vz-hairline);
   border-radius: 10px;
-  background: rgba(2, 6, 23, 0.6);
+  background: var(--vz-surface-2);
   color: var(--vz-text-dim);
   font: 12px ui-monospace, Consolas, monospace;
   overflow-wrap: anywhere;
@@ -708,4 +708,15 @@
 
 @media (prefers-reduced-motion: reduce) {
   .adm-stack.is-refreshing, .adm-grid-inbox.is-refreshing { transition: none; }
+}
+
+/* Rediseño "chat": ajustes del panel para el tema claro. */
+.adm-chip.is-on {
+  color: var(--vz-wall);
+}
+
+.adm-tip {
+  background: var(--vz-text-strong);
+  border-color: transparent;
+  color: var(--vz-wall);
 }

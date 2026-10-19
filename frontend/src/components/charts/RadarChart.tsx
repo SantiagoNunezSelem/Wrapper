@@ -30,17 +30,17 @@ export function RadarChart({ axes }: { axes: RadarDatum[] }) {
             key={ring}
             points={axes.map((_, index) => pointOnCircle(index, axes.length, MAX_RADIUS * ring).join(',')).join(' ')}
             fill="none"
-            stroke="rgba(255,255,255,0.08)"
+            stroke="#e7dfcc"
           />
         ))}
         {axes.map((axis, index) => {
           const [x, y] = pointOnCircle(index, axes.length, MAX_RADIUS)
-          return <line key={axis.axis} x1={CENTER} y1={CENTER} x2={x} y2={y} stroke="rgba(255,255,255,0.08)" />
+          return <line key={axis.axis} x1={CENTER} y1={CENTER} x2={x} y2={y} stroke="#e7dfcc" />
         })}
-        <polygon points={points} fill="rgba(192, 132, 252, 0.32)" stroke="#c084fc" strokeWidth={2} />
+        <polygon points={points} fill="rgba(30, 215, 96, 0.28)" stroke="#0a662a" strokeWidth={2} />
         {axes.map((axis, index) => {
           const [x, y] = pointOnCircle(index, axes.length, (axis.value / max) * MAX_RADIUS)
-          return <circle key={axis.axis} cx={x} cy={y} r={3} fill="#22d3ee" />
+          return <circle key={axis.axis} cx={x} cy={y} r={3} fill="#0a662a" />
         })}
         {/* Always-on labels, not a hover tooltip — a 7-point star has no obvious way
             to tell which tip is which day otherwise, and hover doesn't exist on
