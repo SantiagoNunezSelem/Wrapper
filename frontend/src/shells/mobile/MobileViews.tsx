@@ -259,7 +259,6 @@ function DemoCarousel({ copy, cards, onOpen }: { copy: ShellCopy; cards: MetricC
     <section className="m-demo">
       <div className="m-demo-head">
         <p className="m-section-label">{copy.examplesTitle}</p>
-        <p className="m-demo-sub">{copy.examplesSubtitle}</p>
       </div>
       <div className="m-demo-track">
         {cards.map((card) => (

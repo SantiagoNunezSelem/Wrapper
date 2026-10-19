@@ -2193,11 +2193,6 @@
   gap: 4px;
 }
 
-.m-demo-sub {
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--vz-text-dim);
-}
 
 .m-demo-track {
   display: flex;
@@ -2578,10 +2573,6 @@
   color: var(--vz-green-deep);
 }
 
-.m-demo-sub {
-  font-size: 0.9rem;
-  color: var(--vz-text-muted);
-}
 
 .m-demo-track {
   margin-inline: -16px;
