@@ -6,6 +6,7 @@ import { prefersReducedMotion } from '../../lib/prefersReducedMotion'
 import type { MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 import { MascotBlob } from './MascotBlob'
+import { StoryBackdrop, storyPatternFor, storySchemeFor } from './StoryBackdrop'
 import { mascotMoodFor } from './mascotMood'
 
 /** Distancia mínima de arrastre para que cuente como swipe. Por debajo de esto
@@ -394,6 +395,15 @@ export function StoryMode({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* El fondo cambia de dibujo en cada pantalla y de color según la métrica;
+          el cierre toma el crema del dorado del candado, como su ficha. */}
+      <StoryBackdrop
+        pattern={storyPatternFor(index)}
+        scheme={storySchemeFor(card ? card.accent : LOCK_ACCENT)}
+        paused={suspended}
+        reducedMotion={reducedMotion}
+      />
+
       <div className="m-story-bars" aria-hidden="true">
         {Array.from({ length: total }, (_, position) => (
           <i key={position} className={position < index ? 'is-done' : position === index ? 'is-now' : ''}>
