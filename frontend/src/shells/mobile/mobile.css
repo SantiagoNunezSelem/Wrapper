@@ -3239,9 +3239,10 @@
 }
 
 /* --- Modo historia ----------------------------------------------------------------
-   El recorrido es el momento "Wrapped": pantalla llena de color. Verde con
-   lunares como fondo base; según el acento de la métrica en pantalla, algunas
-   pasan a negro o a crema, así 25 pantallas seguidas no se sienten iguales.
+   El recorrido es el momento "Wrapped": pantalla llena de color. Verde como
+   base; según el acento de la métrica en pantalla, algunas pasan a negro o a
+   crema, y el dibujo animado de StoryBackdrop rota en cada pantalla, así 25
+   pantallas seguidas no se sienten iguales.
    Los colores de texto se cambian redefiniendo los tokens dentro de .m-story,
    así cada regla de abajo sigue funcionando sin tocarla. */
 .m-story {
@@ -3249,13 +3250,22 @@
   --vz-text-soft: #1b1a17;
   --vz-text-dim: rgba(18, 18, 18, 0.66);
   --vz-text-faint: rgba(18, 18, 18, 0.6);
-  --st-dot: rgba(10, 102, 42, 0.35);
   --st-track: rgba(18, 18, 18, 0.16);
   --st-done: rgba(18, 18, 18, 0.7);
-  background:
-    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
-    var(--vz-green);
-  transition: background-color 400ms ease;
+  /* El dibujo lo pinta StoryBackdrop en un canvas; este color es sólo lo que
+     se ve antes del primer cuadro. */
+  background: var(--vz-green);
+}
+
+.m-story-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Debajo de todo el contenido pero dentro del recorrido, que por su z-index
+     ya es su propio contexto de apilado. */
+  z-index: -1;
+  pointer-events: none;
 }
 
 .m-story:has(.m-story-plate:is(.tier-purple, .tier-indigo, .tier-violet, .tier-slate, .tier-blue, .tier-magenta)) {
@@ -3263,19 +3273,13 @@
   --vz-text-soft: #ece5d4;
   --vz-text-dim: rgba(246, 242, 232, 0.72);
   --vz-text-faint: rgba(246, 242, 232, 0.62);
-  --st-dot: rgba(30, 215, 96, 0.14);
   --st-track: rgba(246, 242, 232, 0.2);
   --st-done: rgba(246, 242, 232, 0.8);
-  background:
-    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
-    #121212;
+  background: #121212;
 }
 
 .m-story:has(.m-story-plate:is(.tier-gold, .tier-yellow, .tier-orange, .tier-rose)) {
-  --st-dot: #e7dfcc;
-  background:
-    radial-gradient(circle, var(--st-dot) 21%, transparent 22%) 10px 30px / 64px 64px,
-    var(--vz-wall);
+  background: var(--vz-wall);
 }
 
 .m-story-bars i,
