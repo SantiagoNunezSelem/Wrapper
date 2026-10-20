@@ -6,7 +6,8 @@ import { prefersReducedMotion } from '../../lib/prefersReducedMotion'
 import type { MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
 import { MascotBlob } from './MascotBlob'
-import { StoryBackdrop, storyPatternFor, storySchemeFor } from './StoryBackdrop'
+import { StoryBackdrop } from './StoryBackdrop'
+import { storyPatternFor, storySchemeFor } from './storyTheme'
 import { mascotMoodFor } from './mascotMood'
 
 /** Distancia mínima de arrastre para que cuente como swipe. Por debajo de esto

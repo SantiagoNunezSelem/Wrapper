@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import type { StoryPattern, StoryScheme } from './storyTheme'
 
 /**
  * El fondo animado del modo historia.
@@ -10,27 +11,6 @@ import { useEffect, useRef } from 'react'
  *
  * Con movimiento reducido se pinta un único cuadro quieto por pantalla.
  */
-
-export type StoryPattern = 'dots' | 'chat' | 'doodles' | 'stripes' | 'blobs'
-export type StoryScheme = 'green' | 'black' | 'cream'
-
-const PATTERNS: StoryPattern[] = ['dots', 'chat', 'doodles', 'stripes', 'blobs']
-
-/** Pantallas seguidas nunca repiten dibujo: rotan en orden fijo. */
-export function storyPatternFor(index: number): StoryPattern {
-  return PATTERNS[index % PATTERNS.length]
-}
-
-/* Los mismos grupos que usa mobile.css para los colores de texto (los
-   `.m-story:has(.m-story-plate:is(...))`): si cambia uno, cambia el otro. */
-const BLACK_ACCENTS = new Set(['tier-purple', 'tier-indigo', 'tier-violet', 'tier-slate', 'tier-blue', 'tier-magenta'])
-const CREAM_ACCENTS = new Set(['tier-gold', 'tier-yellow', 'tier-orange', 'tier-rose'])
-
-export function storySchemeFor(accent: string): StoryScheme {
-  if (BLACK_ACCENTS.has(accent)) return 'black'
-  if (CREAM_ACCENTS.has(accent)) return 'cream'
-  return 'green'
-}
 
 type Rgba = [number, number, number, number]
 type ColorKey = 'bg' | 'pat' | 'pat2' | 'hi'
