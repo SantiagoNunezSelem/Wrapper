@@ -122,6 +122,30 @@
   background: rgba(30, 215, 96, 0.36);
 }
 
+/* Lugar reservado mientras se confirma una sesión que todavía no tiene perfil
+   guardado: ni avatar ni "Iniciar sesión", para no anunciar algo que en un segundo
+   puede resultar falso. Mide lo mismo que la pastilla del usuario. */
+.account-placeholder {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  animation: account-placeholder-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes account-placeholder-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-placeholder {
+    animation: none;
+  }
+}
+
 /* Anchored to .user-pill (position: relative above), not the topbar itself —
    stays pinned to the avatar even though the topbar is a wide, space-between
    flex row. See handlePointerDown in App.tsx for the click-outside close. */

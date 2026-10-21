@@ -65,6 +65,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     copy,
     user,
     token,
+    isRestoringSession,
     hasGoogleClientId,
     activeChat,
     analysis,
@@ -305,6 +306,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               <button type="button" className="m-avatar" onClick={() => goTo('account')} aria-label={copy.account}>
                 {user.displayName.slice(0, 1).toUpperCase()}
               </button>
+            ) : isRestoringSession ? (
+              <span className="m-avatar is-placeholder" aria-hidden="true" />
             ) : (
               <button type="button" className="m-signin" onClick={() => setIsAuthModalOpen(true)}>
                 {copy.login}

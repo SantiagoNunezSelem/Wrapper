@@ -65,6 +65,20 @@ import type {
 } from '../types'
 
 const authTokenKey = 'wrapper-crm-auth-token'
+// Copia del último perfil que devolvió el backend. Sólo sirve para pintar la cuenta
+// apenas carga la página, sin esperar a /api/auth/me: ese viaje tardaba un par de
+// segundos y mientras tanto la app mostraba "Iniciar sesión" a alguien que ya estaba
+// adentro. El backend sigue siendo la fuente de verdad y lo pisa en cuanto responde.
+const cachedUserKey = 'wrapper-crm-cached-user'
+
+function readCachedUser(): UserProfile | null {
+  try {
+    const raw = localStorage.getItem(cachedUserKey)
+    return raw ? (JSON.parse(raw) as UserProfile) : null
+  } catch {
+    return null
+  }
+}
 
 /** How many times the account screen re-checks a just-returned checkout before handing
  * the job to the server-side reconciler. Five attempts spans about 90 seconds. */
@@ -91,8 +105,12 @@ export function useVistazo() {
   // Por ahora la app abre siempre en español, sin mirar el idioma del navegador ni el
   // que la cuenta tenga guardado. El botón ES/EN sigue cambiándolo durante la sesión.
   const [language, setLanguage] = useState<Language>('es')
-  const [user, setUser] = useState<UserProfile | null>(null)
   const [token, setToken] = useState<string | null>(localStorage.getItem(authTokenKey))
+  // Sin token no hay sesión que restaurar, aunque haya quedado un perfil guardado.
+  const [user, setUser] = useState<UserProfile | null>(() => (token ? readCachedUser() : null))
+  // Hay token pero todavía no sabemos de quién: la UI deja el lugar de la cuenta
+  // reservado en vez de ofrecer el login.
+  const isRestoringSession = Boolean(token) && !user
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
   // El análisis para el que hay una confirmación de borrado abierta. Se guarda el id
   // y la fila se busca por él, así una lista que se refresca no deja el diálogo
@@ -265,6 +283,21 @@ export function useVistazo() {
 
     void hydrateSession(token)
   }, [token])
+
+  // Toda actualización del perfil pasa por `setUser`, así que guardar acá cubre el
+  // login, el /me de arranque y cualquier refresco posterior. Al perder el token
+  // (logout o sesión rechazada) se borra, para que el próximo arranque no pinte a nadie.
+  useEffect(() => {
+    try {
+      if (token && user) {
+        localStorage.setItem(cachedUserKey, JSON.stringify(user))
+      } else if (!token) {
+        localStorage.removeItem(cachedUserKey)
+      }
+    } catch {
+      // Storage lleno o bloqueado: sólo se pierde el atajo del próximo arranque.
+    }
+  }, [token, user])
 
   // El idioma del documento tiene que seguir al de la interfaz: con `lang="en"` fijo,
   // un lector de pantalla leía todo el español con voz inglesa y el navegador ofrecía
@@ -495,14 +528,16 @@ export function useVistazo() {
   }, [token, user?.id, hasVipAccess, currentSourceHash])
 
   async function hydrateSession(authToken: string) {
-    try {
-      const [currentUser, analyses] = await Promise.all([
-        getCurrentUser(authToken),
-        listAnalyses(authToken),
-      ])
+    // El perfil y el historial se piden juntos pero se aplican cada uno al llegar: el
+    // header no tiene por qué esperar a que termine de bajar la lista de análisis.
+    const analysesRequest = listAnalyses(authToken)
+    // Si /me falla primero nadie espera este pedido; sin el catch su rechazo quedaría
+    // sin manejar.
+    analysesRequest.catch(() => undefined)
 
-      setUser(currentUser)
-      setSavedAnalyses(analyses)
+    try {
+      setUser(await getCurrentUser(authToken))
+      setSavedAnalyses(await analysesRequest)
     } catch (caught) {
       console.error(caught)
 
@@ -1543,6 +1578,7 @@ export function useVistazo() {
     copy,
     user,
     token,
+    isRestoringSession,
     hasGoogleClientId,
 
     // --- chat y análisis ---
