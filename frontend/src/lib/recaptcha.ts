@@ -38,16 +38,6 @@ export function loadRecaptchaScript(siteKey: string): Promise<void> {
       return
     }
 
-    if (!loadedScripts.has(siteKey)) {
-      loadedScripts.add(siteKey)
-      const script = document.createElement('script')
-      script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`
-      script.async = true
-      script.defer = true
-      script.onerror = () => reject(new Error('Could not load reCAPTCHA.'))
-      document.head.appendChild(script)
-    }
-
     const start = Date.now()
     const poll = window.setInterval(() => {
       if (window.grecaptcha) {
@@ -58,6 +48,21 @@ export function loadRecaptchaScript(siteKey: string): Promise<void> {
         reject(new Error('reCAPTCHA did not load in time.'))
       }
     }, 100)
+
+    if (!loadedScripts.has(siteKey)) {
+      loadedScripts.add(siteKey)
+      const script = document.createElement('script')
+      script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`
+      script.async = true
+      script.defer = true
+      // Si el script falló ya no va a aparecer `grecaptcha`: seguir sondeando sólo
+      // demoraría 10 segundos un rechazo que ya está decidido.
+      script.onerror = () => {
+        window.clearInterval(poll)
+        reject(new Error('Could not load reCAPTCHA.'))
+      }
+      document.head.appendChild(script)
+    }
   })
 }
 

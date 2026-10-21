@@ -18,12 +18,18 @@ function fakeGrecaptcha(overrides: Partial<Window['grecaptcha']> = {}) {
   } as NonNullable<Window['grecaptcha']>
 }
 
+// Timers falsos en toda la suite: `loadRecaptchaScript` deja un sondeo cada 100 ms que
+// vive hasta 10 segundos. Con timers reales sobrevivía al test, y si la corrida entera
+// terminaba antes (en CI tarda menos de 20 s) disparaba con jsdom ya desmontado y
+// tiraba `window is not defined`. Con timers falsos, `clearAllTimers` los mata acá.
 beforeEach(() => {
+  vi.useFakeTimers()
   document.head.innerHTML = ''
   delete window.grecaptcha
 })
 
 afterEach(() => {
+  vi.clearAllTimers()
   vi.useRealTimers()
   delete window.grecaptcha
 })
@@ -67,7 +73,6 @@ describe('loadRecaptchaScript', () => {
   })
 
   it('resuelve en cuanto grecaptcha aparece en la ventana', async () => {
-    vi.useFakeTimers()
     const { loadRecaptchaScript } = await freshModule()
     const pending = loadRecaptchaScript('site-key')
 
@@ -84,10 +89,10 @@ describe('loadRecaptchaScript', () => {
     document.head.querySelector('script')!.onerror?.(new Event('error'))
 
     await expect(pending).rejects.toThrow('Could not load reCAPTCHA.')
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('rechaza tras 10 segundos sin que aparezca grecaptcha', async () => {
-    vi.useFakeTimers()
     const { loadRecaptchaScript } = await freshModule()
     const pending = loadRecaptchaScript('site-key')
     const assertion = expect(pending).rejects.toThrow('reCAPTCHA did not load in time.')
