@@ -118,6 +118,27 @@
   font-size: 1.05rem;
 }
 
+/* Lugar reservado mientras se confirma una sesión que todavía no tiene perfil
+   guardado: ni avatar ni "Iniciar sesión", para no anunciar algo que en un segundo
+   puede resultar falso. */
+.m-avatar.is-placeholder {
+  background: var(--vz-surface-3);
+  cursor: default;
+  animation: account-placeholder-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes account-placeholder-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-avatar.is-placeholder {
+    animation: none;
+  }
+}
+
 .m-signin {
   display: inline-flex;
   align-items: center;

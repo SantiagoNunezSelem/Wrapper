@@ -59,6 +59,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     copy,
     user,
     token,
+    isRestoringSession,
     hasGoogleClientId,
     activeChat,
     analysis,
@@ -316,6 +317,8 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
                 </div>
               ) : null}
             </div>
+          ) : isRestoringSession ? (
+            <span className="account-placeholder" aria-hidden="true" />
           ) : (
             <button type="button" className="icon-button" onClick={() => setIsAuthModalOpen(true)}>
               <span aria-hidden="true">⇢</span>
