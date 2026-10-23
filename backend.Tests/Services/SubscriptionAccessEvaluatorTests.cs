@@ -325,6 +325,23 @@ public class SubscriptionAccessEvaluatorTests
     }
 
     [Fact]
+    public void El_intento_recien_pagado_gana_sobre_una_suscripcion_a_la_que_le_sacaron_el_Pro()
+    {
+        // Visto en producción: después de "Quitar VIP", la suscripción revocada conservaba
+        // el próximo débito a un mes, y ordenando por esa fecha le ganaba al checkout que
+        // la persona acababa de pagar. Volvía de Mercado Pago a "Terminada".
+        var revoked = Sub("cancelada", nextBilling: DateTime.UtcNow.AddDays(30), createdAt: DateTime.UtcNow.AddHours(-1));
+        revoked.AccessRevokedAtUtc = DateTime.UtcNow.AddMinutes(-3);
+        var justPaid = Sub("pendiente", createdAt: DateTime.UtcNow.AddMinutes(-1));
+        justPaid.ProviderStatus = "authorized";
+
+        var user = UserWith(revoked, justPaid);
+
+        Assert.Same(justPaid, SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user));
+        Assert.Equal("pendiente", SubscriptionAccessEvaluator.GetVisibleState(user));
+    }
+
+    [Fact]
     public void El_admin_no_necesita_que_su_suscripcion_semilla_este_vigente()
     {
         var user = UserWith(Sub("cancelada", nextBilling: Past));
