@@ -101,6 +101,12 @@ public sealed class SubscriptionService(
 
         var requestedPayerEmail = NormalizePayerEmail(payerEmail);
 
+        // The stored state is only as fresh as the last notification, and those arrive late
+        // or not at all. Deciding on it is how a payer who had just authorised a
+        // subscription was handed a second checkout — and charged for two — so an attempt
+        // still pending here is re-read from Mercado Pago before anything below is decided.
+        await RefreshPendingAttemptAsync(user, cancellationToken);
+
         // Anything still granting Pro blocks a second checkout, not only "activa" and
         // "trial": a cancelled subscription keeps the period it already paid for, and
         // buying again inside that window is paying twice over for the same days. Pro
@@ -138,6 +144,18 @@ public sealed class SubscriptionService(
             // time ("Tu e-mail no coincide con el de la suscripción"). It is closed before
             // the new one opens, so there are never two authorisable checkouts at once.
             await ReplaceCheckoutAsync(user, resumable, cancellationToken);
+        }
+
+        // Authorised at Mercado Pago with the first charge still on its way, or a charge
+        // Mercado Pago is still deciding on: a new checkout here is a second subscription,
+        // and both would be charged. There is nothing to resume either — the payer already
+        // did their part — so the answer is to wait, which the screen says in so many words.
+        if (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is { Status: "pendiente", IsDevSimulated: false } attempt &&
+            SubscriptionAccessEvaluator.HasPaymentInFlight(attempt))
+        {
+            throw new SubscriptionConflictException(
+                "payment_in_progress",
+                "Mercado Pago is still processing a payment for this account.");
         }
 
         var eligibility = await trialEligibility.EvaluateAsync(user, http, deviceId, cancellationToken);
@@ -181,6 +199,29 @@ public sealed class SubscriptionService(
         await db.SaveChangesAsync(cancellationToken);
 
         return new CheckoutResult(subscription.Status, subscription.Id, eligibility.IsEligible, eligibility.Reason, redirectUrl);
+    }
+
+    /// <summary>
+    /// Re-reads the latest attempt from Mercado Pago when it is still "pendiente" here.
+    /// A failure is logged and swallowed: opening the checkout reaches Mercado Pago too,
+    /// and fails on its own with a clearer message if they are down.
+    /// </summary>
+    private async Task RefreshPendingAttemptAsync(User user, CancellationToken cancellationToken)
+    {
+        if (SubscriptionAccessEvaluator.GetLatestRelevantSubscription(user) is not { Status: "pendiente", IsDevSimulated: false } latest ||
+            string.IsNullOrWhiteSpace(latest.ExternalSubscriptionId))
+        {
+            return;
+        }
+
+        try
+        {
+            await SyncAsync(user, cancellationToken);
+        }
+        catch (MercadoPagoException exception)
+        {
+            logger.LogWarning(exception, "Could not re-read the pending attempt for user {UserId} before checkout.", user.Id);
+        }
     }
 
     /// <summary>
@@ -414,10 +455,14 @@ public sealed class SubscriptionService(
         // behind: Mercado Pago authorises the preapproval on the payer picking a card, so a
         // checkout that was refused four times over has an id, has a preapproval, and has
         // still given this customer nothing. Charging them their one free week for a card
-        // their bank declined is indefensible — and it costs nothing, because a free week
-        // only ever starts on an approved charge now, so retrying with a dead card in a
-        // loop yields exactly as much Pro as it should: none.
-        if (await NothingWasEverCollectedAsync(subscription, cancellationToken))
+        // their bank declined is indefensible — and it costs nothing, because a declined
+        // card never starts a free week, so retrying with a dead card in a loop yields
+        // exactly as much Pro as it should: none.
+        //
+        // A free week that did run is the one case of "nothing collected" that is not
+        // handed back: they had their Pro, and returning the week on cancellation would
+        // let anyone chain free weeks forever by cancelling and subscribing again.
+        if (!wasInTrial && await NothingWasEverCollectedAsync(subscription, cancellationToken))
         {
             await trialEligibility.ReleaseAsync(user, subscription, cancellationToken);
         }
@@ -499,7 +544,12 @@ public sealed class SubscriptionService(
     {
         var cancelled = new List<string>();
 
-        foreach (var subscription in user.Subscriptions.Where(SubscriptionAccessEvaluator.HasVipAccess).ToList())
+        // Plus whatever Mercado Pago would still charge without having granted anything yet —
+        // an attempt authorised there whose first charge is on its way. Left out, "Quitar
+        // VIP" took Pro away and left those to be charged a week later.
+        foreach (var subscription in user.Subscriptions
+                     .Where(item => SubscriptionAccessEvaluator.HasVipAccess(item) || SubscriptionAccessEvaluator.BillsAtProvider(item))
+                     .ToList())
         {
             var bills = SubscriptionAccessEvaluator.BillsAtProvider(subscription);
 
@@ -1188,10 +1238,24 @@ public sealed class SubscriptionService(
         var previousStatus = subscription.Status;
         var invoice = await UpsertInvoiceAsync(subscription, payment, cancellationToken);
 
+        // A cancelled subscription stays cancelled whatever a charge says. Mercado Pago
+        // redelivers notifications long after the fact — one for a charge approved an hour
+        // earlier arrived after the subscription had been cancelled and its Pro taken away,
+        // and flipped it straight back to "activa". The charge itself is still recorded:
+        // the period it paid for is kept by the cancelled-state rules.
+        var settled = subscription.Status is "cancelada" || subscription.AccessRevokedAtUtc is not null;
+
         // A charge is the strongest available signal about the subscription's health, and
         // it arrives before the preapproval's own status catches up.
         switch (invoice.Status)
         {
+            case "aprobado" when settled:
+                subscription.LastPaymentAtUtc = invoice.PaidAtUtc ?? DateTime.UtcNow;
+                break;
+
+            case "rechazado" when settled:
+                break;
+
             case "aprobado":
                 subscription.Status = "activa";
                 subscription.GraceEndsAtUtc = null;
@@ -1237,10 +1301,20 @@ public sealed class SubscriptionService(
     {
         var nothingCollected = await NothingWasEverCollectedAsync(subscription, cancellationToken);
 
+        // Read before the status is rewritten below. A charge that did not go through — one
+        // Mercado Pago refused, or one it is still deciding on — is what outweighs an
+        // "authorized" preapproval for the free week; see ResolveAuthorizedStatus. The
+        // refused invoice counts on its own: the reason is not always on the row by the
+        // time the preapproval's notification arrives, and the screen lists that invoice.
+        var chargeRefused =
+            SubscriptionAccessEvaluator.DescribeLastPayment(subscription) is not null ||
+            (nothingCollected && await HasRefusedChargeAsync(subscription, cancellationToken));
+
         subscription.ExternalSubscriptionId ??= preapproval.Id;
         subscription.ExternalPlanId ??= preapproval.PreapprovalPlanId;
         subscription.ExternalPayerId = preapproval.PayerId?.ToString(CultureInfo.InvariantCulture) ?? subscription.ExternalPayerId;
         subscription.PaymentProvider = "mercadopago";
+        subscription.ProviderStatus = preapproval.Status ?? subscription.ProviderStatus;
         subscription.UpdatedAtUtc = DateTime.UtcNow;
         subscription.LastSyncedAtUtc = DateTime.UtcNow;
 
@@ -1255,15 +1329,20 @@ public sealed class SubscriptionService(
             subscription.PaymentMethodLabel = preapproval.PaymentMethodId;
         }
 
-        if (preapproval.Summarized?.LastChargedDate is { } lastCharged)
+        // From the approved charges on file, not from `summarized.last_charged_date`: Mercado
+        // Pago stamps that date on a charge it refused just the same, and read as "último
+        // pago" it turned a declined card into a paying customer — the row said money had
+        // been collected, so every check built on that handed out Pro.
+        if (await LastApprovedChargeAtAsync(subscription, cancellationToken) is { } lastApproved &&
+            (subscription.LastPaymentAtUtc is null || lastApproved > subscription.LastPaymentAtUtc))
         {
-            subscription.LastPaymentAtUtc = lastCharged;
+            subscription.LastPaymentAtUtc = lastApproved;
         }
 
         subscription.Status = preapproval.Status switch
         {
             "pending" => "pendiente",
-            "authorized" => ResolveAuthorizedStatus(subscription, preapproval, nothingCollected),
+            "authorized" => ResolveAuthorizedStatus(subscription, preapproval, nothingCollected, chargeRefused),
             "paused" => "pausada",
             "cancelled" or "canceled" => "cancelada",
             _ => subscription.Status,
@@ -1308,7 +1387,11 @@ public sealed class SubscriptionService(
         // plan card — which is the free account a refused card used to walk away with,
         // and it outlived even cancelling. They come back by themselves as soon as a
         // charge is approved.
-        if (nothingCollected)
+        //
+        // A free week that genuinely started is the exception: nothing is collected during
+        // one by design, and stripping its dates is what made every trial read "pago sin
+        // terminar" — and, once cancelled, end on the spot instead of on the day promised.
+        if (nothingCollected && !TrialStarted(subscription, chargeRefused))
         {
             subscription.TrialEndsAtUtc = null;
             subscription.NextBillingAtUtc = null;
@@ -1361,44 +1444,87 @@ public sealed class SubscriptionService(
     }
 
     /// <summary>
-    /// An authorised subscription is either inside its free week or genuinely paying.
-    /// Mercado Pago does not expose a "trialing" status, so it is derived: a plan with a
-    /// free trial that has not been charged yet is still in the trial, and the first
-    /// real debit date is exactly when it ends.
+    /// An authorised subscription is inside its free week, genuinely paying, or — without
+    /// a free week — waiting on its first charge. Mercado Pago does not expose a
+    /// "trialing" status, so it is derived: a plan with a free trial that has not been
+    /// charged yet is still in the trial, and the first real debit date is exactly when
+    /// it ends.
     /// </summary>
     private static string ResolveAuthorizedStatus(
         Subscription subscription,
         Preapproval preapproval,
-        bool nothingCollected)
+        bool nothingCollected,
+        bool chargeRefused)
     {
         var hasFreeTrial = preapproval.AutoRecurring?.FreeTrial is not null;
         var chargedCount = preapproval.Summarized?.ChargedQuantity ?? 0;
         var firstChargeAt = preapproval.NextPaymentDate;
 
-        // Mercado Pago authorises the preapproval as soon as the payer picks a card, well
-        // before anyone knows whether that card works — and it stays authorised when the
-        // charge is then declined. Reading "authorized" as proof of a customer is what
-        // handed the free week to every refused payment: the card bounced, nothing was ever
-        // collected, and the account switched itself to Pro anyway. So the free week is
-        // derived from an approved charge or not at all; until one lands, the row stays
-        // where it was, waiting for money that has not moved. The dates it would have
-        // inherited are cleared at the end of ApplyPreapprovalAsync.
-        if (nothingCollected)
-        {
-            return "pendiente";
-        }
-
+        // A free week has nothing to collect: Mercado Pago validates the card during the
+        // checkout and schedules the first debit for the day the week ends, so
+        // "authorized" with the trial still ahead is the only signal there will be for
+        // seven days. Waiting for an approved charge instead — what this used to do — made
+        // every real trial read "pago sin terminar, no se te cobró nada", with a "Comprar"
+        // underneath that opened a second subscription on top of the first. What keeps a
+        // dead card out is a refusal on file: a card Mercado Pago declined does not get
+        // the week, whatever the preapproval says.
         if (hasFreeTrial && chargedCount == 0 && firstChargeAt is { } trialEnd && trialEnd > DateTime.UtcNow)
         {
+            if (chargeRefused)
+            {
+                return "pendiente";
+            }
+
             subscription.TrialWasApplied = true;
             subscription.TrialStartsAtUtc ??= preapproval.DateCreated ?? DateTime.UtcNow;
             subscription.TrialEndsAtUtc = trialEnd;
             return "trial";
         }
 
+        // No free week: Mercado Pago authorises the preapproval as soon as the payer picks
+        // a card and runs the first debit right after, so until that debit is approved
+        // this is money on its way, not a customer — and if the card bounces, Mercado Pago
+        // cancels the preapproval. The row stays "pendiente" in the meantime, and
+        // HasPaymentInFlight reads it as "procesando" from ProviderStatus, which is what
+        // keeps the screen from offering to pay a second time.
+        if (nothingCollected)
+        {
+            return "pendiente";
+        }
+
         subscription.GraceEndsAtUtc = null;
         return "activa";
     }
+
+    /// <summary>
+    /// Whether this subscription's free week actually began: the preapproval was
+    /// authorised with the trial ahead of it and no charge of it was refused. Nothing is
+    /// collected during one, so "nothing was ever collected" alone cannot tell it apart
+    /// from a checkout that never went anywhere.
+    /// </summary>
+    private static bool TrialStarted(Subscription subscription, bool chargeRefused) =>
+        !chargeRefused &&
+        subscription.TrialWasApplied &&
+        subscription.TrialEndsAtUtc is not null &&
+        subscription.Status is "trial" or "cancelada" or "pausada";
+
+    private Task<bool> HasRefusedChargeAsync(Subscription subscription, CancellationToken cancellationToken) =>
+        db.SubscriptionInvoices.AnyAsync(
+            invoice => invoice.SubscriptionId == subscription.Id && invoice.Status == "rechazado",
+            cancellationToken);
+
+    /// <summary>
+    /// When the newest approved charge of this subscription settled, if any. Only charges
+    /// that moved money: the $0 that validates the card for a free week proves the card
+    /// works, not that anything was paid, and counted as "último pago" it would make a
+    /// cancellation during the week stop promising that nothing will be charged.
+    /// </summary>
+    private async Task<DateTime?> LastApprovedChargeAtAsync(Subscription subscription, CancellationToken cancellationToken) =>
+        await db.SubscriptionInvoices
+            .Where(invoice => invoice.SubscriptionId == subscription.Id && invoice.Status == "aprobado" && invoice.Amount > 0)
+            .OrderByDescending(invoice => invoice.PaidAtUtc ?? invoice.CreatedAtUtc)
+            .Select(invoice => (DateTime?)(invoice.PaidAtUtc ?? invoice.CreatedAtUtc))
+            .FirstOrDefaultAsync(cancellationToken);
 
     private async Task<SubscriptionInvoice> UpsertInvoiceAsync(
         Subscription subscription,

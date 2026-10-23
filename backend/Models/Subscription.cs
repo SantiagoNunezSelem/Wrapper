@@ -65,6 +65,18 @@ public sealed class Subscription
     /// </summary>
     public string? LastPaymentStatus { get; set; }
 
+    /// <summary>
+    /// The preapproval's own status as Mercado Pago last reported it (<c>pending</c>,
+    /// <c>authorized</c>, <c>paused</c>, <c>cancelled</c>). Kept apart from
+    /// <see cref="Status"/> because a local "pendiente" is two opposite things: a checkout
+    /// nobody finished (still <c>pending</c> there) and a payer who already authorised it
+    /// while the first charge is still on its way (<c>authorized</c>). Telling those two
+    /// apart is what lets the screen say "procesando" instead of "no pagaste", and what
+    /// stops a second checkout from being opened on top of a subscription that is live.
+    /// Null on rows not read since it was stored.
+    /// </summary>
+    public string? ProviderStatus { get; set; }
+
     /// <summary>When the subscription was paused, so "reanudar" can say since when.</summary>
     public DateTime? PausedAtUtc { get; set; }
 

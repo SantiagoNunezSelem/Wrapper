@@ -27,7 +27,8 @@ import {
   toggleDevSubscription,
   updatePreferredLanguage,
 } from '../lib/api'
-import { CHECKOUT_WINDOW_OPENED, onCheckoutReturn } from '../lib/checkoutWindow'
+import { CHECKOUT_WINDOW_OPENED, isCheckoutReturn, onCheckoutReturn } from '../lib/checkoutWindow'
+import { phaseOf } from '../lib/subscriptionPhase'
 import {
   isAiDisabled as readAiDisabled,
   isLocalhost,
@@ -81,8 +82,13 @@ function readCachedUser(): UserProfile | null {
 }
 
 /** How many times the account screen re-checks a just-returned checkout before handing
- * the job to the server-side reconciler. Five attempts spans about 90 seconds. */
-const checkoutPollAttempts = 5
+ * the job to the server-side reconciler. Sixteen attempts, 2s apart and growing to 15s,
+ * span about two and a half minutes — Mercado Pago usually answers in the first few. */
+const checkoutPollAttempts = 16
+
+/** While Mercado Pago is still confirming a payment the payer already made, and nobody is
+ * coming back from a checkout: one look every this many milliseconds. */
+const processingPollMs = 10_000
 
 export interface ActiveChat {
   chatName: string
@@ -641,7 +647,9 @@ export function useVistazo() {
 
     const params = new URLSearchParams(window.location.search)
 
-    if (params.get('checkout') === 'return') {
+    if (isCheckoutReturn(window.location.search)) {
+      // Takes Mercado Pago's own `?preapproval_id=…` with it: it arrives glued to this
+      // value (see isCheckoutReturn), not as a parameter of its own.
       params.delete('checkout')
       const query = params.toString()
       window.history.replaceState({}, '', `/suscripcion${query ? `?${query}` : ''}`)
@@ -739,34 +747,50 @@ export function useVistazo() {
   // Coming back from Mercado Pago, the payment is often not settled yet: the browser
   // beats the webhook, and their own processing can take another few seconds. Without
   // this the customer lands on "pendiente" right after paying, which reads as "it did not
-  // work" — so the screen keeps asking, a few times, with growing gaps, and stops as soon
-  // as the answer changes. The background reconciler covers everything slower than this;
-  // this is only about the first minute, when someone is still watching.
+  // work" and sends them to reload by hand — so the screen keeps asking on its own, every
+  // couple of seconds at first, and stops as soon as the answer changes.
+  //
+  // It also keeps asking, more slowly, for as long as Mercado Pago is still confirming a
+  // payment the payer already made (`processing`), however they got here: reloading the
+  // page or opening it later must not leave it frozen on "confirmando". Only while the
+  // page is visible, since each look reaches Mercado Pago.
+  const [pollTick, setPollTick] = useState(0)
+  const currentPhase = subscription?.current ? phaseOf(subscription.current) : null
   useEffect(() => {
-    if (route !== 'subscription' || !token || checkoutPollsLeft <= 0) {
+    if (route !== 'subscription' || !token) {
       return
     }
 
-    if (subscription?.current?.status !== 'pendiente') {
+    const returning = checkoutPollsLeft > 0
+    const waiting = currentPhase === 'processing' || (returning && currentPhase === 'checkout_open')
+
+    if (!waiting) {
       // Settled (or there is nothing to settle) — stop asking.
-      setCheckoutPollsLeft(0)
+      if (returning && subscription?.current) {
+        setCheckoutPollsLeft(0)
+      }
       return
     }
 
-    const attempt = checkoutPollAttempts - checkoutPollsLeft
-    const timer = window.setTimeout(
-      () => {
-        setCheckoutPollsLeft((left) => left - 1)
-        void handleRefreshSubscription()
-      },
-      // 3s, 6s, 12s, 24s, 48s: long enough to be worth a round trip, short enough that
-      // nobody watching decides it is broken.
-      3000 * 2 ** attempt,
-    )
+    const attempt = checkoutPollsLeft > 0 ? checkoutPollAttempts - checkoutPollsLeft : 0
+    const delay = returning ? Math.min(2000 + attempt * 1000, 15_000) : processingPollMs
+
+    const timer = window.setTimeout(() => {
+      if (!returning && document.visibilityState !== 'visible') {
+        // Hidden: skip this look, and try again on the next tick. Coming back to the tab
+        // checks straight away on its own (see SubscriptionPage).
+        setPollTick((tick) => tick + 1)
+        return
+      }
+      // The next look is scheduled once this one has answered, never on top of it.
+      void handleRefreshSubscription().finally(() =>
+        returning ? setCheckoutPollsLeft((left) => left - 1) : setPollTick((tick) => tick + 1),
+      )
+    }, delay)
 
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, token, checkoutPollsLeft, subscription?.current?.status])
+  }, [route, token, checkoutPollsLeft, currentPhase, pollTick])
 
   function handleToggleDevAi() {
     setDevAiDisabled((current) => {
@@ -1616,6 +1640,9 @@ export function useVistazo() {
     subscription,
     subscriptionAction,
     subscriptionError,
+    // Back from Mercado Pago and still asking how it went: the screen says "verificando"
+    // instead of guessing "no lo terminaste".
+    isConfirmingCheckout: checkoutPollsLeft > 0,
     isAuthModalOpen,
     setIsAuthModalOpen,
     needsRecaptchaChallenge,

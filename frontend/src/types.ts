@@ -102,7 +102,34 @@ export interface SubscriptionRecord {
    * "your money is somewhere in the system" when nothing ever left their account. */
   paymentInProgress: boolean
   createdAtUtc: string
+  /** Which situation the screen has to word, decided on the server — see `SubscriptionPhase`.
+   * Missing from an API older than the field; `phaseOf` works it out then. */
+  phase?: SubscriptionPhase
 }
+
+/**
+ * What the account screen says about a subscription. The status alone cannot: `pendiente`
+ * is both "tu pago se está confirmando" and "abriste el pago y no lo terminaste", and
+ * `cancelada` is both "conservás el acceso hasta el 30" and "terminó hace un mes".
+ *
+ * - `processing`: the payer finished; Mercado Pago is still settling it.
+ * - `declined`: the charge was refused and nothing was ever collected.
+ * - `checkout_open`: a checkout opened and not finished, still resumable.
+ * - `abandoned`: an attempt that went nowhere — nothing paid, nothing to resume.
+ * - `cancelled`: renewal off, the paid period (or the free week) still running.
+ * - `ended`: it ran, and its access is over.
+ */
+export type SubscriptionPhase =
+  | 'processing'
+  | 'declined'
+  | 'checkout_open'
+  | 'abandoned'
+  | 'cancelled'
+  | 'ended'
+  | 'trial'
+  | 'activa'
+  | 'pago_fallido'
+  | 'pausada'
 
 /** Which buttons the server will actually honour. Decided backend-side so the screen never
  * offers an action that would come back as a 409. */

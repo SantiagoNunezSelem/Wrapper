@@ -18,6 +18,21 @@ const CHANNEL_NAME = 'vistazo-checkout'
 /** Fired on `window` when a checkout was opened in its own window. */
 export const CHECKOUT_WINDOW_OPENED = 'vistazo:checkout-window-opened'
 
+/**
+ * Whether this page is Mercado Pago sending the payer back (our `back_url`,
+ * `/suscripcion?checkout=return`).
+ *
+ * Not a plain `=== 'return'`: Mercado Pago appends its own `?preapproval_id=…` without
+ * noticing the URL already has a query, so what actually arrives is
+ * `?checkout=return?preapproval_id=…` and the whole tail reads as the value of
+ * `checkout`. Comparing exactly made every real return look like an ordinary visit — no
+ * re-check against Mercado Pago, and a checkout window that never closed itself.
+ */
+export function isCheckoutReturn(search: string = window.location.search): boolean {
+  const value = new URLSearchParams(search).get('checkout')
+  return value !== null && value.split('?')[0] === 'return'
+}
+
 export function prefersCheckoutWindow(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return false
@@ -102,7 +117,7 @@ export async function goToCheckout(resolveUrl: () => Promise<string> | string): 
  * @returns true when this window is closing and nothing should be rendered in it.
  */
 export function finishCheckoutInWindow(): boolean {
-  if (new URLSearchParams(window.location.search).get('checkout') !== 'return') {
+  if (!isCheckoutReturn()) {
     return false
   }
 

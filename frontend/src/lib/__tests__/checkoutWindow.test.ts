@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubMatchMedia } from '../../test/setup'
-import { CHECKOUT_WINDOW_OPENED, finishCheckoutInWindow, goToCheckout, prefersCheckoutWindow } from '../checkoutWindow'
+import {
+  CHECKOUT_WINDOW_OPENED,
+  finishCheckoutInWindow,
+  goToCheckout,
+  isCheckoutReturn,
+  prefersCheckoutWindow,
+} from '../checkoutWindow'
 
 /** Escritorio de verdad: mouse, ventana ancha y sin instalar como app. */
 function desktop() {
@@ -102,6 +108,17 @@ describe('checkoutWindow', () => {
     })
   })
 
+  describe('isCheckoutReturn', () => {
+    it('la vuelta limpia y la que arma Mercado Pago cuentan; cualquier otra cosa, no', () => {
+      expect(isCheckoutReturn('?checkout=return')).toBe(true)
+      expect(isCheckoutReturn('?checkout=return?preapproval_id=abc123')).toBe(true)
+      expect(isCheckoutReturn('?checkout=return&preapproval_id=abc123')).toBe(true)
+      expect(isCheckoutReturn('')).toBe(false)
+      expect(isCheckoutReturn('?checkout=returned')).toBe(false)
+      expect(isCheckoutReturn('?preapproval_id=abc123')).toBe(false)
+    })
+  })
+
   describe('finishCheckoutInWindow', () => {
     it('una página normal no hace nada', () => {
       expect(finishCheckoutInWindow()).toBe(false)
@@ -109,6 +126,22 @@ describe('checkoutWindow', () => {
 
     it('al volver de Mercado Pago avisa a las otras pestañas', () => {
       window.location.search = '?checkout=return'
+      const received = vi.fn()
+      const listener = new BroadcastChannel('vistazo-checkout')
+      listener.onmessage = (event) => received(event.data)
+
+      finishCheckoutInWindow()
+
+      return vi.waitFor(() => {
+        expect(received).toHaveBeenCalledWith('return')
+        listener.close()
+      })
+    })
+
+    it('reconoce la vuelta tal como la arma Mercado Pago, con su "?" pegado al nuestro', () => {
+      // Lo que llega de verdad: Mercado Pago agrega "?preapproval_id=…" sin fijarse que
+      // la URL ya tenía query. Comparando exacto, ninguna vuelta real se reconocía.
+      window.location.search = '?checkout=return?preapproval_id=5da9c5f54a0e4b078df4c57958b4a7d2'
       const received = vi.fn()
       const listener = new BroadcastChannel('vistazo-checkout')
       listener.onmessage = (event) => received(event.data)

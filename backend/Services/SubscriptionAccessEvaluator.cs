@@ -49,6 +49,15 @@ public static class SubscriptionAccessEvaluator
             return "inactiva";
         }
 
+        // A cancellation whose paid period already ran out is no subscription at all. Left
+        // as "cancelada", every shell put the cancelled-state hint next to it — "conservás
+        // el acceso hasta que termine el período" — on an account whose period ended weeks
+        // ago, and on attempts that never charged a peso.
+        if (subscription.Status == "cancelada" && !HasVipAccess(subscription))
+        {
+            return "inactiva";
+        }
+
         return subscription.Status == "pendiente" && !HasPaymentInFlight(subscription)
             ? "inactiva"
             : subscription.Status;
@@ -113,9 +122,22 @@ public static class SubscriptionAccessEvaluator
     /// somewhere. This is the difference between "tu pago se está procesando" and
     /// "abriste el checkout y no lo terminaste", which the local <c>pendiente</c> status
     /// covers alike. See <see cref="DescribeLastPayment"/>.
+    ///
+    /// A pending row whose preapproval Mercado Pago already reports as <c>authorized</c>
+    /// counts too, unless its charge was refused: the payer finished the checkout and the
+    /// first debit is on its way, it just has not reached us yet. Reading that as "no
+    /// terminaste el pago" told someone who had just paid to pay again — and the second
+    /// checkout it offered was a second subscription, charged on top of the first.
     /// </summary>
-    public static bool HasPaymentInFlight(Subscription subscription) =>
-        DescribeLastPayment(subscription) == PaymentOutcomes.InProgress;
+    public static bool HasPaymentInFlight(Subscription subscription)
+    {
+        var outcome = DescribeLastPayment(subscription);
+
+        return outcome == PaymentOutcomes.InProgress ||
+               (outcome is null &&
+                subscription.Status == "pendiente" &&
+                subscription.ProviderStatus == "authorized");
+    }
 
     /// <summary>
     /// Whether Mercado Pago may still charge this subscription: linked to a preapproval,

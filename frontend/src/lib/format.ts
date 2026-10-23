@@ -14,7 +14,21 @@ export function formatMoney(amount: number, currency: string, locale: string): s
   }
 }
 
-const LEADING_EMOJI = /^(\p{Extended_Pictographic}️?)\s*/u
+/** El medio de pago tal como lo guarda Mercado Pago (`account_money`, `visa ···· 6411`),
+ * vuelto algo que se lee: "Dinero en cuenta", "Visa ···· 6411". Sólo para mostrar: el
+ * backend sigue guardando y mandando el id crudo.
+ *
+ * Un id que no está en `names` sale con mayúscula inicial en vez de perderse. */
+export function formatPaymentMethod(label: string | null, names: Record<string, string>): string | null {
+  if (!label) {
+    return null
+  }
+  const [id, ...rest] = label.split(' ')
+  const name = names[id] ?? id.charAt(0).toUpperCase() + id.slice(1)
+  return [name, ...rest].join(' ')
+}
+
+const LEADING_EMOJI =/^(\p{Extended_Pictographic}️?)\s*/u
 
 /** Separa un emoji inicial (p. ej. "😂 ×1.243") del resto del texto.
  *

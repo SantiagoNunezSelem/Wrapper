@@ -87,6 +87,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     subscription,
     subscriptionAction,
     subscriptionError,
+    isConfirmingCheckout,
     isAuthModalOpen,
     setIsAuthModalOpen,
     needsRecaptchaChallenge,
@@ -268,6 +269,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           token={token}
           overview={subscription}
           busyAction={subscriptionAction}
+          confirmingCheckout={isConfirmingCheckout}
           error={subscriptionError}
           onBack={() => navigateTo('/')}
           onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
