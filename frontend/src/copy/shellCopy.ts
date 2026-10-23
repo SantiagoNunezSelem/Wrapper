@@ -307,6 +307,32 @@ export const shellCopy = {
       // sola (al volver del checkout y al volver a esta pestaña).
       checkoutOpenPaidNote: 'Si ya pagaste, no tenés que hacer nada: lo detectamos solos en unos minutos.',
       /**
+       * El pagador ya terminó en Mercado Pago y el cobro todavía no se confirmó. Es lo que
+       * ve alguien que acaba de pagar, así que lo primero que tiene que leer es que lo
+       * hizo bien y que no tiene que tocar nada — no "no se te cobró nada".
+       */
+      processingStatus: 'Confirmando tu pago',
+      processingHint: 'Ya completaste el pago en Mercado Pago. Lo están confirmando: suele tardar unos segundos.',
+      processingNext: 'No tenés que hacer nada. Apenas se confirme te activamos Pro y esta pantalla se actualiza sola.',
+      // Recién vuelto de Mercado Pago, mientras todavía no contestó cómo terminó.
+      confirmingStatus: 'Verificando tu pago',
+      confirmingHint: 'Le estamos preguntando a Mercado Pago cómo terminó el pago. Esta pantalla se actualiza sola.',
+      confirmingNext: 'Si no llegaste a terminarlo, podés retomarlo acá abajo.',
+      liveUpdating: 'Actualizando automáticamente…',
+      activatedNote: '¡Listo! Tu suscripción está activa y ya tenés todas las métricas Pro.',
+      trialActivatedNote: '¡Listo! Empezó tu semana gratis: ya tenés todas las métricas Pro.',
+      // Cancelada con el período (o la semana gratis) todavía corriendo: con la fecha, no
+      // "hasta que termine el período", que obliga a ir a buscarla.
+      cancelledHint: 'No se renueva más. Conservás el acceso Pro hasta el {date}.',
+      cancelledNext: 'No se te va a cobrar de nuevo. Después del {date} podés volver a suscribirte.',
+      // Ya terminó: decir "conservás el acceso" acá era decir algo falso.
+      endedStatus: 'Terminada',
+      endedHint: 'Tu suscripción terminó el {date}. Ya no tenés acceso Pro.',
+      endedNext: 'Podés volver a suscribirte cuando quieras.',
+      paymentFailedLockedHint:
+        'No pudimos cobrar tu tarjeta y ya pasó el período de gracia, así que el acceso Pro está en pausa hasta que se cobre.',
+      pausedLockedHint: 'No hay cobros nuevos y el período que ya pagaste terminó, así que no tenés acceso Pro.',
+      /**
        * El cartel de `MercadoPago:TestPayerEmail`. No se puede cerrar a propósito: existe
        * justamente para que no se olvide puesto, y un aviso que se descarta es un aviso
        * que se olvida. Nombra el mail porque es el dato con el que se verifica que sea el
@@ -329,8 +355,6 @@ export const shellCopy = {
       payerEmailHint:
         'Tiene que ser el mail de tu cuenta de Mercado Pago, o no te va a dejar pagar. Tu cuenta de Vistazo no cambia.',
       payerEmailInvalid: 'Revisá el mail: no parece válido.',
-      alreadyPaidNote:
-        'Si ya pagaste, puede tardar unos minutos. Lo revisamos solos cada tanto y te activamos apenas Mercado Pago confirme.',
       checkingStatus: 'Buscando tu pago...',
       currentPlanTitle: 'Tu plan',
       perMonth: 'por mes',
@@ -340,6 +364,16 @@ export const shellCopy = {
       endsOn: 'Acceso hasta el',
       graceUntil: 'Acceso garantizado hasta el',
       paymentMethod: 'Medio de pago',
+      paymentMethods: {
+        account_money: 'Dinero en cuenta',
+        visa: 'Visa',
+        master: 'Mastercard',
+        amex: 'American Express',
+        debvisa: 'Visa Débito',
+        debmaster: 'Mastercard Débito',
+        naranja: 'Naranja',
+        cabal: 'Cabal',
+      } as Record<string, string>,
       startedOn: 'Comenzó el',
       lastPayment: 'Último pago',
       pausedSince: 'Pausada desde el',
@@ -865,6 +899,23 @@ export const shellCopy = {
         'Mercado Pago could not charge the card, so the subscription never started. Nothing was charged.',
       checkoutOpenNext: 'Pick it up where you left it.',
       checkoutOpenPaidNote: "If you already paid, there's nothing to do: we'll pick it up on our own in a few minutes.",
+      processingStatus: 'Confirming your payment',
+      processingHint: 'You completed the payment on Mercado Pago. They are confirming it — it usually takes a few seconds.',
+      processingNext: "You don't need to do anything. As soon as it's confirmed we turn on Pro, and this screen updates on its own.",
+      confirmingStatus: 'Checking your payment',
+      confirmingHint: "We're asking Mercado Pago how the payment went. This screen updates on its own.",
+      confirmingNext: "If you didn't get to finish it, you can pick it up below.",
+      liveUpdating: 'Updating automatically…',
+      activatedNote: 'Done! Your subscription is active and every Pro metric is unlocked.',
+      trialActivatedNote: 'Done! Your free week has started: every Pro metric is unlocked.',
+      cancelledHint: "It won't renew. You keep Pro access until {date}.",
+      cancelledNext: "You won't be charged again. After {date} you can subscribe again.",
+      endedStatus: 'Ended',
+      endedHint: 'Your subscription ended on {date}. You no longer have Pro access.',
+      endedNext: 'You can subscribe again whenever you like.',
+      paymentFailedLockedHint:
+        "We couldn't charge your card and the grace period is over, so Pro access is on hold until the charge goes through.",
+      pausedLockedHint: "There are no new charges and the period you paid for has ended, so you don't have Pro access.",
       testPayerBannerTitle: 'Test mode: payments are not real',
       testPayerBannerBody:
         'Every checkout opens as {email}, not as whoever is using the app. Clear MercadoPago__TestPayerEmail before taking real payments.',
@@ -877,8 +928,6 @@ export const shellCopy = {
       payerEmailHint:
         "It has to be your Mercado Pago account's email, or it won't let you pay. Your Vistazo account doesn't change.",
       payerEmailInvalid: "Check the email: it doesn't look valid.",
-      alreadyPaidNote:
-        'If you already paid, it can take a few minutes. We keep checking on our own and turn Pro on the moment Mercado Pago confirms it.',
       checkingStatus: 'Looking for your payment...',
       currentPlanTitle: 'Your plan',
       perMonth: 'per month',
@@ -888,6 +937,16 @@ export const shellCopy = {
       endsOn: 'Access until',
       graceUntil: 'Access guaranteed until',
       paymentMethod: 'Payment method',
+      paymentMethods: {
+        account_money: 'Account money',
+        visa: 'Visa',
+        master: 'Mastercard',
+        amex: 'American Express',
+        debvisa: 'Visa Debit',
+        debmaster: 'Mastercard Debit',
+        naranja: 'Naranja',
+        cabal: 'Cabal',
+      },
       startedOn: 'Started on',
       lastPayment: 'Last payment',
       pausedSince: 'Paused since',

@@ -1,15 +1,17 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
 import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
-import { formatMoney } from '../lib/format'
+import { formatMoney, formatPaymentMethod } from '../lib/format'
 import { defaultPayerEmail, isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage, describePaymentReason, type PaymentReasonCopy } from '../lib/paymentReasons'
+import { phaseOf } from '../lib/subscriptionPhase'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PayerEmailPicker, PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type {
   Language,
   SubscriptionInvoice,
   SubscriptionOverview,
+  SubscriptionPhase,
   SubscriptionRecord,
   UserProfile,
 } from '../types'
@@ -38,9 +40,24 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReaso
   checkoutOpenPaidNote: string
   checkoutRejectedStatus: string
   checkoutRejectedHint: string
+  processingStatus: string
+  processingHint: string
+  processingNext: string
+  confirmingStatus: string
+  confirmingHint: string
+  confirmingNext: string
+  liveUpdating: string
+  activatedNote: string
+  trialActivatedNote: string
+  cancelledHint: string
+  cancelledNext: string
+  endedStatus: string
+  endedHint: string
+  endedNext: string
+  paymentFailedLockedHint: string
+  pausedLockedHint: string
   resumeCheckoutCta: string
   payerEmailContinue: string
-  alreadyPaidNote: string
   checkingStatus: string
   currentPlanTitle: string
   perMonth: string
@@ -50,6 +67,8 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReaso
   endsOn: string
   graceUntil: string
   paymentMethod: string
+  /** Mercado Pago's payment_method_id → what the screen says ("account_money" → "Dinero en cuenta"). */
+  paymentMethods: Record<string, string>
   startedOn: string
   lastPayment: string
   pausedSince: string
@@ -131,6 +150,7 @@ export function SubscriptionPage({
   onResume,
   onRefresh,
   onSignIn,
+  confirmingCheckout = false,
 }: {
   language: Language
   copy: SubscriptionPageCopy
@@ -145,18 +165,21 @@ export function SubscriptionPage({
   onResume: () => void
   onRefresh: () => void
   onSignIn: () => void
+  /** Just back from Mercado Pago, and the screen is still asking how it went. */
+  confirmingCheckout?: boolean
 }) {
   const isBusy = busyAction !== null
   const current = overview?.current ?? null
   const plan = overview?.plan ?? null
   const actions = overview?.actions ?? null
   const locale = language === 'es' ? 'es-AR' : 'en-US'
+  const phase = current ? phaseOf(current) : null
   const hasResumableCheckout = current?.status === 'pendiente' && Boolean(actions?.canResumeCheckout)
-  const isWaitingOnProvider = current?.status === 'pendiente'
+  const isWaitingOnProvider = phase === 'processing' || phase === 'checkout_open'
 
   // Re-checks with Mercado Pago when the person comes back to this tab — the usual
   // moment after paying in another tab or the Mercado Pago app. Only while something is
-  // pending, and at most once a minute, since each check reaches Mercado Pago.
+  // pending, and at most every ten seconds, since each check reaches Mercado Pago.
   const refreshRef = useRef(onRefresh)
   useEffect(() => {
     refreshRef.current = onRefresh
@@ -168,7 +191,7 @@ export function SubscriptionPage({
     }
 
     function handleVisible() {
-      if (document.visibilityState !== 'visible' || Date.now() - lastAutoRefresh.current < 60_000) {
+      if (document.visibilityState !== 'visible' || Date.now() - lastAutoRefresh.current < 10_000) {
         return
       }
       lastAutoRefresh.current = Date.now()
@@ -178,6 +201,20 @@ export function SubscriptionPage({
     document.addEventListener('visibilitychange', handleVisible)
     return () => document.removeEventListener('visibilitychange', handleVisible)
   }, [isWaitingOnProvider])
+
+  // "¡Listo!" once, when the payment this screen was waiting on turns into Pro. Without
+  // it the banner just changed colour under someone who was watching it, and a calm
+  // "Activa" reads as nothing having happened.
+  const [activatedAs, setActivatedAs] = useState<'trial' | 'activa' | null>(null)
+  const previousPhase = useRef(phase)
+  useEffect(() => {
+    const before = previousPhase.current
+    previousPhase.current = phase
+    const wasWaiting = confirmingCheckout || before === 'processing' || before === 'checkout_open' || before === 'declined'
+    if (wasWaiting && (phase === 'trial' || phase === 'activa')) {
+      setActivatedAs(phase)
+    }
+  }, [phase, confirmingCheckout])
 
   return (
     <div className="subpage">
@@ -208,6 +245,11 @@ export function SubscriptionPage({
 
         {error ? <p className="subpage-error">{error}</p> : null}
         {overview?.warning ? <p className="subpage-error">{overview.warning}</p> : null}
+        {activatedAs && (phase === 'trial' || phase === 'activa') ? (
+          <p className="subpage-note subpage-note-success" role="status">
+            {activatedAs === 'trial' ? copy.trialActivatedNote : copy.activatedNote}
+          </p>
+        ) : null}
         {overview?.cancellation ? <CancellationNote overview={overview} copy={copy} locale={locale} /> : null}
         {overview?.courtesyUntilUtc ? (
           <p className="subpage-note">
@@ -226,26 +268,32 @@ export function SubscriptionPage({
           </section>
         ) : null}
 
-        {current ? (
+        {current && phase ? (
           <>
-            <StatusBanner
-              current={current}
-              copy={copy}
-              locale={locale}
-              isBusy={isBusy}
-              busyAction={busyAction}
-              canResumeCheckout={Boolean(actions?.canResumeCheckout)}
-              canCancel={Boolean(actions?.canCancel)}
-              token={token}
-              payerEmailLocked={Boolean(user?.checkoutTestPayerEmail)}
-              onCancel={onCancel}
-            />
+            {/* An attempt that went nowhere is no subscription at all: nothing to report,
+                and the plan right below is the way forward. */}
+            {phase !== 'abandoned' ? (
+              <StatusBanner
+                current={current}
+                phase={phase}
+                copy={copy}
+                locale={locale}
+                isBusy={isBusy}
+                busyAction={busyAction}
+                canResumeCheckout={Boolean(actions?.canResumeCheckout)}
+                canCancel={Boolean(actions?.canCancel)}
+                confirming={confirmingCheckout}
+                token={token}
+                payerEmailLocked={Boolean(user?.checkoutTestPayerEmail)}
+                onCancel={onCancel}
+              />
+            ) : null}
 
-            {/* Nothing has been bought yet, so there is no plan to describe. The dates
-                Mercado Pago projects for a checkout nobody completed — a start day, a
-                first debit — read exactly like a subscription that is already running,
-                which is the opposite of what the banner right above is saying. */}
-            {current.status !== 'pendiente' ? (
+            {/* Only for a plan that is running or still has access. Nothing has been
+                bought on a pending or declined attempt, and a plan that already ended has
+                nothing left to describe — its "Acceso hasta el" was a date in the past,
+                read as one still ahead. The history keeps the record of both. */}
+            {phase === 'trial' || phase === 'activa' || phase === 'pago_fallido' || phase === 'pausada' || phase === 'cancelled' ? (
               <CurrentPlanSection
                 current={current}
                 plan={plan}
@@ -272,7 +320,7 @@ export function SubscriptionPage({
             plan={plan}
             locale={locale}
             overview={overview}
-            title={current ? copy.resubscribeTitle : copy.plansTitle}
+            title={phase === 'ended' || phase === 'cancelled' ? copy.resubscribeTitle : copy.plansTitle}
           />
         ) : null}
 
@@ -320,23 +368,28 @@ export function SubscriptionPage({
  */
 function StatusBanner({
   current,
+  phase,
   copy,
   locale,
   isBusy,
   busyAction,
   canResumeCheckout,
   canCancel,
+  confirming,
   token,
   payerEmailLocked,
   onCancel,
 }: {
   current: SubscriptionRecord
+  phase: SubscriptionPhase
   copy: SubscriptionPageCopy
   locale: string
   isBusy: boolean
   busyAction: SubscriptionBusyAction | null
   canResumeCheckout: boolean
   canCancel: boolean
+  /** Just back from Mercado Pago, still asking how it went. */
+  confirming: boolean
   token: string | null
   /** `MercadoPago:TestPayerEmail` is set: the address is shown but cannot be changed. */
   payerEmailLocked: boolean
@@ -345,57 +398,36 @@ function StatusBanner({
   // Closing an unfinished attempt lives here because the plan card it used to live in is
   // not drawn for one: there is no plan yet to cancel a renewal on.
   const [discarding, setDiscarding] = useState(false)
-  // `pendiente` covers two opposite things, and the screen must not say the same words
-  // for both: a charge Mercado Pago is genuinely working on, and a checkout that was
-  // opened and abandoned — where nothing was authorised and nothing will be charged.
-  // Only the first one is news worth a warning colour; the second is closer to having no
-  // subscription at all, with a link back to where it was left.
-  const isUnfinishedCheckout = current.status === 'pendiente' && !current.paymentInProgress
-  // A card Mercado Pago refused is neither of those: the payer did finish, the charge
-  // bounced, and telling them they never completed it is plainly false. It borrows
-  // `pago_fallido`'s colours because that is what it is, while the wording stays its own —
-  // nothing here was ever paid for, so there is no access to keep.
-  const wasDeclined = isUnfinishedCheckout && current.pendingReasonKind === 'declined'
+  const banner = describeBanner(current, phase, confirming, copy, locale)
+  const isUnfinishedCheckout = phase === 'checkout_open'
   const reason = current.pendingReason
     ? describePaymentReason(copy, current.pendingReason, current.pendingReasonKind, {
         amount: formatMoney(current.amount, current.currencyId, locale),
-        card: current.paymentMethodLabel,
+        card: formatPaymentMethod(current.paymentMethodLabel, copy.paymentMethods),
       })
     : null
-  const needsAttention =
-    wasDeclined || current.status === 'pago_fallido' || (current.status === 'pendiente' && current.paymentInProgress)
-  const variant = wasDeclined ? 'pago_fallido' : isUnfinishedCheckout ? 'checkout_abierto' : current.status
-
-  const nextStep = isUnfinishedCheckout
-    ? copy.checkoutOpenNext
-    : fillTokens(copy.statusNext[current.status] ?? '', {
-        date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
-        amount: formatMoney(current.amount, current.currencyId, locale),
-      })
-
-  const hint = wasDeclined
-    ? copy.checkoutRejectedHint
-    : isUnfinishedCheckout
-      ? copy.checkoutOpenHint
-      : copy.statusHints[current.status]
+  // The screen is asking Mercado Pago on its own right now, so it says so: a banner that
+  // promises "se actualiza sola" and then sits still reads as frozen.
+  const isLive = phase === 'processing' || (confirming && isUnfinishedCheckout)
 
   return (
-    <section className={`subpage-banner ${needsAttention ? 'is-attention' : 'is-calm'} banner-${variant}`}>
+    <section className={`subpage-banner ${banner.attention ? 'is-attention' : 'is-calm'} banner-${banner.variant}`}>
       <div className="subpage-banner-head">
-        <span className={`subpage-status status-${variant}`}>
-          {wasDeclined
-            ? copy.checkoutRejectedStatus
-            : isUnfinishedCheckout
-              ? copy.checkoutOpenStatus
-              : copy.statuses[current.status] ?? current.status}
-        </span>
+        <span className={`subpage-status status-${banner.variant}`}>{banner.label}</span>
         {current.hasAccess && current.accessUntilUtc ? (
           <span className="subpage-banner-countdown">{formatRemaining(current.accessUntilUtc, copy)}</span>
         ) : null}
       </div>
 
-      {hint ? <p className="subpage-banner-body">{hint}</p> : null}
-      {nextStep ? <p className="subpage-banner-next">{nextStep}</p> : null}
+      {banner.hint ? <p className="subpage-banner-body">{banner.hint}</p> : null}
+      {banner.next ? <p className="subpage-banner-next">{banner.next}</p> : null}
+
+      {isLive ? (
+        <p className="subpage-banner-fineprint subpage-live" aria-live="polite">
+          <span className="subpage-live-dot" aria-hidden="true" />
+          {busyAction === 'refresh' ? copy.checkingStatus : copy.liveUpdating}
+        </p>
+      ) : null}
 
       {/* Only ever shown with a real status_detail behind it: inventing a reason is worse
           than saying nothing, and the fallback already covers "no sabemos todavía". */}
@@ -431,14 +463,14 @@ function StatusBanner({
               disabled={isBusy}
             />
           ) : null}
-          <p className="subpage-banner-fineprint" aria-live="polite">
-            {busyAction === 'refresh'
-              ? copy.checkingStatus
-              : isUnfinishedCheckout
-                ? copy.checkoutOpenPaidNote
-                : copy.alreadyPaidNote}
-          </p>
-          {canCancel ? (
+          {/* The live line above already says it is being checked; this note is for when
+              nobody is checking any more. */}
+          {!isLive && isUnfinishedCheckout ? (
+            <p className="subpage-banner-fineprint" aria-live="polite">
+              {busyAction === 'refresh' ? copy.checkingStatus : copy.checkoutOpenPaidNote}
+            </p>
+          ) : null}
+          {canCancel && !isLive ? (
             <p className="subpage-banner-fineprint">
               {copy.discardCheckoutPrompt}{' '}
               <button
@@ -699,7 +731,9 @@ function CurrentPlanSection({
             <Fact label={copy.startedOn} value={formatDate(current.subscriptionStartsAtUtc, locale)} />
           ) : null}
           {current.lastPaymentAtUtc ? <Fact label={copy.lastPayment} value={formatDate(current.lastPaymentAtUtc, locale)} /> : null}
-          {current.paymentMethodLabel ? <Fact label={copy.paymentMethod} value={current.paymentMethodLabel} /> : null}
+          {current.paymentMethodLabel ? (
+            <Fact label={copy.paymentMethod} value={formatPaymentMethod(current.paymentMethodLabel, copy.paymentMethods) ?? ''} />
+          ) : null}
           <Fact label={copy.billedBy} value={current.autoRenewEnabled ? copy.autoRenewOn : copy.autoRenewOff} />
         </dl>
       </div>
@@ -897,7 +931,10 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
           copy,
           invoice.statusDetail,
           invoice.status === 'devuelto' ? 'refunded' : null,
-          { amount: formatMoney(invoice.amount, invoice.currencyId, locale), card: invoice.paymentMethodLabel },
+          {
+            amount: formatMoney(invoice.amount, invoice.currencyId, locale),
+            card: formatPaymentMethod(invoice.paymentMethodLabel, copy.paymentMethods),
+          },
         ).reason
       : null
 
@@ -924,10 +961,17 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
 function HistoryRow({ record, copy, locale }: { record: SubscriptionRecord; copy: SubscriptionPageCopy; locale: string }) {
   // Same split as the banner: an old row that never got past the checkout should read as
   // the attempt it was, not as a payment that is still somewhere in the system.
+  const phase = phaseOf(record)
   const label =
-    record.status === 'pendiente' && !record.paymentInProgress
-      ? copy.checkoutOpenStatus
-      : copy.statuses[record.status] ?? record.status
+    phase === 'processing'
+      ? copy.processingStatus
+      : phase === 'declined'
+        ? copy.checkoutRejectedStatus
+        : phase === 'checkout_open' || phase === 'abandoned'
+          ? copy.checkoutOpenStatus
+          : phase === 'ended'
+            ? copy.endedStatus
+            : copy.statuses[record.status] ?? record.status
 
   return (
     <li>
@@ -968,6 +1012,84 @@ function ChevronIcon({ className = '' }: { className?: string }) {
       <path d="M6 9l6 6 6-6" />
     </svg>
   )
+}
+
+interface BannerText {
+  /** Picks the colours: `banner-…` and `status-…` in the stylesheet. */
+  variant: string
+  label: string
+  hint: string
+  next: string
+  attention: boolean
+}
+
+/**
+ * What the banner says for each phase. One place, so every case is visible side by side —
+ * the wrong sentences this screen used to show ("no se te cobró nada" right after paying,
+ * "conservás el acceso" weeks after it ended) came from cases nobody had put next to each
+ * other.
+ */
+function describeBanner(
+  current: SubscriptionRecord,
+  phase: SubscriptionPhase,
+  confirming: boolean,
+  copy: SubscriptionPageCopy,
+  locale: string,
+): BannerText {
+  const amount = formatMoney(current.amount, current.currencyId, locale)
+  const accessEnd = formatDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
+  const statusText = (status: string) => ({
+    label: copy.statuses[status] ?? status,
+    hint: copy.statusHints[status] ?? '',
+    next: fillTokens(copy.statusNext[status] ?? '', {
+      date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
+      amount,
+    }),
+  })
+
+  switch (phase) {
+    case 'processing':
+      return { variant: 'pendiente', label: copy.processingStatus, hint: copy.processingHint, next: copy.processingNext, attention: true }
+    case 'checkout_open':
+      // Back from Mercado Pago a moment ago, and it has not said yet how it went. "No lo
+      // terminaste" is the one guess that must not be made to someone who may have just
+      // paid; the screen keeps asking, and only says it once it has stopped.
+      return confirming
+        ? { variant: 'pendiente', label: copy.confirmingStatus, hint: copy.confirmingHint, next: copy.confirmingNext, attention: true }
+        : { variant: 'checkout_abierto', label: copy.checkoutOpenStatus, hint: copy.checkoutOpenHint, next: copy.checkoutOpenNext, attention: false }
+    case 'declined':
+      // The payer did finish and the charge bounced. Red, because that is what it is, but
+      // its own words: nothing was ever paid, so there is no access to keep.
+      return { variant: 'pago_fallido', label: copy.checkoutRejectedStatus, hint: copy.checkoutRejectedHint, next: '', attention: true }
+    case 'cancelled':
+      return {
+        variant: 'cancelada',
+        label: copy.statuses.cancelada ?? 'cancelada',
+        hint: fillTokens(copy.cancelledHint, { date: accessEnd }),
+        next: fillTokens(copy.cancelledNext, { date: accessEnd }),
+        attention: false,
+      }
+    case 'ended':
+      return {
+        variant: 'cancelada',
+        label: copy.endedStatus,
+        hint: fillTokens(copy.endedHint, {
+          date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc ?? current.cancelledAtUtc, locale),
+        }),
+        next: copy.endedNext,
+        attention: false,
+      }
+    case 'pago_fallido':
+      return current.hasAccess
+        ? { variant: 'pago_fallido', ...statusText('pago_fallido'), attention: true }
+        : { variant: 'pago_fallido', ...statusText('pago_fallido'), hint: copy.paymentFailedLockedHint, attention: true }
+    case 'pausada':
+      return current.hasAccess
+        ? { variant: 'pausada', ...statusText('pausada'), attention: false }
+        : { variant: 'pausada', ...statusText('pausada'), hint: copy.pausedLockedHint, attention: false }
+    default:
+      return { variant: phase, ...statusText(phase), attention: false }
+  }
 }
 
 /** `{name}` substitution. Kept dumb on purpose — the copy owns the sentence, this only

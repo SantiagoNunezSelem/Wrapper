@@ -1,6 +1,7 @@
 import type { Language } from '../types'
 import type { AdminCopy } from '../copy/adminCopy'
 import type { AdminEvent } from './types'
+import { formatPaymentMethod } from '../lib/format'
 
 const locale = (language: Language) => (language === 'es' ? 'es-AR' : 'en-US')
 
@@ -79,12 +80,7 @@ export function monthLabel(month: string, language: Language): string {
  * vuelve algo que se lee: "Dinero en cuenta", "Visa ···· 6411".
  */
 export function paymentMethod(label: string | null, copy: AdminCopy): string | null {
-  if (!label) {
-    return null
-  }
-  const [id, ...rest] = label.split(' ')
-  const name = copy.paymentMethods[id] ?? id.charAt(0).toUpperCase() + id.slice(1)
-  return [name, ...rest].join(' ')
+  return formatPaymentMethod(label, copy.paymentMethods)
 }
 
 /**

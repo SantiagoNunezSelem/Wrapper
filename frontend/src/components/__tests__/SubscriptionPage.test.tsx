@@ -147,6 +147,150 @@ describe('SubscriptionPage', () => {
     })
   })
 
+  /**
+   * Lo que se vio en producción con las tarjetas de prueba: después de pagar, la pantalla
+   * decía "no se te cobró nada" y ofrecía comprar de nuevo; y una suscripción que había
+   * terminado hacía semanas seguía diciendo "conservás el acceso hasta que termine el
+   * período".
+   */
+  describe('cada situación con sus palabras', () => {
+    it('recién vuelto de Mercado Pago dice que lo está verificando, no que no lo terminaste', () => {
+      renderPage(
+        overview(
+          record({ status: 'pendiente', hasAccess: false, phase: 'checkout_open', checkoutUrl: 'https://mp.test/subscribe/pre-1' }),
+          { canResumeCheckout: true },
+        ),
+        { confirmingCheckout: true },
+      )
+
+      expect(screen.getByText(copy.confirmingStatus)).toBeInTheDocument()
+      expect(screen.getByText(copy.liveUpdating)).toBeInTheDocument()
+      expect(screen.queryByText(copy.checkoutOpenHint)).not.toBeInTheDocument()
+    })
+
+    it('con el pago ya hecho dice "confirmando", sin "Comprar" ni "Descartar"', () => {
+      renderPage(
+        overview(record({ status: 'pendiente', hasAccess: false, phase: 'processing', checkoutUrl: null }), {
+          canSubscribe: false,
+          canCancel: false,
+        }),
+      )
+
+      // En el cartel y en el historial: los dos lo cuentan igual.
+      expect(screen.getAllByText(copy.processingStatus)).toHaveLength(2)
+      expect(screen.getByText(copy.processingHint)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: copy.buyCta })).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.discardCheckoutCta)).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.checkoutOpenHint)).not.toBeInTheDocument()
+    })
+
+    it('una suscripción que ya terminó lo dice con la fecha, y no promete acceso', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'cancelada',
+            phase: 'ended',
+            hasAccess: false,
+            autoRenewEnabled: false,
+            accessUntilUtc: null,
+            nextBillingAtUtc: '2026-09-29T12:00:00Z',
+          }),
+          { canSubscribe: true },
+        ),
+      )
+
+      expect(screen.getAllByText(copy.endedStatus)).toHaveLength(2)
+      expect(screen.getByText(/^Tu suscripción terminó el .+\. Ya no tenés acceso Pro\.$/)).toBeInTheDocument()
+      expect(screen.queryByText(copy.statusHints.cancelada)).not.toBeInTheDocument()
+      // Sin la tarjeta del plan: su "Acceso hasta el" era una fecha pasada leída como futura.
+      expect(screen.queryByText(copy.endsOn)).not.toBeInTheDocument()
+      expect(screen.getByText(copy.resubscribeTitle)).toBeInTheDocument()
+    })
+
+    it('cancelada con acceso todavía dice hasta qué día, con la fecha', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'cancelada',
+            phase: 'cancelled',
+            hasAccess: true,
+            autoRenewEnabled: false,
+            accessUntilUtc: '2099-09-01T12:00:00Z',
+            nextBillingAtUtc: '2099-09-01T12:00:00Z',
+          }),
+        ),
+      )
+
+      expect(screen.getByText(/^No se renueva más\. Conservás el acceso Pro hasta el .*2099\.$/)).toBeInTheDocument()
+    })
+
+    it('un intento que no fue a ningún lado no se presenta como una suscripción', () => {
+      renderPage(
+        overview(record({ status: 'cancelada', phase: 'abandoned', hasAccess: false, autoRenewEnabled: false }), {
+          canSubscribe: true,
+        }),
+      )
+
+      expect(screen.queryByText(copy.statuses.cancelada)).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.endedStatus)).not.toBeInTheDocument()
+      expect(screen.getByText(copy.plansTitle)).toBeInTheDocument()
+    })
+
+    it('cuando el pago que se estaba esperando se confirma, avisa "¡Listo!" sin recargar', () => {
+      const props = {
+        language: 'es' as const,
+        copy,
+        user,
+        token: 'token',
+        busyAction: null,
+        error: '',
+        onBack: vi.fn(),
+        onLanguageToggle: vi.fn(),
+        onCancel: vi.fn(),
+        onResume: vi.fn(),
+        onRefresh: vi.fn(),
+        onSignIn: vi.fn(),
+      }
+      const { rerender } = render(
+        <TooltipProvider>
+          <SubscriptionPage
+            {...props}
+            overview={overview(record({ status: 'pendiente', hasAccess: false, phase: 'processing' }))}
+          />
+        </TooltipProvider>,
+      )
+
+      rerender(
+        <TooltipProvider>
+          <SubscriptionPage
+            {...props}
+            overview={overview(
+              record({ status: 'trial', phase: 'trial', trialWasApplied: true, trialEndsAtUtc: '2099-01-01T00:00:00Z' }),
+            )}
+          />
+        </TooltipProvider>,
+      )
+
+      expect(screen.getByText(copy.trialActivatedNote)).toBeInTheDocument()
+    })
+  })
+
+  describe('medio de pago', () => {
+    it('dice "Dinero en cuenta", no el id de Mercado Pago', () => {
+      // Lo que se veía era el id crudo: "account_money".
+      renderPage(overview(record({ paymentMethodLabel: 'account_money' })))
+
+      expect(screen.getByText('Dinero en cuenta')).toBeInTheDocument()
+      expect(screen.queryByText(/account_money/)).not.toBeInTheDocument()
+    })
+
+    it('una tarjeta se lee con su marca y conserva los últimos dígitos', () => {
+      renderPage(overview(record({ paymentMethodLabel: 'visa ···· 6411' })))
+
+      expect(screen.getByText('Visa ···· 6411')).toBeInTheDocument()
+    })
+  })
+
   describe('Pro de regalo', () => {
     it('dice hasta cuándo y que no se cobra nada', () => {
       renderPage({ ...overview(null), hasVipAccess: true, courtesyUntilUtc: '2026-12-10T12:00:00Z' })
@@ -232,7 +376,7 @@ describe('SubscriptionPage', () => {
         ),
       )
 
-      expect(screen.getByText(/Tu banco tiene que autorizar el cobro de \$\s?4\.990 con visa ···· 6411\./)).toBeInTheDocument()
+      expect(screen.getByText(/Tu banco tiene que autorizar el cobro de \$\s?4\.990 con Visa ···· 6411\./)).toBeInTheDocument()
       expect(screen.getByText(copy.reasonActions.call_bank, { exact: false })).toBeInTheDocument()
     })
 
@@ -285,7 +429,8 @@ describe('SubscriptionPage', () => {
       expect(screen.queryByRole('link', { name: copy.resumeCheckoutCta })).not.toBeInTheDocument()
       // Pero sí sigue diciendo que lo estamos mirando solos, que es la parte que evita
       // que alguien que ya pagó crea que se perdió la plata.
-      expect(screen.getByText(copy.alreadyPaidNote)).toBeInTheDocument()
+      expect(screen.getByText(copy.processingNext)).toBeInTheDocument()
+      expect(screen.getByText(copy.liveUpdating)).toBeInTheDocument()
     })
   })
 
@@ -321,7 +466,7 @@ describe('SubscriptionPage', () => {
 
       expect(screen.getByText(copy.checkoutOpenHint)).toBeInTheDocument()
       expect(screen.getByText(copy.checkoutOpenPaidNote)).toBeInTheDocument()
-      expect(screen.queryByText(copy.alreadyPaidNote)).not.toBeInTheDocument()
+      expect(screen.queryByText(copy.processingStatus)).not.toBeInTheDocument()
     })
 
     it('con la tarjeta rechazada dice el motivo sin llamarlo pago en curso', () => {

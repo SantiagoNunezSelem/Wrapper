@@ -2229,6 +2229,40 @@ button.chat-bubble-divider.is-expandable:active {
   line-height: 1.45;
 }
 
+/* "Actualizando automáticamente…": the screen is asking Mercado Pago on its own, and a
+   pulsing dot is what tells someone watching that it has not frozen. */
+.subpage-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subpage-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vz-gold);
+  animation: subpageLivePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes subpageLivePulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subpage-live-dot {
+    animation: none;
+  }
+}
+
 .subpage-manage {
   display: grid;
   gap: 6px;

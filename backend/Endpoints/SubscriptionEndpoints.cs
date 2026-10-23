@@ -742,8 +742,45 @@ public sealed record SubscriptionResponse(
     // en camino", the other is "no pasó nada, no se te cobró". See
     // SubscriptionAccessEvaluator.HasPaymentInFlight for how the two are told apart.
     bool PaymentInProgress,
-    DateTime CreatedAtUtc)
+    DateTime CreatedAtUtc,
+    // Which situation the screen has to word — see PhaseOf. The status alone cannot say
+    // it: "pendiente" and "cancelada" each cover cases that need opposite sentences.
+    string Phase)
 {
+    /// <summary>
+    /// The situation the account screen describes, decided here so every shell words the
+    /// same row the same way:
+    /// <list type="bullet">
+    /// <item><c>processing</c> — the payer finished; Mercado Pago is still settling it.</item>
+    /// <item><c>declined</c> — the charge was refused and nothing was ever collected.</item>
+    /// <item><c>checkout_open</c> — a checkout opened and not finished, still resumable.</item>
+    /// <item><c>abandoned</c> — an attempt that went nowhere: nothing paid, nothing to resume.</item>
+    /// <item><c>cancelled</c> — renewal off, the paid period (or free week) still running.</item>
+    /// <item><c>ended</c> — it ran, and its access is over.</item>
+    /// <item>otherwise the status itself: <c>trial</c>, <c>activa</c>, <c>pago_fallido</c>, <c>pausada</c>.</item>
+    /// </list>
+    /// Before this, a cancelled row read "conservás el acceso hasta que termine el período"
+    /// weeks after that period had ended, and on attempts that never charged anything.
+    /// </summary>
+    internal static string PhaseOf(Subscription subscription, bool hasAccess)
+    {
+        var outcome = SubscriptionAccessEvaluator.DescribeLastPayment(subscription);
+        var everRan = subscription.LastPaymentAtUtc is not null || subscription.TrialEndsAtUtc is not null;
+
+        return subscription.Status switch
+        {
+            "pendiente" when SubscriptionAccessEvaluator.HasPaymentInFlight(subscription) => "processing",
+            "pendiente" when outcome == PaymentOutcomes.Declined => "declined",
+            "pendiente" when !string.IsNullOrWhiteSpace(subscription.CheckoutUrl) => "checkout_open",
+            "pendiente" => "abandoned",
+            "cancelada" when hasAccess => "cancelled",
+            "cancelada" when !everRan && outcome == PaymentOutcomes.Declined => "declined",
+            "cancelada" when !everRan => "abandoned",
+            "cancelada" => "ended",
+            _ => subscription.Status,
+        };
+    }
+
     public static SubscriptionResponse From(Subscription subscription)
     {
         var hasAccess = SubscriptionAccessEvaluator.HasVipAccess(subscription);
@@ -781,7 +818,8 @@ public sealed record SubscriptionResponse(
             subscription.LastPaymentStatusDetail,
             SubscriptionAccessEvaluator.DescribeLastPayment(subscription),
             SubscriptionAccessEvaluator.HasPaymentInFlight(subscription),
-            subscription.CreatedAtUtc);
+            subscription.CreatedAtUtc,
+            PhaseOf(subscription, hasAccess));
     }
 }
 
@@ -847,14 +885,20 @@ public sealed record SubscriptionActionsResponse(
             // Cancelling only turns renewal off: the period already paid for runs to its
             // end. Offering the plan during that window asks someone who still has Pro to
             // buy a second subscription overlapping the one they are using.
+            //
+            // A payment already on its way is the one pending row that keeps the plan off the
+            // screen: the payer did their part, and a second checkout there is a second
+            // subscription.
             CanSubscribe: current.Status == "inactiva" ||
                           (current.Status == "cancelada" && !SubscriptionAccessEvaluator.HasVipAccess(current)) ||
-                          (current.Status == "pendiente" &&
-                           (!canResumeCheckout || !SubscriptionAccessEvaluator.HasPaymentInFlight(current))),
+                          (current.Status == "pendiente" && !SubscriptionAccessEvaluator.HasPaymentInFlight(current)),
             CanResumeCheckout: canResumeCheckout,
             // "Cancelar" on a pending row means "olvidate de este pago", which is worth
-            // offering: otherwise an abandoned checkout blocks the screen forever.
-            CanCancel: current.Status is "trial" or "activa" or "pago_fallido" or "pausada" or "pendiente",
+            // offering: otherwise an abandoned checkout blocks the screen forever. Not while
+            // the payment is on its way, though — "descartar" there would cancel a charge
+            // that may already have gone through.
+            CanCancel: current.Status is "trial" or "activa" or "pago_fallido" or "pausada" ||
+                       (current.Status == "pendiente" && !SubscriptionAccessEvaluator.HasPaymentInFlight(current)),
             CanResume: linked && current.Status is "pausada");
     }
 }
