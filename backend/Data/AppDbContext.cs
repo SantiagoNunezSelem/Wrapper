@@ -20,6 +20,29 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AdminNote> AdminNotes => Set<AdminNote>();
     public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
 
+    /// <summary>
+    /// Every date in this database is UTC, and SQLite keeps no trace of that: it hands
+    /// them back as <see cref="DateTimeKind.Unspecified"/>, which goes out as JSON with no
+    /// "Z", and a browser reads a timestamp with no offset as its own local time. Every
+    /// date on screen came out three hours late in Argentina — at night, the next day:
+    /// a payment made at 21:47 on the 22nd showed as the 23rd. Marked UTC on the way out,
+    /// and a local time is converted on the way in, so what is stored never depends on the
+    /// machine's clock either.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>().HaveConversion<NullableUtcDateTimeConverter>();
+    }
+
+    private sealed class UtcDateTimeConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
+        value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+        value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
+
+    private sealed class NullableUtcDateTimeConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime?, DateTime?>(
+        value => value.HasValue && value.Value.Kind == DateTimeKind.Local ? value.Value.ToUniversalTime() : value,
+        value => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value);
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>(entity =>

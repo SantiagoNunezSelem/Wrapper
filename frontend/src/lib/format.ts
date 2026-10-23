@@ -25,7 +25,9 @@ export function formatPaymentMethod(label: string | null, names: Record<string, 
   }
   const [id, ...rest] = label.split(' ')
   const name = names[id] ?? id.charAt(0).toUpperCase() + id.slice(1)
-  return [name, ...rest].join(' ')
+  // Rows saved with the digits Mercado Pago had already masked ("master ···· ***4") read
+  // as a card masked twice; the brand alone says more.
+  return rest.some((part) => part.includes('*')) ? name : [name, ...rest].join(' ')
 }
 
 const LEADING_EMOJI =/^(\p{Extended_Pictographic}️?)\s*/u

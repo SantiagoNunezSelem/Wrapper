@@ -1672,7 +1672,10 @@ public sealed class SubscriptionService(
             return null;
         }
 
-        return string.IsNullOrWhiteSpace(lastFour) ? method : $"{method} ···· {lastFour}";
+        // Mercado Pago sometimes sends the digits already masked ("***4"), which read as
+        // "···· ***4" on screen. Four real digits or none.
+        var digits = lastFour is null ? string.Empty : new string(lastFour.Where(char.IsAsciiDigit).ToArray());
+        return digits.Length == 4 ? $"{method} ···· {digits}" : method;
     }
 
     // ---------------------------------------------------------------------------
