@@ -52,6 +52,19 @@ public sealed class SubscriptionEndpointTests(ApiFactory factory) : IClassFixtur
     // -----------------------------------------------------------------------
 
     [Fact]
+    public async Task Las_fechas_salen_marcadas_como_UTC()
+    {
+        // Sin la "Z", el navegador las leía como hora local: en Argentina todo salía tres
+        // horas corrido, y un pago de las 21:47 del 22 figuraba el 23.
+        var (client, _) = factory.CreateAuthenticatedClient(subscriptions: ApiFactory.ActiveSubscription());
+
+        var current = (await ReadJson(await client.GetAsync("/api/subscription"))).GetProperty("current");
+
+        Assert.EndsWith("Z", current.GetProperty("createdAtUtc").GetString());
+        Assert.EndsWith("Z", current.GetProperty("nextBillingAtUtc").GetString());
+    }
+
+    [Fact]
     public async Task La_vista_general_exige_sesion()
     {
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/api/subscription")).StatusCode);

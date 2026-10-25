@@ -212,7 +212,11 @@ export function MobileAccount({
   }
 
   const statusLabel = copy.subscriptionPage.statuses[user.subscriptionState as keyof typeof copy.subscriptionPage.statuses] ?? user.subscriptionState
-  const statusHint = copy.subscriptionPage.statusHints[user.subscriptionState as keyof typeof copy.subscriptionPage.statusHints]
+  // An admin's Pro is not a subscription: "se renueva sola todos los meses" next to it
+  // described a charge that does not exist.
+  const statusHint = user.isAdmin
+    ? copy.subscriptionPage.adminNote
+    : copy.subscriptionPage.statusHints[user.subscriptionState as keyof typeof copy.subscriptionPage.statusHints]
 
   return (
     <>

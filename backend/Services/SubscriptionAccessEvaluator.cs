@@ -187,12 +187,20 @@ public static class SubscriptionAccessEvaluator
     /// </summary>
     public static Subscription? GetLatestRelevantSubscription(User user)
     {
-        var ordered = user.Subscriptions
+        var granting = user.Subscriptions
+            .Where(HasVipAccess)
             .OrderByDescending(item => item.NextBillingAtUtc ?? item.TrialEndsAtUtc ?? item.CreatedAtUtc)
             .ThenByDescending(item => item.CreatedAtUtc)
-            .ToList();
+            .FirstOrDefault();
 
-        return ordered.FirstOrDefault(HasVipAccess) ?? ordered.FirstOrDefault();
+        // With nothing granting Pro, the newest attempt — by when it was opened, not by its
+        // billing date. A subscription whose Pro was taken away keeps the debit date Mercado
+        // Pago had projected, a month out, and ordering by that put it ahead of the checkout
+        // the person had just paid: they came back to "Terminada · Volver a suscribirte",
+        // the screen stopped checking, and nothing stood in the way of a second checkout.
+        return granting ?? user.Subscriptions
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .FirstOrDefault();
     }
 }
 

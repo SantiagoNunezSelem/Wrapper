@@ -3694,6 +3694,13 @@ button.chat-bubble-divider.is-expandable:hover {
   background: var(--vz-danger-text);
 }
 
+/* Green is "todo en orden". A subscription that ended or a payment nobody finished is
+   neither good nor alarming news, and a green bar next to "Terminada" read as success. */
+.subpage-banner.banner-cancelada::before,
+.subpage-banner.banner-checkout_abierto::before {
+  background: var(--vz-text-dim);
+}
+
 .subpage-fact {
   background: var(--vz-wall);
 }

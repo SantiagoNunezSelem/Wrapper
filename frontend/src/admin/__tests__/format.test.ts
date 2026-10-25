@@ -43,6 +43,8 @@ describe('formato del panel', () => {
     // Lo que se veía en la cuenta era el id crudo: "account_money".
     expect(paymentMethod('account_money', copy)).toBe('Dinero en cuenta')
     expect(paymentMethod('visa ···· 6411', copy)).toBe('Visa ···· 6411')
+    // Mercado Pago a veces manda los dígitos ya enmascarados: "···· ***4" no dice nada.
+    expect(paymentMethod('master ···· ***4', copy)).toBe('Mastercard')
     expect(paymentMethod('rapipago', copy)).toBe('Rapipago')
     expect(paymentMethod(null, copy)).toBeNull()
   })
