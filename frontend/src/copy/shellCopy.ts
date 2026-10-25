@@ -243,7 +243,7 @@ export const shellCopy = {
         pending_capture: 'El pago está autorizado y falta que se acredite.',
         offline_process: 'Se está procesando sin conexión. Puede demorar un rato.',
         deferred_retry: 'Mercado Pago va a reintentar el cobro.',
-        cc_rejected_insufficient_amount: 'La tarjeta no tenía saldo suficiente.',
+        cc_rejected_insufficient_amount: 'La tarjeta no tenía saldo o límite suficiente.',
         cc_rejected_call_for_authorize: 'Tu banco tiene que autorizar el cobro de {amount} con {card}.',
         cc_rejected_card_disabled: 'La tarjeta está inhabilitada. Activala con tu banco.',
         cc_rejected_bad_filled_security_code: 'El código de seguridad no coincide.',
@@ -275,6 +275,9 @@ export const shellCopy = {
         by_collector: 'El pago se canceló desde Vistazo.',
         partially_refunded: 'Se devolvió una parte del pago.',
         accredited: 'Acreditado.',
+        // Nuestro, no de Mercado Pago: lo graba el backend cuando Mercado Pago cancela un
+        // intento con semana gratis sin decir por qué (ver SubscriptionService).
+        checkout_refused: 'Mercado Pago no aceptó la tarjeta y no nos dijo el motivo.',
       },
       pendingReasonFallback: 'Mercado Pago todavía no confirmó el pago.',
       pendingReasonLabel: 'Motivo',
@@ -355,6 +358,9 @@ export const shellCopy = {
       payerEmailHint:
         'Tiene que ser el mail de tu cuenta de Mercado Pago, o no te va a dejar pagar. Tu cuenta de Vistazo no cambia.',
       payerEmailInvalid: 'Revisá el mail: no parece válido.',
+      // Mercado Pago rechaza el pago en su página si el mail no coincide y no nos avisa: la
+      // pista va donde está el botón que lo arregla.
+      payerEmailMismatchHint: '¿Mercado Pago te dijo que tu e-mail no coincide? Tocá «Cambiar» y poné el mail con el que entrás a Mercado Pago.',
       checkingStatus: 'Buscando tu pago...',
       currentPlanTitle: 'Tu plan',
       perMonth: 'por mes',
@@ -843,7 +849,7 @@ export const shellCopy = {
         pending_capture: 'The payment is authorised and waiting to be credited.',
         offline_process: 'It is being processed offline. This can take a while.',
         deferred_retry: 'Mercado Pago will retry the charge.',
-        cc_rejected_insufficient_amount: 'The card did not have enough funds.',
+        cc_rejected_insufficient_amount: 'The card did not have enough funds or credit limit.',
         cc_rejected_call_for_authorize: 'Your bank has to authorise the {amount} charge on {card}.',
         cc_rejected_card_disabled: 'The card is disabled. Activate it with your bank.',
         cc_rejected_bad_filled_security_code: "The security code doesn't match.",
@@ -875,6 +881,7 @@ export const shellCopy = {
         by_collector: 'The payment was cancelled from Vistazo.',
         partially_refunded: 'Part of the payment was refunded.',
         accredited: 'Credited.',
+        checkout_refused: "Mercado Pago didn't accept the card and didn't tell us why.",
       },
       pendingReasonFallback: 'Mercado Pago has not confirmed the payment yet.',
       pendingReasonLabel: 'Reason',
@@ -928,6 +935,7 @@ export const shellCopy = {
       payerEmailHint:
         "It has to be your Mercado Pago account's email, or it won't let you pay. Your Vistazo account doesn't change.",
       payerEmailInvalid: "Check the email: it doesn't look valid.",
+      payerEmailMismatchHint: "Did Mercado Pago say your email doesn't match? Tap «Change» and enter the email you sign in to Mercado Pago with.",
       checkingStatus: 'Looking for your payment...',
       currentPlanTitle: 'Your plan',
       perMonth: 'per month',

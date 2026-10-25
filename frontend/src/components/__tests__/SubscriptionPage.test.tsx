@@ -236,6 +236,63 @@ describe('SubscriptionPage', () => {
       expect(screen.getByText(copy.plansTitle)).toBeInTheDocument()
     })
 
+    it('una tarjeta rechazada con semana gratis se avisa aunque Mercado Pago no diga el motivo', () => {
+      // Visto con OTHE y CALL: Mercado Pago cancela el intento y no manda ningún motivo.
+      renderPage(
+        overview(
+          record({
+            status: 'cancelada',
+            phase: 'declined',
+            hasAccess: false,
+            autoRenewEnabled: false,
+            pendingReason: 'checkout_refused',
+            pendingReasonKind: 'declined',
+          }),
+          { canSubscribe: true },
+        ),
+      )
+
+      expect(screen.getAllByText(copy.checkoutRejectedStatus).length).toBeGreaterThan(0)
+      expect(screen.getByText(copy.pendingReasons.checkout_refused, { exact: false })).toBeInTheDocument()
+      expect(screen.getByText(copy.reasonActions.other_method, { exact: false })).toBeInTheDocument()
+    })
+
+    it('un rechazo sin motivo sugiere otra tarjeta antes que el banco', () => {
+      renderPage(
+        overview(
+          record({
+            status: 'cancelada',
+            phase: 'declined',
+            hasAccess: false,
+            pendingReason: 'cc_rejected_other_reason',
+            pendingReasonKind: 'declined',
+          }),
+          { canSubscribe: true },
+        ),
+      )
+
+      expect(screen.getByText(copy.reasonActions.other_method, { exact: false })).toBeInTheDocument()
+      expect(screen.queryByText(copy.reasonActions.call_bank, { exact: false })).not.toBeInTheDocument()
+    })
+
+    it('las fechas de cobro son las del día de Mercado Pago (UTC)', () => {
+      // Un débito a las 02:47 UTC del 23 es el 22 a la noche en Argentina; Mercado Pago dice "23".
+      renderPage(
+        overview(
+          record({
+            status: 'activa',
+            phase: 'activa',
+            nextBillingAtUtc: '2026-11-23T02:47:25Z',
+            accessUntilUtc: '2026-11-23T02:47:25Z',
+          }),
+        ),
+      )
+
+      // En el cartel y en la tarjeta del plan: los dos con el día de Mercado Pago.
+      expect(screen.getAllByText(/23 nov 2026/).length).toBeGreaterThan(0)
+      expect(screen.queryByText(/22 nov 2026/)).not.toBeInTheDocument()
+    })
+
     it('cuando el pago que se estaba esperando se confirma, avisa "¡Listo!" sin recargar', () => {
       const props = {
         language: 'es' as const,
@@ -643,6 +700,14 @@ describe('SubscriptionPage', () => {
       expect(screen.queryByText(copy.planName)).not.toBeInTheDocument()
     })
 
+    it('dice qué hacer si Mercado Pago contestó que el mail no coincide', () => {
+      // Mercado Pago lo rechaza en su página y no nos avisa: la persona vuelve a este mismo
+      // pago sin terminar, y la salida tiene que estar al lado del mail.
+      renderPage(overview(unfinished(), { canResumeCheckout: true, canSubscribe: true, canCancel: true }))
+
+      expect(screen.getByText(copy.payerEmailMismatchHint)).toBeInTheDocument()
+    })
+
     it('"Cambiar" en el pago sin terminar lo abre a nombre de otra cuenta', async () => {
       renderPage(overview(unfinished(), { canResumeCheckout: true }))
 
@@ -710,6 +775,18 @@ describe('SubscriptionPage', () => {
       expect(screen.getByText('6 oct')).toBeInTheDocument()
       expect(screen.getByText(/^Primer cobro de \$\s?7\.800$/)).toBeInTheDocument()
       expect(screen.getByText('Si cancelás antes del 6 oct, no se te cobra nada.')).toBeInTheDocument()
+
+      vi.useRealTimers()
+    })
+
+    it('de noche promete la misma fecha que Mercado Pago, no la del día local', () => {
+      // 23:30 en Argentina ya es el 30 en UTC: Mercado Pago agenda el cobro el 7 de octubre.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-09-29T23:30:00-03:00'))
+
+      renderPage({ ...overview(null, { canSubscribe: true }), trialAvailable: true })
+
+      expect(screen.getByText('7 oct')).toBeInTheDocument()
 
       vi.useRealTimers()
     })

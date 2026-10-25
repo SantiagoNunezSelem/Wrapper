@@ -35,10 +35,14 @@ const actionByDetail: Record<string, ReasonAction> = {
 
   cc_rejected_call_for_authorize: 'call_bank',
   cc_rejected_card_disabled: 'call_bank',
-  cc_rejected_other_reason: 'call_bank',
   rejected_by_bank: 'call_bank',
   bank_error: 'call_bank',
 
+  // With no reason given, another card is the step that works; it is also what Mercado
+  // Pago itself suggests on its own rejection page ("Usá otra tarjeta u otro medio de pago").
+  cc_rejected_other_reason: 'other_method',
+  // Ours: Mercado Pago cancelled a free-week checkout without saying why (SubscriptionService).
+  checkout_refused: 'other_method',
   cc_rejected_insufficient_amount: 'other_method',
   insufficient_amount: 'other_method',
   cc_amount_rate_limit_exceeded: 'other_method',

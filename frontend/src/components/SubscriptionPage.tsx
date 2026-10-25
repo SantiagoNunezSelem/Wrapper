@@ -58,6 +58,7 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReaso
   pausedLockedHint: string
   resumeCheckoutCta: string
   payerEmailContinue: string
+  payerEmailMismatchHint: string
   checkingStatus: string
   currentPlanTitle: string
   perMonth: string
@@ -599,6 +600,14 @@ function ResumeCheckout({
         />
       ) : null}
 
+      {/* The one case Mercado Pago refuses on its own page without telling us: the payer
+          signed in with another account ("Tu e-mail no coincide con el de la
+          suscripción"). They come back to this same unfinished checkout, so the way out is
+          said right next to the address. */}
+      {openedFor && token && !payerEmailLocked && !isEditing ? (
+        <p className="subpage-banner-fineprint">{copy.payerEmailMismatchHint}</p>
+      ) : null}
+
       {/* A plain link while the address is unchanged: it is the same Mercado Pago page as
           before, and a link keeps working without a round trip (or a middle click). On a
           desktop browser a plain click opens it in the checkout window instead. */}
@@ -650,7 +659,7 @@ function CancellationNote({
   const message = result.nothingWillBeCharged
     ? copy.cancelledNothingCharged
     : result.accessUntilUtc
-      ? fillTokens(copy.cancelledKeepsAccess, { date: formatDate(result.accessUntilUtc, locale) })
+      ? fillTokens(copy.cancelledKeepsAccess, { date: formatBillingDate(result.accessUntilUtc, locale) })
       : copy.cancelledDone
 
   return <p className="subpage-note subpage-note-success">{message}</p>
@@ -708,18 +717,18 @@ function CurrentPlanSection({
 
         <dl className="subpage-facts">
           {current.status === 'trial' && current.trialEndsAtUtc ? (
-            <Fact label={copy.trialEndsOn} value={formatDate(current.trialEndsAtUtc, locale)} />
+            <Fact label={copy.trialEndsOn} value={formatBillingDate(current.trialEndsAtUtc, locale)} />
           ) : null}
           {/* Renewal and expiry are the same date wearing different hats — which one it is
               depends on whether anything is still going to be charged. */}
           {current.nextBillingAtUtc ? (
             <Fact
               label={current.autoRenewEnabled ? copy.renewsOn : copy.endsOn}
-              value={formatDate(current.nextBillingAtUtc, locale)}
+              value={formatBillingDate(current.nextBillingAtUtc, locale)}
             />
           ) : null}
           {!current.nextBillingAtUtc && current.accessUntilUtc ? (
-            <Fact label={copy.accessUntilLabel} value={formatDate(current.accessUntilUtc, locale)} />
+            <Fact label={copy.accessUntilLabel} value={formatBillingDate(current.accessUntilUtc, locale)} />
           ) : null}
           {current.status === 'pago_fallido' && current.graceEndsAtUtc ? (
             <Fact label={copy.graceUntil} value={formatDate(current.graceEndsAtUtc, locale)} />
@@ -803,7 +812,7 @@ function buildCancelBody(current: SubscriptionRecord, copy: SubscriptionPageCopy
     return copy.cancelConfirmPendingBody
   }
 
-  const date = formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
+  const date = formatBillingDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
   const amount = formatMoney(current.amount, current.currencyId, locale)
 
   if (current.status === 'trial' && !current.lastPaymentAtUtc) {
@@ -947,8 +956,8 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
         {invoice.periodStartUtc && invoice.periodEndUtc ? (
           <p className="subpage-muted">
             {copy.invoicePeriod
-              .replace('{from}', formatDate(invoice.periodStartUtc, locale))
-              .replace('{to}', formatDate(invoice.periodEndUtc, locale))}
+              .replace('{from}', formatBillingDate(invoice.periodStartUtc, locale))
+              .replace('{to}', formatBillingDate(invoice.periodEndUtc, locale))}
           </p>
         ) : null}
         {invoice.attemptNumber > 1 ? <p className="subpage-muted">{copy.invoiceAttempt.replace('{n}', String(invoice.attemptNumber))}</p> : null}
@@ -1037,12 +1046,12 @@ function describeBanner(
   locale: string,
 ): BannerText {
   const amount = formatMoney(current.amount, current.currencyId, locale)
-  const accessEnd = formatDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
+  const accessEnd = formatBillingDate(current.accessUntilUtc ?? current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale)
   const statusText = (status: string) => ({
     label: copy.statuses[status] ?? status,
     hint: copy.statusHints[status] ?? '',
     next: fillTokens(copy.statusNext[status] ?? '', {
-      date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
+      date: formatBillingDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc, locale),
       amount,
     }),
   })
@@ -1074,7 +1083,7 @@ function describeBanner(
         variant: 'cancelada',
         label: copy.endedStatus,
         hint: fillTokens(copy.endedHint, {
-          date: formatDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc ?? current.cancelledAtUtc, locale),
+          date: formatBillingDate(current.nextBillingAtUtc ?? current.trialEndsAtUtc ?? current.cancelledAtUtc, locale),
         }),
         next: copy.endedNext,
         attention: false,
@@ -1116,6 +1125,20 @@ function formatDate(value: string | null, locale: string): string {
     return '—'
   }
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(value))
+}
+
+/**
+ * A date Mercado Pago bills on — the end of the free week, the next debit, the end of a
+ * paid period — read the way Mercado Pago reads it: by its UTC calendar day. Its checkout,
+ * its emails and its own account page all say "23 de noviembre" for a debit due at 02:47
+ * UTC, which is still the 22nd in Argentina, and the same subscription read "22 nov" here.
+ * Two dates for one charge is the one thing a billing screen cannot afford.
+ */
+function formatBillingDate(value: string | null, locale: string): string {
+  if (!value) {
+    return '—'
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value))
 }
 
 function formatDateTime(value: string, locale: string): string {
