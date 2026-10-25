@@ -440,7 +440,7 @@ public sealed class SubscriptionService(
 
         if (updated is not null)
         {
-            await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
+            await ApplyPreapprovalAsync(subscription, updated, cancellationToken, initiatedHere: true);
         }
 
         // Asked after the mapping, not before: the preapproval Mercado Pago just handed back
@@ -496,7 +496,7 @@ public sealed class SubscriptionService(
 
         if (updated is not null)
         {
-            await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
+            await ApplyPreapprovalAsync(subscription, updated, cancellationToken, initiatedHere: true);
         }
         else
         {
@@ -558,7 +558,7 @@ public sealed class SubscriptionService(
                 var updated = await client.CancelSubscriptionAsync(subscription.ExternalSubscriptionId!, cancellationToken);
                 if (updated is not null)
                 {
-                    await ApplyPreapprovalAsync(subscription, updated, cancellationToken);
+                    await ApplyPreapprovalAsync(subscription, updated, cancellationToken, initiatedHere: true);
                 }
 
                 cancelled.Add(subscription.ExternalSubscriptionId!);
@@ -801,8 +801,15 @@ public sealed class SubscriptionService(
 
         if (unsettled is null)
         {
-            subscription.LastPaymentStatusDetail = null;
-            subscription.LastPaymentStatus = null;
+            // A refusal Mercado Pago gave no invoice for is only known from the cancellation
+            // that recorded it, and a later sync with nothing unsettled to read must not
+            // erase the one thing the screen has to say about that attempt.
+            if (subscription.LastPaymentStatusDetail != CheckoutRefusedDetail)
+            {
+                subscription.LastPaymentStatusDetail = null;
+                subscription.LastPaymentStatus = null;
+            }
+
             return;
         }
 
@@ -1294,12 +1301,19 @@ public sealed class SubscriptionService(
     // ---------------------------------------------------------------------------
 
     /// <summary>Folds a Mercado Pago preapproval into the local row.</summary>
+    /// <param name="initiatedHere">
+    /// True when this app is the one that just changed the preapproval (cancelling,
+    /// resuming, revoking) and is folding Mercado Pago's answer back in. A cancellation
+    /// read that way is ours, never a refusal; see <see cref="RecordCheckoutRefusedAsync"/>.
+    /// </param>
     private async Task ApplyPreapprovalAsync(
         Subscription subscription,
         Preapproval preapproval,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool initiatedHere = false)
     {
         var nothingCollected = await NothingWasEverCollectedAsync(subscription, cancellationToken);
+        var wasPendingAttempt = subscription.Status == "pendiente";
 
         // Read before the status is rewritten below. A charge that did not go through — one
         // Mercado Pago refused, or one it is still deciding on — is what outweighs an
@@ -1351,6 +1365,23 @@ public sealed class SubscriptionService(
         if (subscription.Status == "cancelada")
         {
             subscription.CancelledAtUtc ??= DateTime.UtcNow;
+        }
+
+        // Mercado Pago cancelling an attempt on its own, right after the checkout, is how a
+        // refused card ends when there is a free week: the payment that validates the card is
+        // no subscription charge, so nothing about it — no invoice, no status_detail — ever
+        // reaches us, and the screen showed nothing at all, as if the payer had never tried.
+        // A checkout nobody finished stays "pending" there for days instead, so a
+        // cancellation we did not ask for, of an attempt that never ran, while a checkout
+        // would still be alive, is read as the refusal it is.
+        if (!initiatedHere &&
+            wasPendingAttempt &&
+            subscription.Status == "cancelada" &&
+            nothingCollected &&
+            !TrialStarted(subscription, chargeRefused) &&
+            subscription.CreatedAtUtc >= DateTime.UtcNow.AddHours(-_options.PendingCheckoutHours))
+        {
+            await RecordCheckoutRefusedAsync(subscription, cancellationToken);
         }
 
         if (subscription.Status == "pausada")
@@ -1507,6 +1538,36 @@ public sealed class SubscriptionService(
         subscription.TrialWasApplied &&
         subscription.TrialEndsAtUtc is not null &&
         subscription.Status is "trial" or "cancelada" or "pausada";
+
+    /// <summary>
+    /// The <c>status_detail</c> this app records when Mercado Pago refused a checkout without
+    /// saying why — see the cancellation rule in <see cref="ApplyPreapprovalAsync"/>. Ours,
+    /// not one of Mercado Pago's codes: the screen words it as "no aceptó la tarjeta".
+    /// </summary>
+    internal const string CheckoutRefusedDetail = "checkout_refused";
+
+    /// <summary>
+    /// Marks an attempt Mercado Pago refused, and hands back the free week it had claimed.
+    /// The real reason wins when one was read — a refused first debit without a free week
+    /// brings its own. The week goes back because it was claimed when the checkout opened
+    /// and a card that bounced got not a single day of it: left claimed, the next screen
+    /// greeted someone whose only problem was a declined card with "La semana gratis ya fue
+    /// usada". It cannot be farmed: a refused card yields no Pro, however often it is tried.
+    /// </summary>
+    private async Task RecordCheckoutRefusedAsync(Subscription subscription, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(subscription.LastPaymentStatusDetail))
+        {
+            subscription.LastPaymentStatus = "rejected";
+            subscription.LastPaymentStatusDetail = CheckoutRefusedDetail;
+        }
+
+        if (subscription.TrialWasApplied &&
+            await db.Users.FirstOrDefaultAsync(item => item.Id == subscription.UserId, cancellationToken) is { } user)
+        {
+            await trialEligibility.ReleaseAsync(user, subscription, cancellationToken);
+        }
+    }
 
     private Task<bool> HasRefusedChargeAsync(Subscription subscription, CancellationToken cancellationToken) =>
         db.SubscriptionInvoices.AnyAsync(

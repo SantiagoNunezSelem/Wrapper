@@ -328,7 +328,9 @@ function PayerEmailField({
  *
  * The date is counted from today, which is when Mercado Pago starts the week if the
  * checkout is finished now; it is an estimate for a page, the account screen shows the
- * real one once the subscription exists.
+ * real one once the subscription exists. Counted and shown in UTC, the way Mercado Pago
+ * dates its debits: bought at night in Argentina, local time promised "29 oct" while
+ * Mercado Pago's own page said the 30th.
  */
 function TrialTimeline({
   copy,
@@ -341,12 +343,12 @@ function TrialTimeline({
 }) {
   const firstCharge = new Date()
   if (plan.trialFrequencyType === 'months') {
-    firstCharge.setMonth(firstCharge.getMonth() + plan.trialFrequency)
+    firstCharge.setUTCMonth(firstCharge.getUTCMonth() + plan.trialFrequency)
   } else {
-    firstCharge.setDate(firstCharge.getDate() + plan.trialFrequency)
+    firstCharge.setUTCDate(firstCharge.getUTCDate() + plan.trialFrequency)
   }
 
-  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(firstCharge)
+  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(firstCharge)
   const amount = formatMoney(plan.amount, plan.currencyId, locale)
 
   return (

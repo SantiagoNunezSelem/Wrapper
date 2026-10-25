@@ -2522,6 +2522,95 @@ public class SubscriptionServiceTests : IDisposable
         Assert.Equal(1, await reread.TrialClaims.CountAsync());
     }
 
+    // =======================================================================
+    // Tarjeta rechazada con semana gratis
+    //
+    // Visto en producción con OTHE y CALL: Mercado Pago valida la tarjeta con un pago que
+    // no es un débito de la suscripción, y cuando lo rechaza cancela el intento sin dejar
+    // nada más. Sin factura y sin status_detail, la pantalla no decía nada — y la semana
+    // gratis quedaba gastada por una tarjeta que rebotó.
+    // =======================================================================
+
+    private User UsuarioConIntentoConPrueba(DateTime? createdAt = null)
+    {
+        var subscription = new Subscription
+        {
+            Status = "pendiente",
+            ExternalSubscriptionId = "pre-1",
+            TrialWasApplied = true,
+            CheckoutUrl = "https://mp.test/subscribe/pre-1",
+            CreatedAtUtc = createdAt ?? DateTime.UtcNow.AddMinutes(-2),
+        };
+        var user = CreateUser(hasUsedTrial: true, subscriptions: subscription);
+        _db.Context.TrialClaims.Add(new TrialClaim { UserId = user.Id, SubscriptionId = subscription.Id });
+        _db.Context.SaveChanges();
+        return user;
+    }
+
+    [Fact]
+    public async Task Si_Mercado_Pago_cancela_el_intento_con_prueba_se_dice_rechazado_y_vuelve_la_semana()
+    {
+        var user = UsuarioConIntentoConPrueba();
+        RouteMercadoPago(preapproval: TrialPreapproval("cancelled"));
+
+        await Service().SyncAsync(user, default);
+
+        var reread = _db.NewContext();
+        var stored = await reread.Subscriptions.SingleAsync();
+        Assert.Equal("cancelada", stored.Status);
+        Assert.Equal("declined", backend.Endpoints.SubscriptionResponse.PhaseOf(stored, hasAccess: false));
+        Assert.Equal(SubscriptionService.CheckoutRefusedDetail, stored.LastPaymentStatusDetail);
+        Assert.False(SubscriptionAccessEvaluator.HasVipAccess(stored));
+        Assert.False(await reread.Users.Where(item => item.Id == user.Id).Select(item => item.HasUsedTrial).SingleAsync());
+        Assert.Equal(0, await reread.TrialClaims.CountAsync());
+    }
+
+    [Fact]
+    public async Task Descartar_el_intento_no_se_confunde_con_un_rechazo()
+    {
+        // Cuando el que cancela es la app — "Descartar este intento" — no hubo ninguna
+        // tarjeta rechazada, y decir "Pago rechazado" sería inventarlo.
+        var user = UsuarioConIntentoConPrueba();
+        RouteMercadoPago(preapproval: TrialPreapproval("cancelled"));
+
+        await Service().CancelAsync(user, default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("cancelada", stored.Status);
+        Assert.Null(stored.LastPaymentStatusDetail);
+        Assert.Equal("abandoned", backend.Endpoints.SubscriptionResponse.PhaseOf(stored, hasAccess: false));
+    }
+
+    [Fact]
+    public async Task Un_intento_viejo_que_Mercado_Pago_cierra_no_se_lee_como_rechazo()
+    {
+        // Pasada la ventana de un checkout vivo, que Mercado Pago lo cierre es un link
+        // vencido, no una tarjeta rechazada.
+        var user = UsuarioConIntentoConPrueba(createdAt: DateTime.UtcNow.AddDays(-5));
+        RouteMercadoPago(preapproval: TrialPreapproval("cancelled"));
+
+        await Service().SyncAsync(user, default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal("cancelada", stored.Status);
+        Assert.Null(stored.LastPaymentStatusDetail);
+    }
+
+    [Fact]
+    public async Task Un_sync_posterior_no_borra_el_rechazo_que_no_tenia_factura()
+    {
+        var user = UsuarioConIntentoConPrueba();
+        RouteMercadoPago(preapproval: TrialPreapproval("cancelled"));
+        await Service().SyncAsync(user, default);
+
+        var again = await _db.NewContext().Users.Include(item => item.Subscriptions).SingleAsync(item => item.Id == user.Id);
+        await Service().SyncAsync(again, default);
+
+        var stored = await _db.NewContext().Subscriptions.SingleAsync();
+        Assert.Equal(SubscriptionService.CheckoutRefusedDetail, stored.LastPaymentStatusDetail);
+        Assert.Equal("declined", backend.Endpoints.SubscriptionResponse.PhaseOf(stored, hasAccess: false));
+    }
+
     [Fact]
     public async Task Quitar_VIP_cancela_tambien_lo_que_Mercado_Pago_iba_a_cobrar_sin_haber_dado_nada()
     {
