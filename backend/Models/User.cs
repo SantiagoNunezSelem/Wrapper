@@ -42,6 +42,15 @@ public sealed class User
     /// </summary>
     public DateTime? TrialGrantedAtUtc { get; set; }
 
+    /// <summary>
+    /// Which edition of the terms this account accepted, and when. The edition is the date
+    /// the frontend stamps on its text (<c>TERMS_VERSION</c>): an account whose edition is not
+    /// the current one is asked again, so changing the terms is changing that date.
+    /// </summary>
+    public string? TermsVersion { get; set; }
+
+    public DateTime? TermsAcceptedAtUtc { get; set; }
+
     public List<Subscription> Subscriptions { get; init; } = [];
     public List<SavedAnalysis> Analyses { get; init; } = [];
     public List<AiMetricResult> AiMetricResults { get; init; } = [];

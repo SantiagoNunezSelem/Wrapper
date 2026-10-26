@@ -7,7 +7,7 @@ import type { AdminSection } from './types'
  */
 
 /** Las secciones, en el orden del menú. */
-export const ADMIN_SECTIONS: readonly AdminSection[] = ['negocio', 'urgencias', 'usuarios', 'cobros', 'ia', 'producto', 'sistema']
+export const ADMIN_SECTIONS: readonly AdminSection[] = ['negocio', 'urgencias', 'reportes', 'usuarios', 'cobros', 'ia', 'producto', 'sistema']
 
 export interface AdminRoute {
   section: AdminSection

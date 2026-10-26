@@ -9,6 +9,8 @@ import type {
   AdminBusiness,
   AdminInvoicePage,
   AdminProductReport,
+  AdminSupportReport,
+  AdminSupportReportPage,
   AdminSystemReport,
   AdminUrgencies,
   AdminUserDetail,
@@ -30,6 +32,8 @@ vi.mock('../adminApi', () => ({
   getAdminProduct: vi.fn(),
   getAdminSystem: vi.fn(),
   getAdminExport: vi.fn(),
+  getAdminSupportReports: vi.fn(),
+  setAdminSupportReportStatus: vi.fn(),
 }))
 
 // jsdom no baja archivos: lo que importa es qué recibe quien los guarda.
@@ -172,6 +176,8 @@ const detail: AdminUserDetail = {
   lastSeenAtUtc: new Date(Date.now() - 3 * HOUR).toISOString(),
   notes: [{ id: 'n-1', authorEmail: 'admin@example.com', text: 'Pidió factura.', createdAtUtc: '2026-09-09T12:00:00Z' }],
   access: baseAccess,
+  termsVersion: '2026-10-25',
+  termsAcceptedAtUtc: '2026-10-25T15:00:00Z',
 }
 
 /** La misma cuenta, sin Pro y sin suscripción. */
@@ -230,6 +236,32 @@ const system: AdminSystemReport = {
   ],
 }
 
+const report: AdminSupportReport = {
+  id: 'r-1',
+  ticketCode: 'H5N3PZ',
+  userId: 'u-2',
+  accountEmail: 'martin@example.com',
+  contactEmail: 'martin.personal@example.com',
+  category: 'pagos',
+  description: 'Pagué y la app me sigue mostrando el plan gratis.',
+  userAgent: 'Mozilla/5.0 (iPhone)',
+  viewport: '390x844',
+  language: 'es',
+  subscriptionState: 'pendiente',
+  status: 'nuevo',
+  createdAtUtc: '2026-09-10T09:00:00Z',
+  resolvedAtUtc: null,
+  resolvedByEmail: null,
+}
+
+const reports: AdminSupportReportPage = {
+  total: 1,
+  page: 1,
+  pageSize: 20,
+  items: [report],
+  countsByStatus: { nuevo: 1, resuelto: 3 },
+}
+
 function renderAdmin(path: string, props: Partial<Parameters<typeof AdminApp>[0]> = {}) {
   window.history.replaceState(null, '', path)
   return render(<AdminApp token="token" user={admin} language="es" onToggleLanguage={vi.fn()} {...props} />)
@@ -245,6 +277,7 @@ beforeEach(() => {
   vi.mocked(api.getAdminAi).mockResolvedValue(ai)
   vi.mocked(api.getAdminProduct).mockResolvedValue(product)
   vi.mocked(api.getAdminSystem).mockResolvedValue(system)
+  vi.mocked(api.getAdminSupportReports).mockResolvedValue(reports)
 })
 
 afterEach(() => {
@@ -674,6 +707,53 @@ describe('AdminApp · Acceso de una cuenta', () => {
 
     expect(await screen.findByText(copy.users.accessSubscription)).toBeInTheDocument()
     expect(screen.getByText(/^Tiene Pro de regalo hasta el /)).toBeInTheDocument()
+  })
+})
+
+describe('AdminApp · Reportes', () => {
+  it('arranca en los que faltan contestar y muestra lo que mandó la cuenta', async () => {
+    renderAdmin('/admin/reportes')
+
+    expect(await screen.findByText(report.description)).toBeInTheDocument()
+    expect(api.getAdminSupportReports).toHaveBeenCalledWith('token', 'nuevo', 1)
+    expect(screen.getByText('Código H5N3PZ')).toBeInTheDocument()
+    // El asunto de la respuesta lleva el ticket: es la referencia que la persona ya tiene.
+    expect(screen.getByRole('link', { name: report.contactEmail })).toHaveAttribute(
+      'href',
+      expect.stringContaining(`mailto:${report.contactEmail}?subject=${encodeURIComponent('Tu reporte en Vistazo (Código H5N3PZ)')}`),
+    )
+    expect(screen.getByRole('button', { name: report.accountEmail })).toBeInTheDocument()
+  })
+
+  it('marcarlo resuelto lo cambia en el lugar y mueve los contadores', async () => {
+    vi.mocked(api.setAdminSupportReportStatus).mockResolvedValue({
+      ...report,
+      status: 'resuelto',
+      resolvedAtUtc: '2026-09-10T10:00:00Z',
+      resolvedByEmail: 'admin@example.com',
+    })
+    renderAdmin('/admin/reportes')
+
+    await userEvent.click(await screen.findByRole('button', { name: copy.reports.resolve }))
+
+    expect(api.setAdminSupportReportStatus).toHaveBeenCalledWith('token', 'r-1', 'resuelto')
+    expect(await screen.findByRole('button', { name: copy.reports.reopen })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `${copy.reports.statuses.resuelto} · 4` })).toBeInTheDocument()
+  })
+
+  it('las urgencias avisan que hay reportes esperando y llevan a la sección', async () => {
+    vi.mocked(api.getAdminUrgencies).mockResolvedValue({
+      ...urgencies,
+      items: [
+        { kind: 'support_reports', severity: 'warning', atUtc: '2026-09-10T09:00:00Z', count: 2, userId: null, userEmail: null, reference: null, detail: null, deadlineUtc: null },
+      ],
+    })
+    renderAdmin('/admin/urgencias')
+
+    expect(await screen.findByText(copy.urgencies.kinds.support_reports.replace('{n}', '2'))).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: copy.urgencies.openReports }))
+
+    expect(window.location.pathname).toBe('/admin/reportes')
   })
 })
 

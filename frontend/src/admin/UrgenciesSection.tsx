@@ -15,12 +15,14 @@ export function UrgenciesSection({
   language,
   copy,
   onOpenUser,
+  onOpenReports,
   now = Date.now(),
 }: {
   token: string
   language: Language
   copy: AdminCopy
   onOpenUser: (id: string) => void
+  onOpenReports?: () => void
   now?: number
 }) {
   const u = copy.urgencies
@@ -75,6 +77,10 @@ export function UrgenciesSection({
                     <button type="button" className="adm-button" onClick={() => onOpenUser(item.userId!)}>
                       {u.openUser}
                     </button>
+                  ) : item.kind === 'support_reports' && onOpenReports ? (
+                    <button type="button" className="adm-button" onClick={onOpenReports}>
+                      {u.openReports}
+                    </button>
                   ) : null}
                 </li>
               )
@@ -94,6 +100,7 @@ function titleFor(item: AdminUrgency, copy: AdminCopy): string {
   const template = u.kinds[item.kind] ?? item.kind
   switch (item.kind) {
     case 'webhook_rejected':
+    case 'support_reports':
       return fill(template, { n: item.count })
     case 'trial_blocked':
       return fill(template, { n: item.count, reason: u.trialReasons[item.detail ?? ''] ?? item.detail ?? '' })

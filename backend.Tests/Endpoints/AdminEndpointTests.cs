@@ -37,6 +37,8 @@ public sealed class AdminEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
     [InlineData("DELETE", "/api/admin/users/00000000-0000-0000-0000-000000000001/vip")]
     [InlineData("POST", "/api/admin/users/00000000-0000-0000-0000-000000000001/trial")]
     [InlineData("GET", "/api/admin/invoices")]
+    [InlineData("GET", "/api/admin/support-reports")]
+    [InlineData("POST", "/api/admin/support-reports/00000000-0000-0000-0000-000000000001/status")]
     [InlineData("GET", "/api/admin/ai")]
     [InlineData("GET", "/api/admin/product")]
     [InlineData("GET", "/api/admin/system")]

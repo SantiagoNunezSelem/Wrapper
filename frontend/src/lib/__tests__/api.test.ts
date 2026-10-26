@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
+  acceptTerms,
   analyzeAiMetrics,
   cancelSubscription,
   createShare,
@@ -16,6 +17,7 @@ import {
   resetDevFreeUnlocks,
   retryAiMetrics,
   saveAnalysis,
+  sendSupportReport,
   spendFreeUnlock,
   startCheckout,
   syncSubscription,
@@ -152,6 +154,26 @@ describe('ApiError', () => {
     expect(error.code).toBe('invalid_request')
     expect(error.message).toBe('Request failed with status 400')
   })
+
+  it('guarda el resto del cuerpo JSON en `data`: así llega el ticket de un tope de reportes', async () => {
+    failWith(
+      429,
+      JSON.stringify({ message: 'Tope.', code: 'daily_limit', ticketCode: 'K7M2QX', ticketStatus: 'nuevo' }),
+    )
+
+    const error = await captureApiError(getCurrentUser('tok'))
+
+    expect(error.code).toBe('daily_limit')
+    expect(error.data).toMatchObject({ ticketCode: 'K7M2QX', ticketStatus: 'nuevo' })
+  })
+
+  it('una respuesta que no es JSON no deja `data`', async () => {
+    failWith(502, '<html>Bad Gateway</html>')
+
+    const error = await captureApiError(getCurrentUser('tok'))
+
+    expect(error.data).toBeUndefined()
+  })
 })
 
 describe('autenticación', () => {
@@ -287,6 +309,63 @@ describe('métricas con IA', () => {
     expect(lastCall().url).toBe(`${BASE}/api/ai/consent`)
     expect(lastCall().init.method).toBe('POST')
     expect(lastCall().init.body).toBeUndefined()
+  })
+})
+
+describe('términos', () => {
+  it('aceptar manda la edición de los términos y devuelve el perfil al día', async () => {
+    respondWith({ id: 'u1', acceptedTermsVersion: '2026-10-25' })
+
+    const profile = await acceptTerms('tok', '2026-10-25')
+
+    expect(lastCall().url).toBe(`${BASE}/api/user/terms`)
+    expect(lastCall().init.method).toBe('POST')
+    expect(lastCall().headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ version: '2026-10-25' })
+    expect(profile.acceptedTermsVersion).toBe('2026-10-25')
+  })
+
+  it('si el servidor lo rechaza, el error llega con su código', async () => {
+    failWith(400, JSON.stringify({ message: 'Versión inválida.', code: 'invalid_terms_version' }))
+
+    const error = await captureApiError(acceptTerms('tok', 'v2'))
+
+    expect(error.code).toBe('invalid_terms_version')
+  })
+})
+
+describe('reportes de la página de ayuda', () => {
+  const report = {
+    contactEmail: 'ana@example.com',
+    category: 'pagos' as const,
+    description: 'Pagué y sigo sin Pro.',
+    viewport: '390x844',
+    language: 'es' as const,
+  }
+
+  it('manda el reporte con sesión y devuelve el código de seguimiento', async () => {
+    respondWith({ id: 'r1', ticketCode: 'K7M2QX', createdAtUtc: '2026-10-25T12:00:00Z' })
+
+    const receipt = await sendSupportReport('tok', report)
+
+    expect(lastCall().url).toBe(`${BASE}/api/support/reports`)
+    expect(lastCall().init.method).toBe('POST')
+    expect(lastCall().headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(lastCall().init.body as string)).toEqual(report)
+    expect(receipt.ticketCode).toBe('K7M2QX')
+  })
+
+  it('en el tope trae el código del reporte que ya tiene, en `data`', async () => {
+    failWith(
+      429,
+      JSON.stringify({ message: 'Tope.', code: 'weekly_limit', ticketCode: 'QD3G4W', ticketStatus: 'resuelto' }),
+    )
+
+    const error = await captureApiError(sendSupportReport('tok', report))
+
+    expect(error.status).toBe(429)
+    expect(error.code).toBe('weekly_limit')
+    expect(error.data).toMatchObject({ ticketCode: 'QD3G4W', ticketStatus: 'resuelto' })
   })
 })
 

@@ -7,6 +7,7 @@ import { shellCopy } from '../copy/shellCopy'
 import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
 import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker, landingPreviewInWorker } from '../lib/analysisClient'
 import {
+  acceptTerms,
   analyzeAiMetrics,
   ApiError,
   cancelSubscription,
@@ -28,6 +29,7 @@ import {
   updatePreferredLanguage,
 } from '../lib/api'
 import { CHECKOUT_WINDOW_OPENED, isCheckoutReturn, onCheckoutReturn } from '../lib/checkoutWindow'
+import { needsTermsAcceptance, TERMS_VERSION } from '../lib/terms'
 import { phaseOf } from '../lib/subscriptionPhase'
 import {
   isAiDisabled as readAiDisabled,
@@ -178,13 +180,18 @@ export function useVistazo() {
   // The "Desbloquear VIP" popover — plan info and the Card Payment Brick, inline, no
   // navigation. Separate from `route`, which only ever points at the full account page.
   const [isVipPopoverOpen, setIsVipPopoverOpen] = useState(false)
+  const [isAcceptingTerms, setIsAcceptingTerms] = useState(false)
+  const [termsError, setTermsError] = useState('')
+  // The profile on screen at load is a cached copy (see readCachedUser). The terms banner
+  // waits for the server's answer instead of trusting it: a copy cached before the account
+  // accepted, on this device, would ask again someone who already said yes elsewhere.
+  const [isProfileFresh, setIsProfileFresh] = useState(false)
 
-  // Minimal client-side router: the subscription screen is its own full-page route
-  // (`/suscripcion`), not a modal — everything else in the app still lives at `/`. Two
-  // routes don't justify pulling in a router library.
-  const [route, setRoute] = useState<'app' | 'subscription'>(() =>
-    window.location.pathname === '/suscripcion' ? 'subscription' : 'app',
-  )
+  // Minimal client-side router: the subscription screen, the help page and the terms are
+  // full-page routes of their own (`/suscripcion`, `/ayuda`, `/terminos`), not modals —
+  // everything else in the app still lives at `/`. A handful of fixed paths doesn't
+  // justify pulling in a router library.
+  const [route, setRoute] = useState<AppRoute>(() => routeFromPath(window.location.pathname))
 
   // A shared story (`/s/{slug}`) is read once, at load, and never changes for the life of
   // the tab: it is a public page someone opened from a link, not somewhere the app
@@ -316,7 +323,7 @@ export function useVistazo() {
   // the address bar, not this state.
   useEffect(() => {
     function handlePopState() {
-      setRoute(window.location.pathname === '/suscripcion' ? 'subscription' : 'app')
+      setRoute(routeFromPath(window.location.pathname))
     }
 
     window.addEventListener('popstate', handlePopState)
@@ -362,7 +369,9 @@ export function useVistazo() {
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
     }
-    setRoute(path === '/suscripcion' ? 'subscription' : 'app')
+    setRoute(routeFromPath(path))
+    // A page of its own starts at its top, not wherever the previous screen was scrolled to.
+    window.scrollTo(0, 0)
   }
 
   // Recompute locally whenever the underlying chat or language changes. VIP
@@ -543,6 +552,7 @@ export function useVistazo() {
 
     try {
       setUser(await getCurrentUser(authToken))
+      setIsProfileFresh(true)
       setSavedAnalyses(await analysesRequest)
     } catch (caught) {
       console.error(caught)
@@ -609,9 +619,37 @@ export function useVistazo() {
 
   function goToSubscriptionPage() {
     setSubscriptionError('')
-    navigateTo('/suscripcion')
+    navigateTo(routePaths.subscription)
     // Loading is handled by the effect below, keyed on `route` — it also covers landing
     // here straight from a fresh page load (typed URL, bookmark, back from Mercado Pago).
+  }
+
+  function goToHelpPage() {
+    navigateTo(routePaths.help)
+  }
+
+  function goToTermsPage() {
+    navigateTo(routePaths.terms)
+  }
+
+  /** The one-time "Acepto". The banner stays up until the server has it on record: that
+   * record, not the click, is what the acceptance is. */
+  async function handleAcceptTerms() {
+    if (!token) {
+      return
+    }
+
+    setTermsError('')
+    setIsAcceptingTerms(true)
+
+    try {
+      setUser(await acceptTerms(token, TERMS_VERSION))
+    } catch (caught) {
+      console.error(caught)
+      setTermsError(copy.terms.acceptError)
+    } finally {
+      setIsAcceptingTerms(false)
+    }
   }
 
   /** "Desbloquear VIP" on a locked card: a quick popover, not a page — see
@@ -857,6 +895,7 @@ export function useVistazo() {
       localStorage.setItem(authTokenKey, auth.token)
       setToken(auth.token)
       setUser(auth.user)
+      setIsProfileFresh(true)
       setSavedAnalyses(await listAnalyses(auth.token))
 
       if (activeChat) {
@@ -913,6 +952,8 @@ export function useVistazo() {
     localStorage.removeItem(authTokenKey)
     setToken(null)
     setUser(null)
+    setIsProfileFresh(false)
+    setTermsError('')
     setSavedAnalyses([])
     setError('')
     setAiStates({})
@@ -1653,6 +1694,12 @@ export function useVistazo() {
     isVipPopoverOpen,
     setIsVipPopoverOpen,
 
+    // --- términos ---
+    // Sólo con el perfil confirmado por el servidor: ver isProfileFresh.
+    mustAcceptTerms: isProfileFresh && needsTermsAcceptance(user),
+    isAcceptingTerms,
+    termsError,
+
     // --- desbloqueos gratuitos diarios ---
     freeUnlocks,
     freeUnlockFor,
@@ -1674,6 +1721,9 @@ export function useVistazo() {
 
     navigateTo,
     goToSubscriptionPage,
+    goToHelpPage,
+    goToTermsPage,
+    handleAcceptTerms,
     openVipPopover,
     requestUnlock,
     requestUpload,
@@ -1704,6 +1754,20 @@ export function useVistazo() {
 }
 
 export type Vistazo = ReturnType<typeof useVistazo>
+
+/** Which full screen the app is on. Everything that is not one of the pages is `app`. */
+export type AppRoute = 'app' | 'subscription' | 'help' | 'terms'
+
+const routePaths: Record<Exclude<AppRoute, 'app'>, string> = {
+  subscription: '/suscripcion',
+  help: '/ayuda',
+  terms: '/terminos',
+}
+
+function routeFromPath(pathname: string): AppRoute {
+  const match = (Object.keys(routePaths) as Exclude<AppRoute, 'app'>[]).find((route) => routePaths[route] === pathname)
+  return match ?? 'app'
+}
 
 /** El mismo estado para todas las métricas con IA — para los motivos que
  * aplican a todas a la vez (sin key en el server, sin consentimiento, request

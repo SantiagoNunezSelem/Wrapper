@@ -2,7 +2,7 @@ import { useModalDismiss } from '../../components/useModalDismiss'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { usePwaInstall } from '../../lib/usePwaInstall'
 import type { Language, UserProfile } from '../../types'
-import { ChartIcon, CrownIcon, FolderIcon, GlobeIcon, HomeIcon, InstallIcon, ShieldIcon, SignOutIcon } from './icons'
+import { ChartIcon, CrownIcon, DocumentIcon, FolderIcon, GlobeIcon, HomeIcon, InstallIcon, ShieldIcon, SignOutIcon } from './icons'
 import type { MobileTab } from './MobileTabBar'
 
 /**
@@ -25,6 +25,7 @@ export function MobileDrawer({
   onNavigate,
   onToggleLanguage,
   onManageSubscription,
+  onOpenTerms,
   onSignIn,
   onSignOut,
 }: {
@@ -39,6 +40,7 @@ export function MobileDrawer({
   onNavigate: (tab: MobileTab) => void
   onToggleLanguage: () => void
   onManageSubscription: () => void
+  onOpenTerms: () => void
   onSignIn: () => void
   onSignOut: () => void
 }) {
@@ -58,6 +60,7 @@ export function MobileDrawer({
       onNavigate={onNavigate}
       onToggleLanguage={onToggleLanguage}
       onManageSubscription={onManageSubscription}
+      onOpenTerms={onOpenTerms}
       onSignIn={onSignIn}
       onSignOut={onSignOut}
     />
@@ -78,6 +81,7 @@ function DrawerPanel({
   onNavigate,
   onToggleLanguage,
   onManageSubscription,
+  onOpenTerms,
   onSignIn,
   onSignOut,
 }: {
@@ -91,6 +95,7 @@ function DrawerPanel({
   onNavigate: (tab: MobileTab) => void
   onToggleLanguage: () => void
   onManageSubscription: () => void
+  onOpenTerms: () => void
   onSignIn: () => void
   onSignOut: () => void
 }) {
@@ -188,6 +193,10 @@ function DrawerPanel({
           </summary>
           <p>{copy.footerPrivacy}</p>
         </details>
+        {/* En su propio grupo: un ítem suelto en el drawer se pinta como "Cerrar sesión". */}
+        <nav className="m-drawer-nav">
+          <DrawerItem icon={<DocumentIcon size={17} />} label={m.drawer.terms} onClick={onOpenTerms} />
+        </nav>
 
         {user ? (
           <>

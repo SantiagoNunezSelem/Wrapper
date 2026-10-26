@@ -5,10 +5,13 @@ import type {
   AdminInvoicePage,
   AdminNote,
   AdminProductReport,
+  AdminSupportReport,
+  AdminSupportReportPage,
   AdminSystemReport,
   AdminUrgencies,
   AdminUserDetail,
   AdminUserPage,
+  SupportReportStatus,
 } from './types'
 
 /*
@@ -56,6 +59,23 @@ export function getAdminInvoices(token: string, status: string | null, page: num
     params.set('status', status)
   }
   return request<AdminInvoicePage>(`/api/admin/invoices?${params.toString()}`, { method: 'GET' }, token)
+}
+
+export function getAdminSupportReports(token: string, status: SupportReportStatus | null, page: number): Promise<AdminSupportReportPage> {
+  const params = new URLSearchParams({ page: String(page) })
+  if (status) {
+    params.set('status', status)
+  }
+  return request<AdminSupportReportPage>(`/api/admin/support-reports?${params.toString()}`, { method: 'GET' }, token)
+}
+
+/** Lo marca resuelto o lo vuelve a "nuevo". Queda en el registro de acciones del panel. */
+export function setAdminSupportReportStatus(token: string, id: string, status: SupportReportStatus): Promise<AdminSupportReport> {
+  return request<AdminSupportReport>(
+    `/api/admin/support-reports/${encodeURIComponent(id)}/status`,
+    { method: 'POST', body: JSON.stringify({ status }) },
+    token,
+  )
 }
 
 export function getAdminAi(token: string, days: number): Promise<AdminAiReport> {

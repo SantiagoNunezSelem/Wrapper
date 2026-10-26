@@ -6,6 +6,7 @@ import { AiSection } from './AiSection'
 import { BusinessSection } from './BusinessSection'
 import { InvoicesSection } from './InvoicesSection'
 import { ProductSection } from './ProductSection'
+import { ReportsSection } from './ReportsSection'
 import { ADMIN_SECTIONS, parseAdminPath, pathFor, type AdminRoute } from './route'
 import { SystemSection } from './SystemSection'
 import { UrgenciesSection } from './UrgenciesSection'
@@ -14,8 +15,9 @@ import './admin.css'
 
 /**
  * El panel de administración: varias secciones sobre un mismo esqueleto. Negocio para los
- * números, Urgencias para lo que se rompió, Usuarios para una cuenta en particular, y el
- * detalle de cobros, IA, producto y sistema en las suyas.
+ * números, Urgencias para lo que se rompió, Reportes para lo que mandó la gente desde la
+ * ayuda, Usuarios para una cuenta en particular, y el detalle de cobros, IA, producto y
+ * sistema en las suyas.
  *
  * Mostrarlo sólo a un admin es comodidad, no seguridad: cada llamada de estas pantallas pasa
  * por el filtro del backend, que vuelve a leer `IsAdmin` de la base.
@@ -114,7 +116,16 @@ export function AdminApp({
           )}
         >
           {route.section === 'negocio' ? <BusinessSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
-          {route.section === 'urgencias' ? <UrgenciesSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
+          {route.section === 'urgencias' ? (
+            <UrgenciesSection
+              token={token}
+              language={language}
+              copy={copy}
+              onOpenUser={openUser}
+              onOpenReports={() => go({ section: 'reportes', userId: null })}
+            />
+          ) : null}
+          {route.section === 'reportes' ? <ReportsSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
           {route.section === 'usuarios' ? (
             <UsersSection token={token} language={language} copy={copy} userId={route.userId} onSelectUser={openUser} />
           ) : null}

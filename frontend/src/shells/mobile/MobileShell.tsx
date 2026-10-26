@@ -35,6 +35,10 @@ const SubscriptionPage = lazyPanel(
   'screen',
 )
 
+// Las otras dos páginas sueltas: casi nadie las abre, y ninguna desde el home.
+const HelpPage = lazyPanel(() => import('../../components/HelpPage'), (m) => m.HelpPage, 'screen')
+const TermsPage = lazyPanel(() => import('../../components/TermsPage'), (m) => m.TermsPage, 'screen')
+
 const StoryMode = lazyPanel(
   () => import('./StoryMode'),
   (m) => m.StoryMode,
@@ -114,6 +118,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     createStoryLink,
     navigateTo,
     goToSubscriptionPage,
+    goToHelpPage,
+    goToTermsPage,
     requestUnlock,
     requestUpload,
     openFilePicker,
@@ -283,6 +289,25 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             void handleRefreshSubscription()
           }}
           onSignIn={() => setIsAuthModalOpen(true)}
+          onHelp={goToHelpPage}
+        />
+      ) : route === 'help' ? (
+        <HelpPage
+          language={language}
+          copy={copy.help}
+          user={user}
+          token={token}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+          onSignIn={() => setIsAuthModalOpen(true)}
+          onOpenTerms={goToTermsPage}
+        />
+      ) : route === 'terms' ? (
+        <TermsPage
+          language={language}
+          copy={copy.terms}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
         />
       ) : (
         <>
@@ -415,6 +440,10 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             onManageSubscription={() => {
               setIsDrawerOpen(false)
               goToSubscriptionPage()
+            }}
+            onOpenTerms={() => {
+              setIsDrawerOpen(false)
+              goToTermsPage()
             }}
             onSignIn={() => {
               setIsDrawerOpen(false)
