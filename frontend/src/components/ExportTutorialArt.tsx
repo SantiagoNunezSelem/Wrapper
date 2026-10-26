@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { tutorialVideos, tutorialVideoUrl, type TutorialVideoSource } from '../lib/tutorialVideos'
+import { tutorialStepVideo, tutorialVideoUrl, type TutorialVideoSource } from '../lib/tutorialVideos'
 
 /**
  * Lo que se ve al lado (desktop) o arriba (mobile) de cada paso del tutorial
@@ -46,19 +46,6 @@ function TutorialVideo({ video: { src, aspect }, label }: { video: TutorialVideo
       {isLoading ? <span className="tutorial-video-spinner" role="status" aria-label={label} /> : null}
     </div>
   )
-}
-
-/**
- * El video de cada paso, o `null` si el paso no lleva: el 1 de Android ("instalar la
- * app") muestra el ícono en su lugar, y el 2 de iOS ("subí el archivo") es sólo texto.
- */
-const stepVideos: Record<ExportTutorialPlatform, ReadonlyArray<TutorialVideoSource | null>> = {
-  android: [null, tutorialVideos.androidExport, tutorialVideos.androidShare],
-  ios: [tutorialVideos.iosExport, null],
-}
-
-export function tutorialStepVideo(platform: ExportTutorialPlatform, step: number): TutorialVideoSource | null {
-  return stepVideos[platform][step] ?? null
 }
 
 export function ExportTutorialArt({ step, platform }: { step: number; platform: ExportTutorialPlatform }) {

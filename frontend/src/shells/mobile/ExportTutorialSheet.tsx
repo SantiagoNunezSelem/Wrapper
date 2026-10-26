@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
-import { ExportTutorialArt, tutorialStepVideo, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
+import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { useSheetDrag } from './useSheetDrag'
 import { WhatsAppRedirectConfirm } from '../../components/WhatsAppRedirectConfirm'
 import { usePwaInstall } from '../../lib/usePwaInstall'
-import { preloadTutorialVideos } from '../../lib/tutorialVideos'
+import { preloadTutorialVideos, tutorialStepVideo } from '../../lib/tutorialVideos'
 import { openWhatsAppApp } from '../../lib/whatsappLink'
 
 /**

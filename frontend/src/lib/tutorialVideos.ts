@@ -1,3 +1,5 @@
+import type { ExportTutorialPlatform } from '../components/ExportTutorialArt'
+
 /**
  * Los videos del tutorial de exportación y su precarga.
  *
@@ -22,6 +24,19 @@ export const tutorialVideos = {
 } satisfies Record<string, TutorialVideoSource>
 
 const tutorialVideoSources = Object.values(tutorialVideos).map((video) => video.src)
+
+/**
+ * El video de cada paso, o `null` si el paso no lleva: el 1 de Android ("instalar la
+ * app") muestra el ícono en su lugar, y el 2 de iOS ("subí el archivo") es sólo texto.
+ */
+const stepVideos: Record<ExportTutorialPlatform, ReadonlyArray<TutorialVideoSource | null>> = {
+  android: [null, tutorialVideos.androidExport, tutorialVideos.androidShare],
+  ios: [tutorialVideos.iosExport, null],
+}
+
+export function tutorialStepVideo(platform: ExportTutorialPlatform, step: number): TutorialVideoSource | null {
+  return stepVideos[platform][step] ?? null
+}
 
 /** src → URL `blob:` ya descargada. Vive lo que vive la pestaña: son ~1 MB en total. */
 const readyUrls = new Map<string, string>()

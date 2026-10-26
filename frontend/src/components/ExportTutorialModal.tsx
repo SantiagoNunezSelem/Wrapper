@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { usePwaInstall } from '../lib/usePwaInstall'
-import { preloadTutorialVideos } from '../lib/tutorialVideos'
+import { preloadTutorialVideos, tutorialStepVideo } from '../lib/tutorialVideos'
 import { openWhatsAppApp } from '../lib/whatsappLink'
-import { ExportTutorialArt, tutorialStepVideo, type ExportTutorialPlatform } from './ExportTutorialArt'
+import { ExportTutorialArt, type ExportTutorialPlatform } from './ExportTutorialArt'
 import { ModalShell } from './ModalShell'
 import { WhatsAppRedirectConfirm } from './WhatsAppRedirectConfirm'
 
