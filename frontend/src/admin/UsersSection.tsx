@@ -154,6 +154,14 @@ function UserDetailPanel({
           {d.isAdmin ? <span className="adm-pill">{s.admin}</span> : null}
           {d.hasUsedTrial ? <span className="adm-pill">{s.usedTrial}</span> : null}
           {d.aiConsentAtUtc ? <span className="adm-pill">{s.aiConsent}</span> : null}
+          {/* La constancia de aceptación: la fecha es lo que importa si alguna vez hay que mostrarla. */}
+          {d.termsAcceptedAtUtc ? (
+            <span className="adm-pill" title={d.termsVersion ?? undefined}>
+              {fill(s.termsAccepted, { date: dateShort(d.termsAcceptedAtUtc, language) })}
+            </span>
+          ) : (
+            <span className="adm-pill is-warn">{s.termsPending}</span>
+          )}
         </div>
       </section>
 

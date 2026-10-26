@@ -152,6 +152,26 @@ describe('ApiError', () => {
     expect(error.code).toBe('invalid_request')
     expect(error.message).toBe('Request failed with status 400')
   })
+
+  it('guarda el resto del cuerpo JSON en `data`: así llega el ticket de un tope de reportes', async () => {
+    failWith(
+      429,
+      JSON.stringify({ message: 'Tope.', code: 'daily_limit', ticketCode: 'K7M2QX', ticketStatus: 'nuevo' }),
+    )
+
+    const error = await captureApiError(getCurrentUser('tok'))
+
+    expect(error.code).toBe('daily_limit')
+    expect(error.data).toMatchObject({ ticketCode: 'K7M2QX', ticketStatus: 'nuevo' })
+  })
+
+  it('una respuesta que no es JSON no deja `data`', async () => {
+    failWith(502, '<html>Bad Gateway</html>')
+
+    const error = await captureApiError(getCurrentUser('tok'))
+
+    expect(error.data).toBeUndefined()
+  })
 })
 
 describe('autenticación', () => {

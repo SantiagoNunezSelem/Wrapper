@@ -364,6 +364,156 @@ public static class SchemaUpgrades
         {
             await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
         }
+
+        // ---------------------------------------------------------------------
+        // Help page and terms: both additive. A null TermsVersion is exactly an
+        // account that has not accepted yet, which is every account before this.
+        // ---------------------------------------------------------------------
+
+        await AddColumnIfMissingAsync(db, "Users", "TermsVersion", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "TermsAcceptedAtUtc", "TEXT NULL", cancellationToken);
+
+        foreach (var statement in new[]
+                 {
+                     """
+                     CREATE TABLE IF NOT EXISTS "SupportReports" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_SupportReports" PRIMARY KEY,
+                         "TicketCode" TEXT NOT NULL DEFAULT '',
+                         "UserId" TEXT NOT NULL,
+                         "ContactEmail" TEXT NULL,
+                         "Category" TEXT NULL,
+                         "Description" TEXT NULL,
+                         "UserAgent" TEXT NULL,
+                         "Viewport" TEXT NULL,
+                         "Language" TEXT NULL,
+                         "SubscriptionState" TEXT NULL,
+                         "Status" TEXT NULL,
+                         "CreatedAtUtc" TEXT NOT NULL,
+                         "ResolvedAtUtc" TEXT NULL,
+                         "ResolvedByEmail" TEXT NULL,
+                         CONSTRAINT "FK_SupportReports_Users_UserId" FOREIGN KEY ("UserId")
+                             REFERENCES "Users" ("Id") ON DELETE CASCADE
+                     );
+                     """,
+                     """CREATE INDEX IF NOT EXISTS "IX_SupportReports_CreatedAtUtc" ON "SupportReports" ("CreatedAtUtc");""",
+                     // Superseded by the (UserId, CreatedAtUtc) one below, which serves the same
+                     // lookups; only a database made by an earlier build of this branch has it.
+                     """DROP INDEX IF EXISTS "IX_SupportReports_UserId";""",
+                     """CREATE INDEX IF NOT EXISTS "IX_SupportReports_UserId_CreatedAtUtc" ON "SupportReports" ("UserId", "CreatedAtUtc");""",
+                 })
+        {
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
+
+        // Report codes. This branch first numbered reports 1, 2, 3…; a database made by that
+        // build still has the column and its unique index, which would refuse the second
+        // report now that nothing fills it. Neither shipped, so they are simply removed.
+        await db.Database.ExecuteSqlRawAsync("""DROP INDEX IF EXISTS "IX_SupportReports_TicketNumber";""", cancellationToken);
+        await DropColumnIfPresentAsync(db, "SupportReports", "TicketNumber", cancellationToken);
+
+        // A table made before codes existed has none on its rows. They are given one, and only
+        // then is the column made unique: the other way round, every old row (all empty)
+        // would collide with the next.
+        await AddColumnIfMissingAsync(db, "SupportReports", "TicketCode", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await GiveCodesToReportsWithoutOneAsync(db, cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE UNIQUE INDEX IF NOT EXISTS "IX_SupportReports_TicketCode" ON "SupportReports" ("TicketCode");""",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Fills in the code of every report that has none, oldest first. A code is checked against
+    /// all those already taken — including the ones handed out in this same pass — because the
+    /// unique index goes on right after, and an index that cannot be built stops the app from
+    /// starting.
+    /// </summary>
+    private static async Task GiveCodesToReportsWithoutOneAsync(AppDbContext db, CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        await db.Database.OpenConnectionAsync(cancellationToken);
+
+        try
+        {
+            var taken = new HashSet<string>(StringComparer.Ordinal);
+            var withoutCode = new List<string>();
+
+            await using (var select = connection.CreateCommand())
+            {
+                select.CommandText = """SELECT "Id", "TicketCode" FROM "SupportReports" ORDER BY "CreatedAtUtc", "Id";""";
+                await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var code = reader.GetString(1);
+                    if (code.Length == 0)
+                    {
+                        withoutCode.Add(reader.GetString(0));
+                    }
+                    else
+                    {
+                        taken.Add(code);
+                    }
+                }
+            }
+
+            foreach (var id in withoutCode)
+            {
+                string code;
+                do
+                {
+                    code = backend.Services.TicketCodes.Generate();
+                }
+                while (!taken.Add(code));
+
+                await using var update = connection.CreateCommand();
+                update.CommandText = """UPDATE "SupportReports" SET "TicketCode" = $code WHERE "Id" = $id;""";
+
+                var codeParameter = update.CreateParameter();
+                codeParameter.ParameterName = "$code";
+                codeParameter.Value = code;
+                update.Parameters.Add(codeParameter);
+
+                var idParameter = update.CreateParameter();
+                idParameter.ParameterName = "$id";
+                idParameter.Value = id;
+                update.Parameters.Add(idParameter);
+
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static async Task DropColumnIfPresentAsync(
+        AppDbContext db,
+        string table,
+        string column,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        await db.Database.OpenConnectionAsync(cancellationToken);
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}';";
+
+            if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 0)
+            {
+                return;
+            }
+
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = $"ALTER TABLE \"{table}\" DROP COLUMN \"{column}\";";
+            await alter.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
     }
 
     private static async Task AddColumnIfMissingAsync(

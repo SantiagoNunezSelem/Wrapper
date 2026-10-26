@@ -720,3 +720,69 @@
   border-color: transparent;
   color: var(--vz-wall);
 }
+
+/* --- Reportes de la página de ayuda --------------------------------------- */
+
+.adm-reports {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adm-report {
+  display: grid;
+  gap: 12px;
+}
+
+/* Lo que falta contestar se distingue sin depender sólo del color de la píldora. */
+.adm-report.is-open {
+  box-shadow: inset 3px 0 0 var(--vz-warning-text);
+}
+
+.adm-report-head,
+.adm-report-foot,
+.adm-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.adm-report-foot {
+  justify-content: space-between;
+}
+
+.adm-report-ticket {
+  color: var(--vz-text-strong);
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+.adm-report-text {
+  margin: 0;
+  color: var(--vz-text-strong);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.adm-report-facts {
+  max-width: 560px;
+}
+
+.adm-report-tech summary {
+  cursor: pointer;
+  color: var(--vz-text-faint);
+  font-size: 12.5px;
+}
+
+.adm-report-tech .adm-facts {
+  margin-top: 8px;
+  max-width: 560px;
+}
+
+a.adm-button {
+  text-decoration: none;
+}

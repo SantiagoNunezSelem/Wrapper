@@ -117,6 +117,7 @@ function renderPage(data: SubscriptionOverview | null, props: Record<string, unk
     onResume: vi.fn(),
     onRefresh: vi.fn(),
     onSignIn: vi.fn(),
+    onHelp: vi.fn(),
   }
 
   render(
@@ -250,6 +251,7 @@ describe('SubscriptionPage', () => {
         onResume: vi.fn(),
         onRefresh: vi.fn(),
         onSignIn: vi.fn(),
+        onHelp: vi.fn(),
       }
       const { rerender } = render(
         <TooltipProvider>
@@ -842,6 +844,17 @@ describe('SubscriptionPage', () => {
 
       expect(screen.getByText(copy.renewsOn)).toBeInTheDocument()
       expect(screen.getByText(copy.autoRenewOn)).toBeInTheDocument()
+    })
+  })
+
+  describe('ayuda', () => {
+    it('al pie hay un "¿Tuviste algún problema?" que lleva a la ayuda', async () => {
+      const handlers = renderPage(overview(record()))
+
+      expect(screen.getByText(copy.helpPrompt, { exact: false })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: copy.helpCta }))
+
+      expect(handlers.onHelp).toHaveBeenCalled()
     })
   })
 })

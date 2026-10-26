@@ -38,6 +38,10 @@ const SubscriptionPage = lazyPanel(
   'screen',
 )
 
+// Las otras dos páginas sueltas: casi nadie las abre, y ninguna en la primera pantalla.
+const HelpPage = lazyPanel(() => import('../../components/HelpPage'), (m) => m.HelpPage, 'screen')
+const TermsPage = lazyPanel(() => import('../../components/TermsPage'), (m) => m.TermsPage, 'screen')
+
 const ExportTutorialModal = lazyPanel(
   () => import('../../components/ExportTutorialModal'),
   (m) => m.ExportTutorialModal,
@@ -106,6 +110,8 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     isDevBusy,
     navigateTo,
     goToSubscriptionPage,
+    goToHelpPage,
+    goToTermsPage,
     requestUnlock,
     openFilePicker,
     processFile,
@@ -252,6 +258,25 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             void handleRefreshSubscription()
           }}
           onSignIn={() => setIsAuthModalOpen(true)}
+          onHelp={goToHelpPage}
+        />
+      ) : route === 'help' ? (
+        <HelpPage
+          language={language}
+          copy={copy.help}
+          user={user}
+          token={token}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
+          onSignIn={() => setIsAuthModalOpen(true)}
+          onOpenTerms={goToTermsPage}
+        />
+      ) : route === 'terms' ? (
+        <TermsPage
+          language={language}
+          copy={copy.terms}
+          onBack={() => navigateTo('/')}
+          onLanguageToggle={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
         />
       ) : (
         <>
@@ -554,7 +579,10 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
         </div>
         <p className="footer-privacy">{copy.footerPrivacy}</p>
         <p className="footer-meta">
-          © {new Date().getFullYear()} Vistazo · {copy.footerRights}
+          © {new Date().getFullYear()} Vistazo · {copy.footerRights} ·{' '}
+          <button type="button" className="footer-link" onClick={goToTermsPage}>
+            {copy.footerTerms}
+          </button>
         </p>
       </footer>
         </>

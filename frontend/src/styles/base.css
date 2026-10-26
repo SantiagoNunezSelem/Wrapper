@@ -3715,3 +3715,259 @@ button.chat-bubble-divider.is-expandable:hover {
 .brand-orb::after {
   content: none;
 }
+
+/* --- Ayuda y términos -------------------------------------------------------- */
+
+/* El acceso a la ayuda vive al pie de la suscripción y en chico a propósito: está para
+   quien lo busca, no para ponérselo delante a todo el mundo. */
+.subpage-help {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--vz-text-faint);
+}
+
+.subpage-help-link,
+.help-link,
+.footer-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.subpage-help-link:hover,
+.help-link:hover,
+.footer-link:hover {
+  color: var(--vz-text-strong);
+}
+
+.help-form {
+  display: grid;
+  gap: 18px;
+}
+
+.help-field {
+  display: grid;
+  gap: 6px;
+}
+
+.help-field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--vz-text-soft);
+}
+
+.help-field-hint {
+  font-size: 0.78rem;
+  color: var(--vz-text-dim);
+}
+
+.help-counter {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.help-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: var(--vz-radius-xs);
+  background: var(--vz-wall);
+  color: var(--vz-text-strong);
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.help-input:focus-visible {
+  outline: 2px solid var(--vz-green-deep);
+  outline-offset: 1px;
+}
+
+.help-input:disabled {
+  opacity: 0.6;
+}
+
+.help-textarea {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.5;
+}
+
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.help-actions .primary-button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.help-sent h2 {
+  font-size: 1.2rem;
+}
+
+/* El código que se lleva quien mandó el reporte: tiene que ser lo primero que se lee, y
+   se puede seleccionar entero con un doble click. */
+.help-ticket {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.help-ticket-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--vz-text-dim);
+}
+
+.help-ticket-code {
+  font-family: var(--vz-font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--vz-green-deep);
+  user-select: all;
+}
+
+.help-footer {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--vz-text-faint);
+}
+
+.terms-document {
+  display: grid;
+  gap: 22px;
+  color: var(--vz-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.terms-section {
+  display: grid;
+  gap: 8px;
+}
+
+.terms-section h2,
+.terms-section h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--vz-text-soft);
+}
+
+.terms-section p {
+  margin: 0;
+}
+
+.terms-section ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+/* Encima de cualquier otro modal que la app abra sola al entrar (el de la IA, por
+   ejemplo): éste es el que hay que contestar primero. */
+.modal-backdrop:has(.terms-modal) {
+  z-index: 95;
+}
+
+.terms-modal {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+/* El texto entero necesita más ancho que el aviso: se ensancha sólo mientras está abierto. */
+.terms-modal.is-expanded {
+  width: min(640px, 100%);
+}
+
+/* Aceptar y Rechazar lado a lado, del mismo ancho: con los textos largos de antes el segundo
+   caía abajo del primero. */
+.terms-modal .consent-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.terms-modal .consent-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+.terms-modal-link {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--vz-green-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.terms-modal-link:hover {
+  color: var(--vz-text-strong);
+}
+
+.terms-modal h2 {
+  margin: 0;
+}
+
+.terms-modal .panel-copy {
+  margin: 0;
+}
+
+/* El texto entero, con su propio scroll: la tarjeta queda entera a la vista, con el
+   botón de aceptar siempre al alcance. */
+.terms-modal-scroll {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  padding: 16px 18px;
+  border-radius: var(--vz-radius-xs);
+  border: 1px solid var(--vz-hairline);
+  background: var(--vz-wall);
+  overscroll-behavior: contain;
+}
+
+.terms-modal-scroll:focus-visible {
+  outline: 2px solid var(--vz-green-deep);
+  outline-offset: 2px;
+}
+
+.terms-modal-updated {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  color: var(--vz-text-dim);
+}
+
+.terms-modal-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--vz-text-soft);
+  cursor: pointer;
+}
+
+.terms-modal-check input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--vz-green-deep);
+}
