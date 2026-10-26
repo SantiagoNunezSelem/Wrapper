@@ -14,6 +14,8 @@ public static class AdminActions
     public const string GrantVip = "grant_vip";
     public const string RevokeVip = "revoke_vip";
     public const string GrantTrial = "grant_trial";
+    public const string ResolveReport = "report_resolved";
+    public const string ReopenReport = "report_reopened";
 }
 
 /// <summary>

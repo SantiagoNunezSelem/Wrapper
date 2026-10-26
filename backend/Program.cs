@@ -98,6 +98,7 @@ builder.Services.AddScoped<AdminAuditService>();
 builder.Services.AddScoped<AdminAccessService>();
 builder.Services.AddScoped<MercadoPagoAccountProbe>();
 builder.Services.AddScoped<FreeTrialProbe>();
+builder.Services.AddScoped<SupportReportService>();
 // The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
 // notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
 // there are no credentials.
@@ -202,6 +203,20 @@ builder.Services.AddRateLimiter(options =>
         {
             PermitLimit = 60,
             Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    // A blunt net under the real limits, which live in SupportReportService (two a day, five a
+    // week per account) and are answered with the ticket the account already has. This one
+    // counts every request, valid or not, so a script cannot spend its time getting refused
+    // either. It is deliberately well above anything a person does: someone refused for a
+    // limit who presses "enviar" a few more times must keep hearing about their ticket, not
+    // this one's bare "too many requests".
+    options.AddPolicy("support", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(AiRateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromHours(1),
             QueueLimit = 0,
         }));
 });
@@ -584,6 +599,46 @@ app.MapPost("/api/user/language", [Authorize] async (
     return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
 });
 
+// The one-time "Acepto los términos". The edition comes from the frontend, which is where
+// the text lives; the server keeps which one was accepted and when, as the record of it.
+app.MapPost("/api/user/terms", [Authorize] async (
+    AcceptTermsRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    IOptions<GoogleAiOptions> googleAi,
+    IOptions<MercadoPagoOptions> mercadoPago,
+    CancellationToken cancellationToken) =>
+{
+    // An edition is a date, "2026-10-25". Anything else is a tampered request, and storing it
+    // would leave the account looking like it accepted something that never existed.
+    if (request.Version is not { Length: 10 } version ||
+        !DateOnly.TryParseExact(version, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+    {
+        return Results.BadRequest(new { message = "Versión de términos inválida.", code = "invalid_terms_version" });
+    }
+
+    var userId = principal.GetRequiredUserId();
+    var user = await db.Users
+        .Include(candidate => candidate.Subscriptions)
+        .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    // Accepting the same edition twice keeps the first date: that is the one that counts.
+    if (user.TermsVersion != version)
+    {
+        user.TermsVersion = version;
+        user.TermsAcceptedAtUtc = DateTime.UtcNow;
+        user.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    return Results.Ok(CurrentUserResponse.FromUser(user, googleAi.Value.IsConfigured, mercadoPago.Value));
+});
+
 app.MapGet("/api/ai/metrics", [Authorize] async (
     string sourceHash,
     ClaimsPrincipal principal,
@@ -689,6 +744,7 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
 app.MapSubscriptionEndpoints();
 app.MapFreeUnlockEndpoints();
 app.MapShareEndpoints();
+app.MapSupportEndpoints();
 app.MapAdminEndpoints();
 app.MapDevEndpoints();
 
@@ -1094,7 +1150,8 @@ record CurrentUserResponse(
     bool AiEnabled,
     bool PaymentsEnabled,
     string? CheckoutTestPayerEmail,
-    string PreferredLanguage)
+    string PreferredLanguage,
+    string? AcceptedTermsVersion)
 {
     /// <param name="aiEnabled">
     /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
@@ -1124,10 +1181,13 @@ record CurrentUserResponse(
             aiEnabled,
             mercadoPago.IsConfigured,
             string.IsNullOrWhiteSpace(mercadoPago.TestPayerEmail) ? null : mercadoPago.TestPayerEmail,
-            user.PreferredLanguage);
+            user.PreferredLanguage,
+            user.TermsVersion);
 }
 
 record UpdateLanguageRequest(string Language);
+
+record AcceptTermsRequest(string? Version);
 
 record AuthResponse(string Token, CurrentUserResponse User)
 {

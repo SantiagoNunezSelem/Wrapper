@@ -1,5 +1,5 @@
 /** Las secciones del panel. El orden es el del menú. */
-export type AdminSection = 'negocio' | 'urgencias' | 'usuarios' | 'cobros' | 'ia' | 'producto' | 'sistema'
+export type AdminSection = 'negocio' | 'urgencias' | 'reportes' | 'usuarios' | 'cobros' | 'ia' | 'producto' | 'sistema'
 
 /** Las ventanas que se pueden elegir en las secciones que miran un período. */
 export const ADMIN_PERIODS = [7, 30, 90] as const
@@ -68,6 +68,7 @@ export type UrgencyKind =
   | 'trial_blocked'
   | 'trial_ending'
   | 'ai_failing'
+  | 'support_reports'
 
 /** `reference` y `detail` significan cosas distintas según `kind`; la pantalla redacta cada tipo. */
 export interface AdminUrgency {
@@ -219,6 +220,43 @@ export interface AdminUserDetail {
   lastSeenAtUtc: string | null
   notes: AdminNote[]
   access: AdminAccess
+  /** La edición de los términos que aceptó (una fecha), y cuándo. Null si todavía no los aceptó. */
+  termsVersion: string | null
+  termsAcceptedAtUtc: string | null
+}
+
+export type SupportReportStatus = 'nuevo' | 'resuelto'
+
+/** Un reporte de la página de ayuda, tal como lo mandó la cuenta. */
+export interface AdminSupportReport {
+  id: string
+  /** El código de seis caracteres que se le dio a quien lo mandó, como `K7M2QX`. Sin orden. */
+  ticketCode: string
+  userId: string
+  /** El mail de la cuenta de Google. */
+  accountEmail: string
+  /** El mail que dejó para que le respondan: puede ser otro. */
+  contactEmail: string
+  category: string
+  description: string
+  userAgent: string | null
+  viewport: string | null
+  language: string | null
+  /** El estado de la suscripción cuando lo mandó, no el de ahora. */
+  subscriptionState: string | null
+  status: SupportReportStatus
+  createdAtUtc: string
+  resolvedAtUtc: string | null
+  resolvedByEmail: string | null
+}
+
+export interface AdminSupportReportPage {
+  total: number
+  page: number
+  pageSize: number
+  items: AdminSupportReport[]
+  /** De todos los reportes, sin el filtro: de acá salen los chips. */
+  countsByStatus: Record<string, number>
 }
 
 export interface AdminInvoiceRow {

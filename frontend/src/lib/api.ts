@@ -6,6 +6,8 @@ import type {
   Language,
   SavedAnalysis,
   SubscriptionOverview,
+  SupportReportInput,
+  SupportReportReceipt,
   UserProfile,
 } from '../types'
 import { getDeviceId } from './deviceId'
@@ -18,12 +20,17 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5175'
 export class ApiError extends Error {
   readonly status: number
   readonly code?: string
+  /** The rest of the JSON body, for the few rejections that carry more than a message — the
+   * report limits send the ticket number the account already has. Absent for anything that
+   * did not come from our own API as JSON. */
+  readonly data?: Record<string, unknown>
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, data?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.data = data
   }
 }
 
@@ -37,13 +44,18 @@ export class ApiError extends Error {
  * third-party error page ends up rendered in the UI. The raw text still goes to the
  * console, for whoever is debugging with devtools open.
  */
-function readErrorBody(text: string, status: number): { message: string; code?: string } {
+function readErrorBody(text: string, status: number): { message: string; code?: string; data?: Record<string, unknown> } {
   try {
     // Valid JSON means this came from our own API, which always writes `message` for
     // display — `code` is safe to trust even on the rare response that left it out,
     // since it is always one of our own short, structured labels, never arbitrary text.
-    const parsed = JSON.parse(text) as { message?: string; code?: string }
-    return { message: parsed.message || `Request failed with status ${status}`, code: parsed.code }
+    const parsed = JSON.parse(text) as { message?: string; code?: string } & Record<string, unknown>
+    return {
+      message: parsed.message || `Request failed with status ${status}`,
+      code: parsed.code,
+      // `null` and arrays parse as valid JSON too; only an object has fields to read.
+      data: parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined,
+    }
   } catch {
     // Not JSON at all means this never went through our API's error handling — a proxy's
     // HTML page, a bare 502 from something in front of it. Nothing in that body was
@@ -66,8 +78,8 @@ export async function request<T>(path: string, init?: RequestInit, token?: strin
   })
 
   if (!response.ok) {
-    const { message, code } = readErrorBody(await response.text(), response.status)
-    throw new ApiError(message, response.status, code)
+    const { message, code, data } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code, data)
   }
 
   return (await response.json()) as T
@@ -78,8 +90,8 @@ export async function requestBlob(path: string, token: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } })
 
   if (!response.ok) {
-    const { message, code } = readErrorBody(await response.text(), response.status)
-    throw new ApiError(message, response.status, code)
+    const { message, code, data } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code, data)
   }
 
   return response.blob()
@@ -181,6 +193,23 @@ export async function updatePreferredLanguage(token: string, language: Language)
     { method: 'POST', body: JSON.stringify({ language }) },
     token,
   )
+}
+
+/** Registra que la cuenta aceptó esta edición de los términos. Devuelve el perfil al día. */
+export async function acceptTerms(token: string, version: string): Promise<UserProfile> {
+  return request<UserProfile>('/api/user/terms', { method: 'POST', body: JSON.stringify({ version }) }, token)
+}
+
+/**
+ * Manda un reporte de la página de ayuda. Queda en el panel admin: no sale ningún mail, así
+ * que el código de seguimiento que vuelve es lo único que se lleva quien lo mandó.
+ *
+ * Con una cuenta que ya llegó a su tope (dos por día, cinco por semana) rechaza con un
+ * `ApiError` 429 de código `daily_limit` o `weekly_limit`, y en `data` el código del reporte
+ * que ya tiene (`ticketCode`) y si sigue abierto (`ticketStatus`).
+ */
+export async function sendSupportReport(token: string, report: SupportReportInput): Promise<SupportReportReceipt> {
+  return request('/api/support/reports', { method: 'POST', body: JSON.stringify(report) }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -344,8 +373,8 @@ export async function deleteAnalysis(token: string, id: string): Promise<void> {
   })
 
   if (!response.ok) {
-    const { message, code } = readErrorBody(await response.text(), response.status)
-    throw new ApiError(message, response.status, code)
+    const { message, code, data } = readErrorBody(await response.text(), response.status)
+    throw new ApiError(message, response.status, code, data)
   }
 }
 

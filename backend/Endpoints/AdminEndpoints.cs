@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using backend.Data;
+using backend.Models;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -191,6 +192,41 @@ public static class AdminEndpoints
         group.MapGet("/invoices", async (string? status, int? page, AdminReportsService reports, CancellationToken cancellationToken) =>
             Results.Ok(await reports.GetInvoicesAsync(status, page ?? 1, DateTime.UtcNow, cancellationToken)));
 
+        // What people sent from the help page. Read here and nowhere else: nothing is mailed.
+        group.MapGet("/support-reports", async (string? status, int? page, SupportReportService support, CancellationToken cancellationToken) =>
+            Results.Ok(await support.GetPageAsync(status, page ?? 1, cancellationToken)));
+
+        // Resolved or back to new. Moves nothing but the report itself, and lands in the trail.
+        group.MapPost("/support-reports/{id:guid}/status", async (
+            Guid id,
+            AdminReportStatusRequest? request,
+            ClaimsPrincipal principal,
+            SupportReportService support,
+            AdminAuditService audit,
+            CancellationToken cancellationToken) =>
+        {
+            if (request?.Status is not { } status || !SupportReportStatuses.All.Contains(status))
+            {
+                return Results.BadRequest(new { message = "Estado de reporte inválido.", code = "invalid_status" });
+            }
+
+            var (adminId, adminEmail) = Actor(principal);
+            var row = await support.SetStatusAsync(id, status, adminEmail, cancellationToken);
+            if (row is null)
+            {
+                return Results.NotFound();
+            }
+
+            await audit.RecordAsync(
+                adminId,
+                adminEmail,
+                status == SupportReportStatuses.Resolved ? AdminActions.ResolveReport : AdminActions.ReopenReport,
+                row.UserId,
+                null,
+                cancellationToken);
+            return Results.Ok(row);
+        });
+
         group.MapGet("/ai", async (int? days, AdminReportsService reports, CancellationToken cancellationToken) =>
             Results.Ok(await reports.GetAiReportAsync(days ?? 30, DateTime.UtcNow, cancellationToken)));
 
@@ -265,6 +301,9 @@ public static class AdminEndpoints
 }
 
 public sealed record AdminNoteRequest(string? Text);
+
+/// <param name="Status">"nuevo" or "resuelto".</param>
+public sealed record AdminReportStatusRequest(string? Status);
 
 /// <param name="Days">7, 30 or 90.</param>
 /// <param name="Forever">No end. It has to be asked for: a body with neither is refused.</param>

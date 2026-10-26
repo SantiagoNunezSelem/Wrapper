@@ -23,6 +23,29 @@ export interface UserProfile {
   /** The language this user last chose, persisted server-side so it survives a
    * refresh or a login from another device instead of falling back to the browser's. */
   preferredLanguage: Language
+  /** Which edition of the terms this account accepted (`TERMS_VERSION`), or null if none.
+   * Optional because a profile cached before the field existed simply does not have it. */
+  acceptedTermsVersion?: string | null
+}
+
+/** De qué se trata un reporte de la página de ayuda. Los valores son los del backend. */
+export type SupportReportCategory = 'pagos' | 'analisis' | 'cuenta' | 'otro'
+
+/** Lo que vuelve al mandar un reporte: el código con el que queda registrado, de seis
+ * caracteres como `K7M2QX`. Es aleatorio y sin orden a propósito: no dice cuántos escribieron antes. */
+export interface SupportReportReceipt {
+  id: string
+  ticketCode: string
+  createdAtUtc: string
+}
+
+export interface SupportReportInput {
+  contactEmail: string
+  category: SupportReportCategory
+  description: string
+  /** El tamaño de la ventana, "1280x720". */
+  viewport: string
+  language: Language
 }
 
 /**

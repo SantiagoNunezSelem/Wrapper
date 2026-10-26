@@ -492,6 +492,75 @@ que estar configurado para devolver `index.html` ante **cualquier** ruta que no 
 archivo real (lo que en Netlify es un `_redirects` con `/* /index.html 200`, en Vercel un
 rewrite, en Nginx un `try_files ... /index.html`). Sin eso, entrar directo a
 `/suscripcion` — o refrescar estando ahí — da un 404 del servidor en vez de la página.
+Lo mismo vale para `/ayuda` y `/terminos`.
+
+## Ayuda y reportes de problemas
+
+Al pie de `/suscripcion` hay una línea chica, "¿Tuviste algún problema? Contanos", que lleva
+a `/ayuda`. No está en ningún menú a propósito. La página pide sesión y tiene un formulario:
+mail de contacto (arranca con el de Google, se puede cambiar), tema y descripción. Junto con
+eso se guardan el navegador, el tamaño de pantalla y el estado de la suscripción en ese
+momento.
+
+Los reportes **no se mandan por mail**: quedan en la tabla `SupportReports` y se leen en el
+panel admin, sección **Reportes** (`/admin/reportes`), donde se marcan resueltos o se
+reabren. Mientras haya alguno sin resolver, aparece también en **Urgencias**.
+
+**Código de seguimiento.** Cada reporte recibe un código de 6 caracteres, como `K7M2QX`. Quien lo
+manda lo ve en la pantalla de confirmación —no sale ningún mail, así que es lo que se lleva—, y en
+el panel aparece como `Código K7M2QX`, también en el asunto del mail de respuesta.
+
+El código es **aleatorio y sin orden** a propósito: un "ticket 5" le avisa a quien lo lee que es
+la quinta persona que escribe, y un número que sube de a uno se puede adivinar. El patrón
+(`TicketCodes`) son 27 símbolos: dígitos del 2 al 9 y consonantes, sin vocales, así que ningún
+código puede formar una palabra, y sin `0 O 1 I L`, que se confunden al leerlos en un celular o
+dictarlos. Son unos 387 millones de combinaciones. Que no se repitan lo garantiza un índice único
+en la base: si dos reportes sortean el mismo código, el segundo vuelve a sortear.
+
+**Topes por cuenta**, validados en el backend (`SupportReportService`): **2 reportes por día y 5
+por semana**, contados sobre ventanas móviles de 24 horas y de 7 días, no sobre días de
+calendario. Al llegar a uno, el reporte no se guarda y la respuesta es un 429 con el código del
+reporte que la cuenta ya tiene (el abierto más reciente, o el más reciente si están todos
+resueltos) y un texto que dice que se está monitoreando. Debajo de eso, la ruta tiene un limitador de 20 pedidos por hora
+por cuenta, válidos o no, solo como red de seguridad contra un script.
+
+## Términos y condiciones
+
+El texto vive en `frontend\src\copy\termsText.ts` (incluye la Política de Privacidad) y se
+puede releer siempre en `/terminos`, enlazado desde el pie en desktop y desde el menú en el
+teléfono. Una cuenta con sesión que no los aceptó ve un cartel corto que no se cierra:
+acepta o cierra la sesión. El texto completo no se muestra hasta que toca "Ver términos y
+condiciones", y se despliega en el mismo cartel. La aceptación se guarda una sola vez
+(`Users.TermsVersion` y `Users.TermsAcceptedAtUtc`) y se ve en la ficha de la cuenta en el
+panel.
+
+**No hay nada obligatorio para completar.** El contacto de los términos es la página de
+ayuda, no un mail: así no hay ninguna dirección publicada. Solo `TERMS_OWNER`, en ese mismo
+archivo, admite dos datos opcionales:
+
+| Campo | Qué va |
+| --- | --- |
+| `name` | Opcional. Nombre y apellido del titular. Vacío, el texto no lo menciona. |
+| `cuit` | Opcional. CUIT del titular. Vacío, el texto no lo menciona. |
+
+La página de ayuda pide sesión, y el cartel de términos no se muestra encima de `/ayuda` ni de
+`/terminos`: quien todavía no aceptó (o los está rechazando) llega igual al formulario, que es
+el único canal de contacto que nombran los términos. Es también por donde pide que le borren
+sus datos.
+
+Con `name` y `cuit` vacíos (el valor por defecto) el texto dice que los datos del titular se
+informan a las autoridades y a quien acredite un interés legítimo. Los términos siguen
+siendo un contrato válido igual, pero identificar al proveedor es una obligación de la
+normativa de defensa del consumidor (Ley 24.240 y la Resolución 104/2005, de comercio
+electrónico), así que dejarlos vacíos es un riesgo regulatorio —un reclamo ante Defensa del
+Consumidor— y deja menos firme la cláusula que limita tu responsabilidad. Nunca se publica un
+domicilio particular; si algún día hace falta una dirección física, lo usual es un domicilio
+comercial (oficina virtual).
+
+**Para cambiar los términos**, editar el texto y, en el mismo cambio, la fecha
+`TERMS_VERSION` de `frontend\src\lib\terms.ts`. Con eso cada cuenta los vuelve a aceptar
+una vez. Sin cambiar la fecha, nadie los vuelve a ver, y las aceptaciones guardadas quedan
+apuntando a un texto distinto del que se muestra.
 
 ## Levantar el backend
 

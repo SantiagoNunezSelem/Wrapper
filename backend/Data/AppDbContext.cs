@@ -19,6 +19,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<WebhookRejection> WebhookRejections => Set<WebhookRejection>();
     public DbSet<AdminNote> AdminNotes => Set<AdminNote>();
     public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
+    public DbSet<SupportReport> SupportReports => Set<SupportReport>();
 
     /// <summary>
     /// Every date in this database is UTC, and SQLite keeps no trace of that: it hands
@@ -54,6 +55,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.DisplayName).HasMaxLength(200);
             entity.Property(item => item.AvatarUrl).HasMaxLength(1000);
             entity.Property(item => item.PreferredLanguage).HasMaxLength(10);
+            entity.Property(item => item.TermsVersion).HasMaxLength(20);
         });
 
         modelBuilder.Entity<Subscription>(entity =>
@@ -255,6 +257,32 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.Action).HasMaxLength(60);
             entity.Property(item => item.Details).HasMaxLength(500);
             entity.HasIndex(item => item.CreatedAtUtc);
+        });
+
+        modelBuilder.Entity<SupportReport>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.ContactEmail).HasMaxLength(320);
+            entity.Property(item => item.Category).HasMaxLength(20);
+            entity.Property(item => item.Description).HasMaxLength(4000);
+            entity.Property(item => item.UserAgent).HasMaxLength(400);
+            entity.Property(item => item.Viewport).HasMaxLength(20);
+            entity.Property(item => item.Language).HasMaxLength(10);
+            entity.Property(item => item.SubscriptionState).HasMaxLength(40);
+            entity.Property(item => item.Status).HasMaxLength(20);
+            entity.Property(item => item.ResolvedByEmail).HasMaxLength(320);
+            // The panel lists them newest first, filtered by status.
+            entity.HasIndex(item => item.CreatedAtUtc);
+            // The two limits (per day, per week) count one account's recent reports.
+            entity.HasIndex(item => new { item.UserId, item.CreatedAtUtc });
+            entity.Property(item => item.TicketCode).HasMaxLength(12);
+            // Two reports can never share a code, even if the generator repeats itself: the
+            // constraint is what turns that into a retry instead of a duplicate.
+            entity.HasIndex(item => item.TicketCode).IsUnique();
+            entity.HasOne(item => item.User)
+                .WithMany()
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

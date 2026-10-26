@@ -118,6 +118,8 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReaso
   eventsTitle: string
   eventsToggle: string
   noEvents: string
+  helpPrompt: string
+  helpCta: string
 }
 
 /**
@@ -151,6 +153,7 @@ export function SubscriptionPage({
   onResume,
   onRefresh,
   onSignIn,
+  onHelp,
   confirmingCheckout = false,
 }: {
   language: Language
@@ -166,6 +169,9 @@ export function SubscriptionPage({
   onResume: () => void
   onRefresh: () => void
   onSignIn: () => void
+  /** The help page. Deliberately only a small line at the very bottom: it is there for
+   * whoever went looking, not something to put in front of everyone. */
+  onHelp: () => void
   /** Just back from Mercado Pago, and the screen is still asking how it went. */
   confirmingCheckout?: boolean
 }) {
@@ -356,6 +362,13 @@ export function SubscriptionPage({
             {overview?.isAdmin ? <EventsSection overview={overview} copy={copy} locale={locale} /> : null}
           </>
         ) : null}
+
+        <p className="subpage-help">
+          {copy.helpPrompt}{' '}
+          <button type="button" className="subpage-help-link" onClick={onHelp}>
+            {copy.helpCta}
+          </button>
+        </p>
       </main>
     </div>
   )

@@ -22,6 +22,10 @@ const SharedStoryView = lazyPanel(
 // El panel de administración: sólo lo descarga quien entra a `/admin`.
 const AdminApp = lazyPanel(() => import('./admin/AdminApp'), (m) => m.AdminApp, 'screen')
 
+// El cartel de términos trae el texto entero adentro: sólo lo baja una cuenta que todavía
+// no los aceptó, o sea una vez.
+const TermsModal = lazyPanel(() => import('./components/TermsModal'), (m) => m.TermsModal)
+
 /**
  * La raíz: arma el estado una sola vez y elige quién lo dibuja.
  *
@@ -81,6 +85,22 @@ function App() {
       ) : (
         <DesktopShell vistazo={vistazo} />
       )}
+      {/* Above both shells, so neither can forget it; not over the admin panel, whose
+          only users are the ones who wrote the terms. Nor over the help page and the terms
+          themselves: the help form is the only contact channel the terms name, so someone who
+          has not accepted (or is declining and wants their data deleted) still has to be able
+          to reach it, and to read what they are being asked to accept. */}
+      {!isAdminRoute && vistazo.route !== 'help' && vistazo.route !== 'terms' && vistazo.mustAcceptTerms ? (
+        <TermsModal
+          copy={vistazo.copy.terms}
+          isBusy={vistazo.isAcceptingTerms}
+          error={vistazo.termsError}
+          onAccept={() => {
+            void vistazo.handleAcceptTerms()
+          }}
+          onSignOut={vistazo.handleLogout}
+        />
+      ) : null}
     </>
   )
 }

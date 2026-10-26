@@ -285,6 +285,18 @@ public sealed class AdminDashboardService(
             .Select(group => new Urgency(
                 UrgencyKinds.AiFailing, UrgencySeverity.Info, group.Max(item => item.UpdatedAtUtc), group.Count(), null, null, group.Key.MetricId, group.Key.ErrorCode, null)));
 
+        // What people wrote from the help page that nobody has closed yet. One line for all
+        // of them: they are read in their own section, this only says they are waiting.
+        var openReports = await db.SupportReports
+            .Where(item => item.Status == SupportReportStatuses.Open)
+            .Select(item => item.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        if (openReports.Count > 0)
+        {
+            items.Add(new Urgency(
+                UrgencyKinds.SupportReports, UrgencySeverity.Warning, openReports.Max(), openReports.Count, null, null, null, null, null));
+        }
+
         var ordered = items
             .OrderBy(item => UrgencySeverity.Rank(item.Severity))
             .ThenByDescending(item => item.AtUtc)
@@ -420,7 +432,9 @@ public sealed class AdminDashboardService(
             usage,
             user.LastSeenAtUtc,
             notes,
-            AdminAccessService.Describe(user));
+            AdminAccessService.Describe(user),
+            user.TermsVersion,
+            user.TermsAcceptedAtUtc);
     }
 }
 
@@ -433,6 +447,7 @@ public static class UrgencyKinds
     public const string TrialEnding = "trial_ending";
     public const string TrialBlocked = "trial_blocked";
     public const string AiFailing = "ai_failing";
+    public const string SupportReports = "support_reports";
 }
 
 public static class UrgencySeverity
@@ -587,4 +602,6 @@ public sealed record UserDetail(
     UserUsage Usage,
     DateTime? LastSeenAtUtc,
     IReadOnlyList<AdminNoteDto> Notes,
-    AdminAccess Access);
+    AdminAccess Access,
+    string? TermsVersion,
+    DateTime? TermsAcceptedAtUtc);
