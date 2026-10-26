@@ -150,13 +150,17 @@ public class SchemaUpgradesTests : IDisposable
     [InlineData(true)]
     public async Task Le_da_un_codigo_a_los_reportes_de_una_tabla_vieja_y_quita_el_numero_de_la_version_intermedia(bool withTicketNumber)
     {
+        var database = _db.Context.Database;
         var userId = Guid.NewGuid().ToString().ToUpperInvariant();
-        await _db.Context.Database.ExecuteSqlRawAsync("""DROP TABLE "SupportReports";""");
-        await _db.Context.Database.ExecuteSqlRawAsync(
-            $"""
+
+        // Todo el SQL es constante y el id va como parámetro ({0}): el analizador de EF rechaza
+        // armarlo con interpolación (EF1002, error en el CI), y en un test no hay motivo para
+        // dar ese rodeo. La forma "intermedia" se llega desde la vieja, con tres pasos más.
+        await database.ExecuteSqlRawAsync("""DROP TABLE "SupportReports";""");
+        await database.ExecuteSqlRawAsync(
+            """
             CREATE TABLE "SupportReports" (
                 "Id" TEXT NOT NULL CONSTRAINT "PK_SupportReports" PRIMARY KEY,
-                {(withTicketNumber ? "\"TicketNumber\" INTEGER NOT NULL DEFAULT 0," : "")}
                 "UserId" TEXT NOT NULL,
                 "ContactEmail" TEXT NULL, "Category" TEXT NULL, "Description" TEXT NULL,
                 "UserAgent" TEXT NULL, "Viewport" TEXT NULL, "Language" TEXT NULL,
@@ -165,24 +169,28 @@ public class SchemaUpgradesTests : IDisposable
             );
             """);
 
+        await database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO "Users" ("Id", "Email", "DisplayName", "PreferredLanguage", "IsAdmin", "HasUsedTrial", "CreatedAtUtc", "UpdatedAtUtc")
+            VALUES ({0}, 'vieja@example.com', 'Vieja', 'es', 0, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+            """,
+            userId);
+        await database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO "SupportReports" ("Id", "UserId", "ContactEmail", "Category", "Description", "Status", "CreatedAtUtc") VALUES
+                ('B0000000-0000-0000-0000-000000000002', {0}, 'a@example.com', 'otro', 'segundo', 'nuevo', '2026-03-02 10:00:00'),
+                ('A0000000-0000-0000-0000-000000000001', {0}, 'a@example.com', 'otro', 'primero', 'nuevo', '2026-03-01 10:00:00'),
+                ('C0000000-0000-0000-0000-000000000003', {0}, 'a@example.com', 'otro', 'tercero', 'nuevo', '2026-03-03 10:00:00');
+            """,
+            userId);
+
         if (withTicketNumber)
         {
-            await _db.Context.Database.ExecuteSqlRawAsync(
-                """CREATE UNIQUE INDEX "IX_SupportReports_TicketNumber" ON "SupportReports" ("TicketNumber");""");
+            // La versión intermedia: una columna con el número de llegada y su índice único.
+            await database.ExecuteSqlRawAsync("""ALTER TABLE "SupportReports" ADD COLUMN "TicketNumber" INTEGER NOT NULL DEFAULT 0;""");
+            await database.ExecuteSqlRawAsync("""UPDATE "SupportReports" SET "TicketNumber" = rowid;""");
+            await database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX "IX_SupportReports_TicketNumber" ON "SupportReports" ("TicketNumber");""");
         }
-
-        var numberColumn = withTicketNumber ? ", \"TicketNumber\"" : "";
-        string Number(int value) => withTicketNumber ? $", {value}" : "";
-
-        await _db.Context.Database.ExecuteSqlRawAsync(
-            $"""
-            INSERT INTO "Users" ("Id", "Email", "DisplayName", "PreferredLanguage", "IsAdmin", "HasUsedTrial", "CreatedAtUtc", "UpdatedAtUtc")
-            VALUES ('{userId}', 'vieja@example.com', 'Vieja', 'es', 0, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
-            INSERT INTO "SupportReports" ("Id", "UserId", "ContactEmail", "Category", "Description", "Status", "CreatedAtUtc"{numberColumn}) VALUES
-                ('B0000000-0000-0000-0000-000000000002', '{userId}', 'a@example.com', 'otro', 'segundo', 'nuevo', '2026-03-02 10:00:00'{Number(2)}),
-                ('A0000000-0000-0000-0000-000000000001', '{userId}', 'a@example.com', 'otro', 'primero', 'nuevo', '2026-03-01 10:00:00'{Number(1)}),
-                ('C0000000-0000-0000-0000-000000000003', '{userId}', 'a@example.com', 'otro', 'tercero', 'nuevo', '2026-03-03 10:00:00'{Number(3)});
-            """);
 
         await SchemaUpgrades.ApplyAsync(_db.Context);
         var afterFirst = await _db.NewContext().SupportReports.OrderBy(item => item.CreatedAtUtc).ToListAsync();
