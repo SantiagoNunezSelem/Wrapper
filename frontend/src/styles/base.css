@@ -3145,7 +3145,8 @@ a.subpage-banner-cta {
 /* ==========================================================================
    Video del tutorial de exportación (TutorialVideo, en ExportTutorialArt)
    ==========================================================================
-   El contenedor reserva la proporción del video (1080×1350) desde antes de que
+   El contenedor reserva la proporción del video (1080×1350 por defecto; cada
+   video pasa la suya por `style`) desde antes de que
    cargue, y el spinner va centrado ahí adentro: sólo en la sección del video, no
    sobre toda la pantalla. */
 

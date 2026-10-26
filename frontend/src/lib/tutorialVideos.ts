@@ -1,14 +1,29 @@
 /**
- * Los videos del tutorial de exportación (pasos 2 y 3 de Android) y su precarga.
+ * Los videos del tutorial de exportación y su precarga.
  *
- * El paso 1 del tutorial ("Instalá Vistazo como app") no tiene video, y la persona se
- * queda leyéndolo unos segundos. Ese tiempo se aprovecha para bajar los dos videos
- * enteros: cuando toca "Siguiente", el video sale de memoria (una URL `blob:`) y
- * aparece al instante, sin volver a pedirlo a la red.
+ * Se bajan enteros apenas se abre el tutorial, de las dos plataformas: el paso 1 de
+ * Android ("Instalá Vistazo como app") no tiene video y la persona se queda leyéndolo
+ * unos segundos, y ese tiempo alcanza para que, al tocar "Siguiente" o al cambiar a
+ * iOS, el video salga de memoria (una URL `blob:`) y aparezca al instante.
+ *
+ * Todos van a 720 px, 30 fps, sin audio y con el índice (moov) al principio, para que
+ * arranquen a reproducir sin esperar el archivo entero. `aspect` es ancho / alto: el
+ * contenedor lo reserva desde antes de que cargue, así nada salta.
  */
-export const tutorialVideoSources = ['/tutorial/export-android-step2.mp4', '/tutorial/export-android-step3.mp4'] as const
+export interface TutorialVideoSource {
+  src: string
+  aspect: number
+}
 
-/** src → URL `blob:` ya descargada. Vive lo que vive la pestaña: son ~800 KB en total. */
+export const tutorialVideos = {
+  androidExport: { src: '/tutorial/export-android-step2.mp4', aspect: 720 / 900 },
+  androidShare: { src: '/tutorial/export-android-step3-v2.mp4', aspect: 720 / 900 },
+  iosExport: { src: '/tutorial/export-ios-step1.mp4', aspect: 1 },
+} satisfies Record<string, TutorialVideoSource>
+
+const tutorialVideoSources = Object.values(tutorialVideos).map((video) => video.src)
+
+/** src → URL `blob:` ya descargada. Vive lo que vive la pestaña: son ~1 MB en total. */
 const readyUrls = new Map<string, string>()
 const inFlight = new Set<string>()
 

@@ -132,20 +132,12 @@ export const shellCopy = {
       steps: {
         ios: [
           {
-            title: 'Abrí el chat y tocá el nombre',
-            body: 'En WhatsApp, abrí la conversación que querés analizar y tocá el nombre del contacto o grupo, arriba de todo.',
+            title: 'Exportá el chat y guardalo',
+            body: 'En WhatsApp, entrá al chat que querés analizar y tocá su nombre arriba de todo. Deslizá hasta el final, tocá "Exportar chat", elegí "Sin multimedia" y después "Guardar en Archivos" para dejarlo en tu iPhone.',
           },
           {
-            title: 'Buscá "Exportar chat"',
-            body: 'Deslizá hasta el final de la info del chat. La opción está en lo último de la lista.',
-          },
-          {
-            title: 'Elegí "Sin multimedia"',
-            body: 'Así el archivo pesa poco y sube en segundos — las fotos no se usan para ninguna métrica.',
-          },
-          {
-            title: 'Guardalo y subilo acá',
-            body: 'Elegí "Guardar en Archivos" y después subí ese mismo .txt en Vistazo.',
+            title: 'Subí el archivo acá',
+            body: 'Tocá "Elegir archivo" y buscá en Archivos el chat que guardaste recién.',
           },
         ],
         android: [
@@ -164,7 +156,6 @@ export const shellCopy = {
           },
         ],
       },
-      skip: 'Ya sé cómo, elegir archivo',
       pick: 'Elegir archivo',
       next: 'Siguiente paso',
       goToWhatsApp: 'Ir a WhatsApp',
@@ -745,20 +736,12 @@ export const shellCopy = {
       steps: {
         ios: [
           {
-            title: 'Open the chat and tap the name',
-            body: 'In WhatsApp, open the conversation you want to analyze and tap the contact or group name at the top.',
+            title: 'Export the chat and save it',
+            body: 'In WhatsApp, open the chat you want to analyze and tap its name at the top. Scroll to the bottom, tap "Export Chat", choose "Without Media" and then "Save to Files" to keep it on your iPhone.',
           },
           {
-            title: 'Find "Export Chat"',
-            body: 'Scroll all the way to the bottom of the chat info. The option is at the end of the list.',
-          },
-          {
-            title: 'Choose "Without Media"',
-            body: "That keeps the file small and it uploads in seconds — photos aren't used for any metric.",
-          },
-          {
-            title: 'Save it and upload it here',
-            body: 'Pick "Save to Files" and then upload that same .txt in Vistazo.',
+            title: 'Upload the file here',
+            body: 'Tap "Choose file" and find the chat you just saved in Files.',
           },
         ],
         android: [
@@ -777,7 +760,6 @@ export const shellCopy = {
           },
         ],
       },
-      skip: 'I know how, choose file',
       pick: 'Choose file',
       next: 'Next step',
       goToWhatsApp: 'Go to WhatsApp',

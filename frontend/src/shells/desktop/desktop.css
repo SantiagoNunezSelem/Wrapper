@@ -1331,6 +1331,11 @@
   align-items: stretch;
 }
 
+/* Paso sin video ni ícono (el 2 de iOS): la lista de pasos ocupa todo el ancho. */
+.tutorial-body.is-text-only {
+  grid-template-columns: 1fr;
+}
+
 .tutorial-steps {
   display: flex;
   flex-direction: column;

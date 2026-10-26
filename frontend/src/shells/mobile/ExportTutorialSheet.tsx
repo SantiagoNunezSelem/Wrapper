@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ExportTutorialCopy } from '../../components/ExportTutorialModal'
-import { ExportTutorialArt, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
+import { ExportTutorialArt, tutorialStepVideo, type ExportTutorialPlatform } from '../../components/ExportTutorialArt'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { useSheetDrag } from './useSheetDrag'
 import { WhatsAppRedirectConfirm } from '../../components/WhatsAppRedirectConfirm'
-import { detectDefaultTutorialPlatform, isIosTutorialEnabled } from '../../lib/detectPlatform'
 import { usePwaInstall } from '../../lib/usePwaInstall'
 import { preloadTutorialVideos } from '../../lib/tutorialVideos'
 import { openWhatsAppApp } from '../../lib/whatsappLink'
@@ -24,7 +23,7 @@ export function ExportTutorialSheet({
   onClose: () => void
   onPick: () => void
 }) {
-  const [platform, setPlatform] = useState<ExportTutorialPlatform>(detectDefaultTutorialPlatform)
+  const [platform, setPlatform] = useState<ExportTutorialPlatform>('android')
   const [step, setStep] = useState(0)
   const [isWhatsAppConfirmOpen, setIsWhatsAppConfirmOpen] = useState(false)
   const { canInstall, isInstalled, install } = usePwaInstall()
@@ -33,18 +32,18 @@ export function ExportTutorialSheet({
   const panelRef = useModalDismiss<HTMLElement>(onClose)
   useSheetDrag(panelRef, onClose)
 
-  // Los videos de los pasos siguientes empiezan a bajar apenas se abre el tutorial,
-  // mientras se lee el paso 1 (que no tiene video) — ver lib/tutorialVideos.
+  // Los videos de las dos plataformas empiezan a bajar apenas se abre el tutorial,
+  // mientras se lee el paso 1 — ver lib/tutorialVideos.
   useEffect(() => {
-    if (platform === 'android') {
-      preloadTutorialVideos()
-    }
-  }, [platform])
+    preloadTutorialVideos()
+  }, [])
 
   const steps = copy.steps[platform]
   const active = steps[step]
   const isLast = step === steps.length - 1
   const isAndroidGuided = platform === 'android'
+  // Los pasos que no tienen ni video ni ícono (el 2 de iOS) van sólo con el texto.
+  const hasArt = active.install === true || tutorialStepVideo(platform, step) !== null
   // Mientras el navegador tenga el prompt nativo listo, ese es el CTA principal;
   // apenas se usa (aceptado o no — `install()` limpia `canInstall` en los dos
   // casos), el botón pasa a ofrecer el paso siguiente o las instrucciones manuales.
@@ -102,27 +101,27 @@ export function ExportTutorialSheet({
         </header>
 
         <div className="m-sheet-body">
-          {/* Oculto mientras el tutorial de iOS no esté listo — ver isIosTutorialEnabled. */}
-          {isIosTutorialEnabled ? (
-            <div className="m-tutorial-os-toggle" role="tablist" aria-label="OS">
-              <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
-                {copy.os.ios}
-              </button>
-              <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
-                {copy.os.android}
-              </button>
+          {/* Android es el principal y abre siempre; iOS queda segundo, sólo si se lo elige. */}
+          <div className="m-tutorial-os-toggle" role="tablist" aria-label="OS">
+            <button type="button" className={platform === 'android' ? 'is-active' : ''} onClick={() => selectPlatform('android')}>
+              {copy.os.android}
+            </button>
+            <button type="button" className={platform === 'ios' ? 'is-active' : ''} onClick={() => selectPlatform('ios')}>
+              {copy.os.ios}
+            </button>
+          </div>
+
+          {hasArt ? (
+            <div className="m-tutorial-art">
+              {active.install ? (
+                <div className="m-tutorial-install-panel">
+                  <img src="/icon-192.png" alt="" className="tutorial-install-icon" width={64} height={64} />
+                </div>
+              ) : (
+                <ExportTutorialArt step={step} platform={platform} />
+              )}
             </div>
           ) : null}
-
-          <div className="m-tutorial-art">
-            {active.install ? (
-              <div className="m-tutorial-install-panel">
-                <img src="/icon-192.png" alt="" className="tutorial-install-icon" width={64} height={64} />
-              </div>
-            ) : (
-              <ExportTutorialArt step={step} platform={platform} chrome={false} />
-            )}
-          </div>
 
           <div className="m-tutorial-step-copy">
             <span className="m-step-n">{step + 1}</span>
