@@ -772,12 +772,26 @@ static void LogPaymentsConfiguration(WebApplication app)
     logger.LogInformation(
         "Mercado Pago ready ({Mode} credentials): {Amount} {Currency} every {Frequency} {FrequencyType}, {TrialFrequency} {TrialFrequencyType} free trial.",
         mercadoPago.IsTestCredential ? "test" : "production",
-        mercadoPago.TransactionAmount,
-        mercadoPago.CurrencyId,
-        mercadoPago.Frequency,
-        mercadoPago.FrequencyType,
-        mercadoPago.TrialFrequency,
-        mercadoPago.TrialFrequencyType);
+        mercadoPago.Plan.TransactionAmountArs,
+        MercadoPagoPlanOptions.CurrencyId,
+        MercadoPagoPlanOptions.Frequency,
+        MercadoPagoPlanOptions.FrequencyType,
+        mercadoPago.Plan.TrialFrequencyDays,
+        MercadoPagoPlanOptions.TrialFrequencyType);
+
+    // The plan used to sit directly under MercadoPago. A variable left behind under an old
+    // name is ignored without a word, and the plan quietly falls back to its defaults.
+    string[] retiredPlanKeys = ["TransactionAmount", "CurrencyId", "Frequency", "FrequencyType", "TrialFrequency", "TrialFrequencyType"];
+    foreach (var key in retiredPlanKeys)
+    {
+        if (app.Configuration[$"{MercadoPagoOptions.SectionName}:{key}"] is not null)
+        {
+            logger.LogWarning(
+                "MercadoPago:{Key} is no longer read. The plan is configured with MercadoPago:Plan:TransactionAmountArs " +
+                "and MercadoPago:Plan:TrialFrequencyDays (MercadoPago__Plan__… as environment variables).",
+                key);
+        }
+    }
 
     if (string.IsNullOrWhiteSpace(mercadoPago.WebhookSecret))
     {

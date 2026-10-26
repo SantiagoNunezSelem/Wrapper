@@ -161,15 +161,20 @@ public class MercadoPagoClientTests
     }
 
     [Fact]
-    public async Task La_suscripcion_lleva_el_precio_y_la_moneda_configurados()
+    public async Task La_suscripcion_lleva_el_precio_y_la_prueba_configurados()
     {
-        var options = new MercadoPagoOptions { AccessToken = Token, TransactionAmount = 9900m, CurrencyId = "UYU" };
+        var options = new MercadoPagoOptions
+        {
+            AccessToken = Token,
+            Plan = new MercadoPagoPlanOptions { TransactionAmountArs = 9900m, TrialFrequencyDays = 14 },
+        };
         var (client, http) = Build(stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-3","init_point":"https://mp/x"}"""), options);
 
         await client.CreateSubscriptionAsync("a@test.com", "sub-1", includeFreeTrial: true, default);
 
-        Assert.Contains("9900", http.LastRequest.Body);
-        Assert.Contains("\"currency_id\":\"UYU\"", http.LastRequest.Body);
+        Assert.Contains("\"transaction_amount\":9900", http.LastRequest.Body);
+        Assert.Contains("\"currency_id\":\"ARS\"", http.LastRequest.Body);
+        Assert.Contains("\"free_trial\":{\"frequency\":14,\"frequency_type\":\"days\"}", http.LastRequest.Body);
     }
 
     [Fact]

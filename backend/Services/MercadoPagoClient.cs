@@ -63,10 +63,10 @@ public sealed class MercadoPagoClient(
     {
         var autoRecurring = new Dictionary<string, object?>
         {
-            ["frequency"] = _options.Frequency,
-            ["frequency_type"] = _options.FrequencyType,
-            ["transaction_amount"] = _options.TransactionAmount,
-            ["currency_id"] = _options.CurrencyId,
+            ["frequency"] = MercadoPagoPlanOptions.Frequency,
+            ["frequency_type"] = MercadoPagoPlanOptions.FrequencyType,
+            ["transaction_amount"] = _options.Plan.TransactionAmountArs,
+            ["currency_id"] = MercadoPagoPlanOptions.CurrencyId,
         };
 
         // Same rule as CreatePlanAsync: added only when it applies, never as a null —
@@ -75,8 +75,8 @@ public sealed class MercadoPagoClient(
         {
             autoRecurring["free_trial"] = new Dictionary<string, object?>
             {
-                ["frequency"] = _options.TrialFrequency,
-                ["frequency_type"] = _options.TrialFrequencyType,
+                ["frequency"] = _options.Plan.TrialFrequencyDays,
+                ["frequency_type"] = MercadoPagoPlanOptions.TrialFrequencyType,
             };
         }
 
