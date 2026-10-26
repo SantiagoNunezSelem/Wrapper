@@ -327,14 +327,15 @@ export const shellCopy = {
         'No pudimos cobrar tu tarjeta y ya pasó el período de gracia, así que el acceso Pro está en pausa hasta que se cobre.',
       pausedLockedHint: 'No hay cobros nuevos y el período que ya pagaste terminó, así que no tenés acceso Pro.',
       /**
-       * El cartel de `MercadoPago:TestPayerEmail`. No se puede cerrar a propósito: existe
-       * justamente para que no se olvide puesto, y un aviso que se descarta es un aviso
-       * que se olvida. Nombra el mail porque es el dato con el que se verifica que sea el
-       * comprador de prueba y no el de alguien real.
+       * El cartel de `MercadoPago:TestPayerEmail`. Se puede cerrar, pero sólo hasta que
+       * se recarga la página: existe para que no se olvide puesto. Nombra el mail porque
+       * es el dato con el que se verifica que sea el comprador de prueba y no el de
+       * alguien real.
        */
       testPayerBannerTitle: 'Modo de prueba: los pagos no son reales',
       testPayerBannerBody:
         'Todos los checkouts se abren a nombre de {email}, no de quien esté usando la app. Sacá MercadoPago__TestPayerEmail antes de cobrar de verdad.',
+      testPayerBannerDismiss: 'Cerrar aviso',
       resumeCheckoutCta: 'Terminar el pago',
       /**
        * Mercado Pago solo deja pagar a la cuenta cuyo mail es el del checkout, y cuando no
@@ -908,6 +909,7 @@ export const shellCopy = {
       testPayerBannerTitle: 'Test mode: payments are not real',
       testPayerBannerBody:
         'Every checkout opens as {email}, not as whoever is using the app. Clear MercadoPago__TestPayerEmail before taking real payments.',
+      testPayerBannerDismiss: 'Dismiss',
       resumeCheckoutCta: 'Finish the payment',
       payerEmailContinue: 'Continue with this email',
       payerEmailCancel: 'Cancel',

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { shellCopy } from '../../copy/shellCopy'
 import { TestPayerBanner } from '../TestPayerBanner'
@@ -11,6 +11,7 @@ function renderBanner(email: string | null) {
       email={email}
       title={copy.testPayerBannerTitle}
       body={copy.testPayerBannerBody}
+      dismiss={copy.testPayerBannerDismiss}
     />,
   )
 }
@@ -32,11 +33,23 @@ describe('TestPayerBanner', () => {
     expect(screen.getByText(new RegExp(copy.testPayerBannerTitle))).toBeInTheDocument()
   })
 
-  it('no ofrece ninguna forma de cerrarse', () => {
-    // Es la razón de ser del componente: se puso justamente para no olvidarse la opción
-    // activada, y un aviso que se descarta es un aviso que se olvida.
+  it('se cierra con la cruz', () => {
+    const { container } = renderBanner('test_user_9999@testuser.com')
+
+    fireEvent.click(screen.getByRole('button', { name: copy.testPayerBannerDismiss }))
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('vuelve a aparecer en la próxima carga aunque se haya cerrado', () => {
+    // El cierre no se guarda en ningún lado: se puso para no olvidarse la opción
+    // activada, así que cada vez que se abre la app vuelve a avisar.
+    const first = renderBanner('test_user_9999@testuser.com')
+    fireEvent.click(screen.getByRole('button', { name: copy.testPayerBannerDismiss }))
+    first.unmount()
+
     renderBanner('test_user_9999@testuser.com')
 
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText(/test_user_9999@testuser.com/)).toBeInTheDocument()
   })
 })
