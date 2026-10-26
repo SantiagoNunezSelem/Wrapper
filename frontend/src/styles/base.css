@@ -3055,8 +3055,8 @@ a.subpage-banner-cta {
   font-weight: 600;
   color: var(--vz-text-dim);
 }
-/* El cartel de MercadoPago:TestPayerEmail. Pegado arriba de todo y sin forma de
-   cerrarlo: existe para que no se olvide puesto, y algo que se descarta se olvida. */
+/* El cartel de MercadoPago:TestPayerEmail. Pegado arriba de todo; la cruz lo oculta
+   sólo hasta la próxima carga de la página, para que no se olvide puesto. */
 .test-payer-banner {
   position: sticky;
   top: 0;
@@ -3078,7 +3078,25 @@ a.subpage-banner-cta {
 }
 
 .test-payer-banner-text {
+  flex: 1;
   margin: 0;
+}
+
+.test-payer-banner-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.test-payer-banner-close:hover {
+  opacity: 1;
 }
 
 .test-payer-banner-text strong {
@@ -3145,7 +3163,8 @@ a.subpage-banner-cta {
 /* ==========================================================================
    Video del tutorial de exportación (TutorialVideo, en ExportTutorialArt)
    ==========================================================================
-   El contenedor reserva la proporción del video (1080×1350) desde antes de que
+   El contenedor reserva la proporción del video (1080×1350 por defecto; cada
+   video pasa la suya por `style`) desde antes de que
    cargue, y el spinner va centrado ahí adentro: sólo en la sección del video, no
    sobre toda la pantalla. */
 

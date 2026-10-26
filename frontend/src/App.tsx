@@ -64,6 +64,7 @@ function App() {
         email={vistazo.user?.checkoutTestPayerEmail ?? null}
         title={vistazo.copy.subscriptionPage.testPayerBannerTitle}
         body={vistazo.copy.subscriptionPage.testPayerBannerBody}
+        dismiss={vistazo.copy.subscriptionPage.testPayerBannerDismiss}
       />
       {/* Not on the account screen, which already says it in full. */}
       <PaymentIssueBanner
