@@ -35,12 +35,12 @@ public sealed class SubscriptionService(
 
     public PlanInfo GetPlanInfo() =>
         new(
-            _options.TransactionAmount,
-            _options.CurrencyId,
-            _options.Frequency,
-            _options.FrequencyType,
-            _options.TrialFrequency,
-            _options.TrialFrequencyType,
+            _options.Plan.TransactionAmountArs,
+            MercadoPagoPlanOptions.CurrencyId,
+            MercadoPagoPlanOptions.Frequency,
+            MercadoPagoPlanOptions.FrequencyType,
+            _options.Plan.TrialFrequencyDays,
+            MercadoPagoPlanOptions.TrialFrequencyType,
             _options.Reason,
             client.IsConfigured);
 
@@ -169,8 +169,8 @@ public sealed class SubscriptionService(
             Status = "pendiente",
             PlanType = "mensual",
             PaymentProvider = "mercadopago",
-            Amount = _options.TransactionAmount,
-            CurrencyId = _options.CurrencyId,
+            Amount = _options.Plan.TransactionAmountArs,
+            CurrencyId = MercadoPagoPlanOptions.CurrencyId,
             TrialWasApplied = eligibility.IsEligible,
             PayerEmail = PayerEmailFor(user, requestedPayerEmail),
         };

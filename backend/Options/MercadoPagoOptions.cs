@@ -48,18 +48,13 @@ public sealed class MercadoPagoOptions
     /// <summary>Shown to the payer on the Mercado Pago checkout and on their card summary.</summary>
     public string Reason { get; set; } = "Vistazo Pro";
 
-    public string CurrencyId { get; set; } = "ARS";
-
-    public decimal TransactionAmount { get; set; } = 7900m;
-
-    public int Frequency { get; set; } = 1;
-
-    /// <summary><c>months</c> or <c>days</c>.</summary>
-    public string FrequencyType { get; set; } = "months";
-
-    public int TrialFrequency { get; set; } = 7;
-
-    public string TrialFrequencyType { get; set; } = "days";
+    /// <summary>
+    /// What a new subscription costs and how long its free trial lasts, grouped under
+    /// <c>MercadoPago:Plan</c> (<c>MercadoPago__Plan__…</c> as an environment variable).
+    /// Read when each checkout opens: changing it never touches subscriptions that
+    /// already exist, whose terms Mercado Pago froze when they were created.
+    /// </summary>
+    public MercadoPagoPlanOptions Plan { get; set; } = new();
 
     /// <summary>
     /// How long Pro access survives a rejected charge. Mercado Pago retries a failed
@@ -170,4 +165,24 @@ public sealed class MercadoPagoOptions
         !string.IsNullOrWhiteSpace(BackUrl) &&
         !BackUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
         !BackUrl.Contains("127.0.0.1", StringComparison.Ordinal);
+}
+
+/// <summary>
+/// The single plan on offer. Currency, billing cycle and trial unit are fixed — the units
+/// are in the setting names — so only the two numbers that actually move are configurable.
+/// </summary>
+public sealed class MercadoPagoPlanOptions
+{
+    public const string CurrencyId = "ARS";
+
+    public const int Frequency = 1;
+
+    public const string FrequencyType = "months";
+
+    public const string TrialFrequencyType = "days";
+
+    /// <summary>Monthly price in Argentine pesos.</summary>
+    public decimal TransactionAmountArs { get; set; } = 7800m;
+
+    public int TrialFrequencyDays { get; set; } = 7;
 }

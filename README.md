@@ -375,14 +375,25 @@ registro que sí persiste es la tabla de eventos, que sólo guarda lo que pasó 
 
 ### 4. Ajustes
 
-Todo en `backend\appsettings.json`, bajo `MercadoPago`:
+Todo en `backend\appsettings.json`, bajo `MercadoPago`. Como variable de entorno (Railway)
+cada nivel se separa con doble guion bajo: `MercadoPago__Plan__TransactionAmountArs`.
+
+El plan va agrupado bajo `MercadoPago:Plan`. Moneda (`ARS`), ciclo (mensual) y unidad de
+la prueba (días) son fijos; sólo se configuran los dos números:
 
 | Clave | Default | Para qué sirve |
 | --- | --- | --- |
-| `TransactionAmount` | `7800` | Precio mensual mostrado en la app. **Tiene que coincidir con lo que cobra el plan real** en Mercado Pago. |
-| `CurrencyId` | `ARS` | Moneda. |
-| `Frequency` / `FrequencyType` | `1` / `months` | Ciclo de facturación. |
-| `TrialFrequency` / `TrialFrequencyType` | `7` / `days` | Duración del trial. |
+| `Plan:TransactionAmountArs` | `7800` | Precio mensual en pesos. |
+| `Plan:TrialFrequencyDays` | `7` | Días de prueba gratis. |
+
+Se leen al abrir cada checkout: cambiarlos **no toca las suscripciones que ya existen**,
+cuyas condiciones Mercado Pago congeló al crearlas. Las claves viejas (`TransactionAmount`,
+`TrialFrequency`, …) ya no se leen; si quedó alguna cargada, el backend lo avisa al arrancar.
+
+El resto de las claves, directo bajo `MercadoPago`:
+
+| Clave | Default | Para qué sirve |
+| --- | --- | --- |
 | `FailedPaymentGraceDays` | `3` | Días de acceso tras un cobro rechazado, mientras Mercado Pago reintenta. |
 | `BackUrl` | `http://localhost:5173` | **En producción tiene que ser el origen real del sitio** (`https://vistazo.app`). Mercado Pago rechaza un `back_url` que apunte a localhost, así que con el default el pagador termina en mercadopago.com y nunca vuelve a `/suscripcion` — con lo cual la re-consulta inmediata post-pago no corre. El backend lo avisa al arrancar. |
 | `TestPayerEmail` | *(vacío)* | **Solo para pruebas.** Manda este mail como `payer_email` en vez del usuario logueado, que es la única forma de ejercitar el checkout contra un vendedor de prueba (ver arriba). **En producción tiene que estar vacío**: si no, todos los checkouts se abren a nombre de esa persona. |

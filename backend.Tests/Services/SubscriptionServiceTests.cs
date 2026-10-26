@@ -162,15 +162,19 @@ public class SubscriptionServiceTests : IDisposable
     {
         var options = new MercadoPagoOptions
         {
-            AccessToken = "TEST-1", TransactionAmount = 7900m, CurrencyId = "ARS",
-            Frequency = 1, FrequencyType = "months", TrialFrequency = 7, TrialFrequencyType = "days",
+            AccessToken = "TEST-1",
+            Plan = new MercadoPagoPlanOptions { TransactionAmountArs = 9900m, TrialFrequencyDays = 14 },
             Reason = "Vistazo Pro",
         };
 
         var plan = Service(options).GetPlanInfo();
 
-        Assert.Equal(7900m, plan.Amount);
+        Assert.Equal(9900m, plan.Amount);
         Assert.Equal("ARS", plan.CurrencyId);
+        Assert.Equal(1, plan.Frequency);
+        Assert.Equal("months", plan.FrequencyType);
+        Assert.Equal(14, plan.TrialFrequency);
+        Assert.Equal("days", plan.TrialFrequencyType);
         Assert.Equal("Vistazo Pro", plan.Reason);
         Assert.True(plan.ProviderConfigured);
     }
