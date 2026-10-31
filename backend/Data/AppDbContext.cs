@@ -78,7 +78,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             // SQLite has no decimal type; EF maps it to TEXT by default, which sorts and
             // compares as a string. Money is small and fixed-scale here, so REAL is the
             // pragmatic choice — but it is stated explicitly rather than left to warn.
-            entity.Property(item => item.Amount).HasColumnType("REAL");
+            if (Database.IsSqlite())
+            {
+                entity.Property(item => item.Amount).HasColumnType("REAL");
+            }
             // Webhooks arrive keyed by the provider's id and nothing else.
             entity.HasIndex(item => item.ExternalSubscriptionId);
             entity.HasOne(item => item.User)
@@ -97,7 +100,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.StatusDetail).HasMaxLength(60);
             entity.Property(item => item.CurrencyId).HasMaxLength(10);
             entity.Property(item => item.PaymentMethodLabel).HasMaxLength(120);
-            entity.Property(item => item.Amount).HasColumnType("REAL");
+            if (Database.IsSqlite())
+            {
+                entity.Property(item => item.Amount).HasColumnType("REAL");
+            }
             // One row per provider charge: the constraint, not just the lookup, is what
             // keeps a redelivered notification from duplicating someone's billing history.
             entity.HasIndex(item => item.ExternalPaymentId).IsUnique();

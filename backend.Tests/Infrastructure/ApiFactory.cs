@@ -67,6 +67,9 @@ public class ApiFactory : WebApplicationFactory<Program>
         // Sin credenciales de terceros por defecto: ningún test debe poder salir a la red.
         ["GoogleAi:ApiKey"] = "",
         ["MercadoPago:AccessToken"] = "",
+        // Los user-secrets de la máquina de desarrollo (mismo UserSecretsId que la app) también
+        // traen el secreto del webhook y se colarían en los tests de diagnóstico.
+        ["MercadoPago:WebhookSecret"] = "",
         ["Recaptcha:SecretKeyV3"] = "",
         ["Recaptcha:SecretKeyV2"] = "",
     };
