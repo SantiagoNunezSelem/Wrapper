@@ -14,6 +14,19 @@ export function formatMoney(amount: number, currency: string, locale: string): s
   }
 }
 
+/** La duración de la prueba gratis como texto ("7 días", "1 mes", "14 days"), para meterla
+ * en los textos que antes decían "7 días" a mano. El número sale del plan que manda el
+ * backend (`MercadoPago:Plan:TrialFrequencyDays`), así que cambiar la variable cambia la
+ * pantalla sin tocar el copy. */
+export function formatTrialLength(frequency: number, frequencyType: string, locale: string): string {
+  const unit = frequencyType === 'months' ? 'month' : 'day'
+  try {
+    return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(frequency)
+  } catch {
+    return `${frequency} ${unit}${frequency === 1 ? '' : 's'}`
+  }
+}
+
 /** El medio de pago tal como lo guarda Mercado Pago (`account_money`, `visa ···· 6411`),
  * vuelto algo que se lee: "Dinero en cuenta", "Visa ···· 6411". Sólo para mostrar: el
  * backend sigue guardando y mandando el id crudo.

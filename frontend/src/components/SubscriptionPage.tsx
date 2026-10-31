@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
 import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
-import { formatMoney, formatPaymentMethod } from '../lib/format'
+import { formatMoney, formatPaymentMethod, formatTrialLength } from '../lib/format'
 import { defaultPayerEmail, isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage, describePaymentReason, type PaymentReasonCopy } from '../lib/paymentReasons'
 import { phaseOf } from '../lib/subscriptionPhase'
@@ -62,7 +62,10 @@ export interface SubscriptionPageCopy extends PlanPurchaseFlowCopy, PaymentReaso
   checkingStatus: string
   currentPlanTitle: string
   perMonth: string
+  /** Lleva `{trial}`: la duración sale del plan del backend, no está escrita en el texto. */
   freeTrialBadge: string
+  /** Para cuando no hay plan ni fechas de donde sacar la duración. */
+  freeTrialBadgeGeneric: string
   trialEndsOn: string
   renewsOn: string
   endsOn: string
@@ -724,7 +727,7 @@ function CurrentPlanSection({
             <small> {copy.perMonth}</small>
           </p>
           {current.trialWasApplied && current.status === 'trial' ? (
-            <span className="subpage-trial-badge">{copy.freeTrialBadge}</span>
+            <span className="subpage-trial-badge">{trialBadgeText(current, plan, copy, locale)}</span>
           ) : null}
         </div>
 
@@ -980,6 +983,29 @@ function InvoiceRow({ invoice, copy, locale }: { invoice: SubscriptionInvoice; c
   )
 }
 
+/**
+ * "7 días gratis" con los días que de verdad tuvo esa suscripción: las fechas guardadas
+ * mandan (una prueba vieja no cambia si después se cambia la variable del backend), y sólo
+ * si faltan se usa el plan de ahora. Sin ninguno de los dos, un texto que no promete número.
+ */
+function trialBadgeText(
+  record: SubscriptionRecord,
+  plan: SubscriptionOverview['plan'] | null,
+  copy: SubscriptionPageCopy,
+  locale: string,
+): string {
+  if (record.trialStartsAtUtc && record.trialEndsAtUtc) {
+    const days = Math.round((Date.parse(record.trialEndsAtUtc) - Date.parse(record.trialStartsAtUtc)) / 86_400_000)
+    if (Number.isFinite(days) && days > 0) {
+      return copy.freeTrialBadge.replace('{trial}', formatTrialLength(days, 'days', locale))
+    }
+  }
+
+  return plan
+    ? copy.freeTrialBadge.replace('{trial}', formatTrialLength(plan.trialFrequency, plan.trialFrequencyType, locale))
+    : copy.freeTrialBadgeGeneric
+}
+
 function HistoryRow({ record, copy, locale }: { record: SubscriptionRecord; copy: SubscriptionPageCopy; locale: string }) {
   // Same split as the banner: an old row that never got past the checkout should read as
   // the attempt it was, not as a payment that is still somewhere in the system.
@@ -999,7 +1025,7 @@ function HistoryRow({ record, copy, locale }: { record: SubscriptionRecord; copy
     <li>
       <div>
         <strong>{label}</strong>
-        {record.trialWasApplied ? <span className="subpage-trial-badge">{copy.freeTrialBadge}</span> : null}
+        {record.trialWasApplied ? <span className="subpage-trial-badge">{trialBadgeText(record, null, copy, locale)}</span> : null}
         <p className="subpage-muted">
           {formatMoney(record.amount, record.currencyId, locale)} · {record.planType}
           {record.paymentProvider ? ` · ${record.paymentProvider}` : ''}
