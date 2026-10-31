@@ -73,9 +73,25 @@ if (trialGuardOptions.TrustProxyHeaders)
     });
 }
 
+// Postgres in production (Render hands out a postgres:// URL), SQLite everywhere else.
+// The code stores plain DateTime values of mixed Kind; the legacy switch lets Npgsql take
+// them as "timestamp without time zone" instead of rejecting anything that is not Utc.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+var usePostgres = connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+    || connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase)
+    || connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
+    if (usePostgres)
+    {
+        options.UseNpgsql(PostgresConnectionString.Normalize(connectionString));
+    }
+    else
+    {
+        options.UseSqlite(connectionString);
+    }
 });
 
 builder.Services.AddScoped<TokenService>();
@@ -240,7 +256,12 @@ await using (var scope = app.Services.CreateAsyncScope())
     await db.Database.EnsureCreatedAsync();
     // EnsureCreated skips databases that already exist, so anything added to the schema
     // after the first run has to be applied by hand. See SchemaUpgrades.
-    await SchemaUpgrades.ApplyAsync(db);
+    // The statements are SQLite dialect; a Postgres database is always born from the
+    // current model by EnsureCreated, so it has nothing to upgrade.
+    if (db.Database.IsSqlite())
+    {
+        await SchemaUpgrades.ApplyAsync(db);
+    }
     await SeedData.InitializeAsync(scope.ServiceProvider, db);
 }
 
