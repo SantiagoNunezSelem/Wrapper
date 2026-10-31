@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
 import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
-import { formatMoney } from '../lib/format'
+import { formatMoney, formatTrialLength } from '../lib/format'
 import { isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage } from '../lib/paymentReasons'
 import type { SubscriptionPlan } from '../types'
@@ -186,7 +186,11 @@ export function PlanPurchaseFlow({
           ) : (
             <>
               <button type="button" className="primary-button plan-card-cta" onClick={handleBuy} disabled={isRedirecting}>
-                {isRedirecting ? copy.redirecting : trialAvailable ? copy.buyTrialCta : copy.buyCta}
+                {isRedirecting
+                  ? copy.redirecting
+                  : trialAvailable && plan
+                    ? copy.buyTrialCta.replace('{trial}', formatTrialLength(plan.trialFrequency, plan.trialFrequencyType, locale))
+                    : copy.buyCta}
               </button>
               <p className="plan-card-hint">{inWindow ? copy.checkoutHintWindow : copy.checkoutHintRedirect}</p>
             </>

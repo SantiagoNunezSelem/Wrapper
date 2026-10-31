@@ -267,7 +267,7 @@ export const shellCopy = {
         partially_refunded: 'Se devolvió una parte del pago.',
         accredited: 'Acreditado.',
         // Nuestro, no de Mercado Pago: lo graba el backend cuando Mercado Pago cancela un
-        // intento con semana gratis sin decir por qué (ver SubscriptionService).
+        // intento con prueba gratis sin decir por qué (ver SubscriptionService).
         checkout_refused: 'Mercado Pago no aceptó la tarjeta y no nos dijo el motivo.',
       },
       pendingReasonFallback: 'Mercado Pago todavía no confirmó el pago.',
@@ -314,8 +314,8 @@ export const shellCopy = {
       confirmingNext: 'Si no llegaste a terminarlo, podés retomarlo acá abajo.',
       liveUpdating: 'Actualizando automáticamente…',
       activatedNote: '¡Listo! Tu suscripción está activa y ya tenés todas las métricas Pro.',
-      trialActivatedNote: '¡Listo! Empezó tu semana gratis: ya tenés todas las métricas Pro.',
-      // Cancelada con el período (o la semana gratis) todavía corriendo: con la fecha, no
+      trialActivatedNote: '¡Listo! Empezó tu prueba gratis: ya tenés todas las métricas Pro.',
+      // Cancelada con el período (o la prueba gratis) todavía corriendo: con la fecha, no
       // "hasta que termine el período", que obliga a ir a buscarla.
       cancelledHint: 'No se renueva más. Conservás el acceso Pro hasta el {date}.',
       cancelledNext: 'No se te va a cobrar de nuevo. Después del {date} podés volver a suscribirte.',
@@ -356,7 +356,8 @@ export const shellCopy = {
       checkingStatus: 'Buscando tu pago...',
       currentPlanTitle: 'Tu plan',
       perMonth: 'por mes',
-      freeTrialBadge: '7 días gratis',
+      freeTrialBadge: '{trial} gratis',
+      freeTrialBadgeGeneric: 'Prueba gratis',
       trialEndsOn: 'La prueba termina el',
       renewsOn: 'Próximo cobro',
       endsOn: 'Acceso hasta el',
@@ -423,7 +424,7 @@ export const shellCopy = {
       planDurationValue: 'Se renueva automáticamente cada mes',
       planAccessLabel: 'Acceso',
       planAccessValue: 'Todas las métricas Pro, activo apenas se confirma el pago',
-      // La semana gratis como fechas y un monto: cuándo y cuánto, antes del botón.
+      // La prueba gratis como fechas y un monto: cuándo y cuánto, antes del botón.
       trialToday: 'Hoy',
       trialTodayDetail: 'Pro completo, sin cargo',
       trialFirstCharge: 'Primer cobro de {amount}',
@@ -444,8 +445,8 @@ export const shellCopy = {
         '11 métricas más, con detalles y sin límites',
       ],
       buyCta: 'Comprar',
-      buyTrialCta: 'Empezar con 7 días gratis',
-      trialUnavailable: 'La semana gratis ya fue usada.',
+      buyTrialCta: 'Empezar con {trial} gratis',
+      trialUnavailable: 'La prueba gratis ya fue usada.',
       trialReasons: {
         account_used: 'Esta cuenta ya la aprovechó.',
         ip_used: 'Ya se usó desde esta conexión.',
@@ -966,7 +967,7 @@ export const shellCopy = {
       confirmingNext: "If you didn't get to finish it, you can pick it up below.",
       liveUpdating: 'Updating automatically…',
       activatedNote: 'Done! Your subscription is active and every Pro metric is unlocked.',
-      trialActivatedNote: 'Done! Your free week has started: every Pro metric is unlocked.',
+      trialActivatedNote: 'Done! Your free trial has started: every Pro metric is unlocked.',
       cancelledHint: "It won't renew. You keep Pro access until {date}.",
       cancelledNext: "You won't be charged again. After {date} you can subscribe again.",
       endedStatus: 'Ended',
@@ -992,7 +993,8 @@ export const shellCopy = {
       checkingStatus: 'Looking for your payment...',
       currentPlanTitle: 'Your plan',
       perMonth: 'per month',
-      freeTrialBadge: '7 days free',
+      freeTrialBadge: '{trial} free',
+      freeTrialBadgeGeneric: 'Free trial',
       trialEndsOn: 'Trial ends on',
       renewsOn: 'Next charge',
       endsOn: 'Access until',
@@ -1074,8 +1076,8 @@ export const shellCopy = {
         '11 more metrics, with full details and no limits',
       ],
       buyCta: 'Buy',
-      buyTrialCta: 'Start with 7 days free',
-      trialUnavailable: 'The free week has already been used.',
+      buyTrialCta: 'Start with {trial} free',
+      trialUnavailable: 'The free trial has already been used.',
       trialReasons: {
         account_used: 'This account already took it.',
         ip_used: 'It was already used from this connection.',

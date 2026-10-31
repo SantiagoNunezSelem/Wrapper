@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, splitLeadingEmoji } from '../format'
+import { formatMoney, formatTrialLength, splitLeadingEmoji } from '../format'
 
 describe('formatMoney', () => {
   it('formatea pesos argentinos sin decimales', () => {
@@ -64,5 +64,24 @@ describe('splitLeadingEmoji', () => {
 
   it('separa un solo emoji sin resto', () => {
     expect(splitLeadingEmoji('🎉')).toEqual({ emoji: '🎉', rest: '' })
+  })
+})
+
+describe('formatTrialLength', () => {
+  it('escribe los días del plan en el idioma de la pantalla', () => {
+    expect(formatTrialLength(7, 'days', 'es-AR')).toBe('7 días')
+    expect(formatTrialLength(14, 'days', 'en-US')).toBe('14 days')
+  })
+
+  it('usa el singular cuando es uno solo', () => {
+    expect(formatTrialLength(1, 'days', 'en-US')).toBe('1 day')
+  })
+
+  it('entiende un plan que mide la prueba en meses', () => {
+    expect(formatTrialLength(2, 'months', 'en-US')).toBe('2 months')
+  })
+
+  it('cae a un texto plano si el locale no es válido', () => {
+    expect(formatTrialLength(7, 'days', 'no-es-un-locale!')).toBe('7 days')
   })
 })
