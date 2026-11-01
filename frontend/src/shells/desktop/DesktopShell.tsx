@@ -24,7 +24,7 @@ import type { ShellCopy } from '../../copy/shellCopy'
 import { formatNumber } from '../../lib/metrics'
 import { useInView } from '../../lib/useInView'
 import { usePwaInstall } from '../../lib/usePwaInstall'
-import type { Language, SavedAnalysis } from '../../types'
+import type { Language, MetricCard as MetricCardData, SavedAnalysis } from '../../types'
 import './desktop.css'
 
 // Las dos pantallas más pesadas del shell, y ninguna se dibuja al entrar: la de
@@ -171,6 +171,23 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
   const examplesReveal = useInView<HTMLElement>()
 
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  const [planExampleReturn, setPlanExampleReturn] = useState<{ metricId: string | null } | null>(null)
+
+  /** An example from the Pro popover. Both are modals, so the popover steps aside for the
+   * detail and comes back when it closes, with the locked metric that opened it below. */
+  function openPlanExample(card: MetricCardData) {
+    setPlanExampleReturn({ metricId: selectedMetric?.id ?? null })
+    setIsVipPopoverOpen(false)
+    setSelectedMetricId(card.id)
+  }
+
+  function closeMetricModal() {
+    setSelectedMetricId(planExampleReturn?.metricId ?? null)
+    if (planExampleReturn) {
+      setPlanExampleReturn(null)
+      setIsVipPopoverOpen(true)
+    }
+  }
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   /* Instalar la app sólo se ofrecía desde un paso del tutorial de exportación, que
@@ -633,6 +650,13 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           token={token}
           plan={subscription?.plan ?? null}
           overview={subscription}
+          examples={{
+            cards: landingPreviewCards.filter((card) => card.tier === 'vip'),
+            tagLabel: copy.demoTag,
+            tierLabel: copy.proTag,
+            moreLabel: copy.seeMore,
+            onOpen: openPlanExample,
+          }}
           onClose={() => setIsVipPopoverOpen(false)}
           onSignIn={() => {
             setIsVipPopoverOpen(false)
@@ -659,7 +683,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           isRevealingFreeUnlock={revealingFreeUnlockId === selectedMetric.id}
           messages={activeChat?.messages}
           wordCloudEditor={wordCloudEditor}
-          onClose={() => setSelectedMetricId(null)}
+          onClose={closeMetricModal}
           onUnlock={requestUnlock}
         />
       ) : null}

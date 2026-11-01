@@ -2553,6 +2553,129 @@ button.chat-bubble-divider.is-expandable:active {
   color: var(--vz-green-deep);
 }
 
+/* The popover's "Qué incluye": the landing's example bubbles, cut down to number and
+   label so the carousel costs about as much height as two lines of the list it replaces.
+   Bleeds to the popover's edges so the next card peeks in. The popover and the flow are
+   grids, whose tracks grow to fit a wide child unless told they may shrink. */
+.vip-popover > *,
+.plan-flow-details > * {
+  min-width: 0;
+}
+
+.plan-examples-track {
+  display: flex;
+  gap: 10px;
+  margin-inline: -24px;
+  padding: 10px 24px 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 24px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.plan-examples-track::-webkit-scrollbar {
+  display: none;
+}
+
+.plan-example {
+  position: relative;
+  flex: 0 0 min(82%, 300px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 10px;
+  border: 0;
+  border-radius: var(--vz-radius-bubble);
+  background: var(--vz-card);
+  box-shadow: var(--vz-shadow-card);
+  color: var(--vz-text-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.plan-example:active {
+  transform: scale(0.985);
+}
+
+.plan-example-tag {
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  padding: 2px 8px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-text-strong);
+  color: var(--vz-wall);
+  font-family: var(--vz-font-display);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-example-title {
+  font-family: var(--vz-font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: rgb(var(--vz-accent));
+}
+
+.plan-example-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.plan-example-stat strong {
+  flex-shrink: 0;
+  max-width: 60%;
+  overflow: hidden;
+  font-family: var(--vz-font-display);
+  font-size: 1.6rem;
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.plan-example-stat span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: var(--vz-text-muted);
+}
+
+.plan-example-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--vz-font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.plan-example-tier {
+  padding: 2px 8px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-text-strong);
+  color: var(--vz-green);
+}
+
+.plan-example-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--vz-green-deep);
+}
+
 .plan-card-cta {
   width: 100%;
   text-align: center;

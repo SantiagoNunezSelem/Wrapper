@@ -1,6 +1,7 @@
 import { formatMoney } from '../lib/format'
 import { ModalShell } from './ModalShell'
 import { defaultPayerEmail } from '../lib/payerEmail'
+import type { PlanExamplesProps } from './PlanExamples'
 import { PlanPurchaseFlow, type PlanPurchaseFlowCopy } from './PlanPurchaseFlow'
 import type { Language, SubscriptionOverview, SubscriptionPlan, UserProfile } from '../types'
 
@@ -29,6 +30,7 @@ export function VipUnlockPopover({
   token,
   plan,
   overview,
+  examples,
   onClose,
   onSignIn,
 }: {
@@ -41,6 +43,7 @@ export function VipUnlockPopover({
   token: string | null
   plan: SubscriptionPlan | null
   overview: SubscriptionOverview | null
+  examples: PlanExamplesProps
   onClose: () => void
   onSignIn: () => void
 }) {
@@ -74,6 +77,7 @@ export function VipUnlockPopover({
             locale={language === 'es' ? 'es-AR' : 'en-US'}
             trialAvailable={Boolean(overview?.trialAvailable)}
             trialDeniedReason={overview?.trialDeniedReason ?? null}
+            examples={examples}
           />
         )}
     </ModalShell>
