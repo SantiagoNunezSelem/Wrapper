@@ -177,6 +177,8 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     setIsDetailOverStory(false)
   }, [])
 
+  const [planExampleReturn, setPlanExampleReturn] = useState<{ metricId: string | null } | null>(null)
+
   /* La hoja de detalle recorre la lista de la que salió la tarjeta: las métricas del
      chat, o los ejemplos de la landing (ids "demo-…", nunca chocan con las reales). */
   const sheetMetrics = useMemo(
@@ -214,6 +216,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
 
   function goTo(next: MobileView) {
     setIsDrawerOpen(false)
+    setPlanExampleReturn(null)
     setOpenMetricId(null)
     setIsDetailOverStory(false)
     setIsStoryOpen(false)
@@ -223,8 +226,23 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
   /** Cierra el detalle. Si se había abierto desde el recorrido, éste sigue
    * montado abajo y vuelve a correr solo desde donde había quedado. */
   function closeDetail() {
+    if (planExampleReturn) {
+      setOpenMetricId(planExampleReturn.metricId)
+      setPlanExampleReturn(null)
+      setIsVipPopoverOpen(true)
+      return
+    }
     setOpenMetricId(null)
     setIsDetailOverStory(false)
+  }
+
+  /** Un ejemplo del popover de Pro. El popover va por encima de todas las capas, así que
+   * se cierra mientras dura el detalle; al volver reaparece, con la métrica bloqueada
+   * que lo había abierto debajo. */
+  function openPlanExample(card: MetricCard) {
+    setPlanExampleReturn({ metricId: openMetricId })
+    setIsVipPopoverOpen(false)
+    setOpenMetricId(card.id)
   }
 
   const subscriptionLabel =
@@ -492,7 +510,13 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               onPrev={() => setOpenMetricId(sheetMetrics[openMetricIndex - 1]?.id ?? openMetricId)}
               onNext={() => {
                 const next = sheetMetrics[openMetricIndex + 1]
-                setOpenMetricId(next ? next.id : null)
+                if (next) {
+                  setOpenMetricId(next.id)
+                } else if (planExampleReturn) {
+                  closeDetail()
+                } else {
+                  setOpenMetricId(null)
+                }
               }}
               onUnlock={requestUnlock}
             />
@@ -535,6 +559,13 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
           token={token}
           plan={subscription?.plan ?? null}
           overview={subscription}
+          examples={{
+            cards: landingPreviewCards.filter((card) => card.tier === 'vip'),
+            tagLabel: copy.demoTag,
+            tierLabel: copy.proTag,
+            moreLabel: copy.seeMore,
+            onOpen: openPlanExample,
+          }}
           onClose={() => setIsVipPopoverOpen(false)}
           onSignIn={() => {
             setIsVipPopoverOpen(false)

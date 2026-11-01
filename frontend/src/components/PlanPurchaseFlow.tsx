@@ -5,6 +5,7 @@ import { formatMoney, formatTrialLength } from '../lib/format'
 import { isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage } from '../lib/paymentReasons'
 import type { SubscriptionPlan } from '../types'
+import { PlanExamples, type PlanExamplesProps } from './PlanExamples'
 
 export interface PlanPurchaseFlowCopy {
   planName: string
@@ -66,6 +67,7 @@ export function PlanPurchaseFlow({
   locale,
   trialAvailable,
   trialDeniedReason,
+  examples,
 }: {
   copy: PlanPurchaseFlowCopy
   token: string
@@ -77,6 +79,9 @@ export function PlanPurchaseFlow({
   plan: SubscriptionPlan | null
   trialAvailable: boolean
   trialDeniedReason: string | null
+  /** Replaces the list of benefits. Without cards (still being computed, or the account
+   * page, which has room) the list stays. */
+  examples?: PlanExamplesProps
 }) {
   const [error, setError] = useState('')
   const [isRedirecting, setIsRedirecting] = useState(false)
@@ -141,14 +146,18 @@ export function PlanPurchaseFlow({
 
       <div className="plan-card-benefits">
         <p className="plan-card-benefits-label">{copy.planBenefitsLabel}</p>
-        <ul>
-          {copy.planBenefits.map((benefit) => (
-            <li key={benefit}>
-              <CheckIcon />
-              {benefit}
-            </li>
-          ))}
-        </ul>
+        {examples && examples.cards.length > 0 ? (
+          <PlanExamples {...examples} />
+        ) : (
+          <ul>
+            {copy.planBenefits.map((benefit) => (
+              <li key={benefit}>
+                <CheckIcon />
+                {benefit}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {plan?.providerConfigured ? (
