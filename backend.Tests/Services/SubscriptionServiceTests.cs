@@ -1070,6 +1070,48 @@ public class SubscriptionServiceTests : IDisposable
         Assert.Equal(expected, (await _db.NewContext().SubscriptionInvoices.SingleAsync()).Status);
     }
 
+    [Theory]
+    [InlineData("approved")]
+    [InlineData("accredited")]
+    [InlineData("processed")]
+    public async Task Un_cobro_aprobado_limpia_el_rechazo_anterior(string approvedStatus)
+    {
+        CreateUser(subscriptions: new Subscription { Status = "pendiente", ExternalSubscriptionId = "pre-1" });
+        var service = Service();
+        var status = "rejected";
+        var day = 10;
+        _http.Route(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(Json(
+                """
+                {"id":555,"preapproval_id":"pre-1","last_modified":"2025-03-@day@T10:00:00Z",
+                 "payment":{"id":999,"status":"@status@","status_detail":"cc_rejected_insufficient_amount"}}
+                """,
+                ("day", day), ("status", status)), Encoding.UTF8, "application/json"),
+        });
+
+        await service.HandleNotificationAsync("authorized_payment", "updated", "555", "{}", default);
+        using (var db = _db.NewContext())
+        {
+            Assert.Equal(PaymentOutcomes.Declined,
+                SubscriptionAccessEvaluator.DescribeLastPayment(await db.Subscriptions.SingleAsync()));
+        }
+
+        // The provider may approve a retry without replacing the previous detail.
+        status = approvedStatus;
+        day++;
+        await service.HandleNotificationAsync("authorized_payment", "updated", "555", "{}", default);
+
+        using var finalDb = _db.NewContext();
+        var subscription = await finalDb.Subscriptions.SingleAsync();
+        Assert.Equal("activa", subscription.Status);
+        Assert.Null(subscription.LastPaymentStatus);
+        Assert.Null(subscription.LastPaymentStatusDetail);
+        Assert.Null(SubscriptionAccessEvaluator.DescribeLastPayment(subscription));
+        Assert.False(SubscriptionAccessEvaluator.HasPaymentInFlight(subscription));
+        Assert.Equal("aprobado", (await finalDb.SubscriptionInvoices.SingleAsync()).Status);
+    }
+
     [Fact]
     public async Task Un_cobro_repetido_no_duplica_la_factura()
     {

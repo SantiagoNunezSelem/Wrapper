@@ -14,39 +14,63 @@ namespace backend.Tests.Endpoints;
 public sealed class MercadoPagoFlowTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Checkout_autorizacion_pago_y_cancelacion(bool recoverWithSync)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Checkout_autorizacion_pago_y_cancelacion(bool recoverWithSync, bool hasUsedTrial)
     {
         using var factory = new PaymentFactory();
-        var (client, _) = factory.CreateAuthenticatedClient();
+        var (client, user) = factory.CreateAuthenticatedClient(hasUsedTrial: hasUsedTrial);
+
         Assert.False(await HasAccess(client));
         (await client.PostAsJsonAsync("/api/subscription/checkout", new { payerEmail = "payer@example.com" })).EnsureSuccessStatusCode();
         Assert.False(await HasAccess(client));
         Assert.Equal("payer@example.com", factory.Provider.Checkout.GetProperty("payer_email").GetString());
         Assert.Equal("ARS", factory.Provider.Checkout.GetProperty("auto_recurring").GetProperty("currency_id").GetString());
-        Assert.True(factory.Provider.Checkout.GetProperty("auto_recurring").TryGetProperty("free_trial", out _));
+        Assert.Equal(!hasUsedTrial, factory.Provider.Checkout.GetProperty("auto_recurring").TryGetProperty("free_trial", out _));
         using (var db = factory.NewDbContext())
         {
             var subscription = Assert.Single(db.Subscriptions);
             Assert.Equal(subscription.Id.ToString(), factory.Provider.Reference);
             Assert.Equal("pre-1", subscription.ExternalSubscriptionId);
         }
+
         factory.Provider.Status = "authorized";
         if (recoverWithSync)
             (await client.PostAsJsonAsync("/api/subscription/sync", new { })).EnsureSuccessStatusCode();
         else
             (await Notify(client, "subscription_preapproval", "pre-1")).EnsureSuccessStatusCode();
-        Assert.True(await HasAccess(client));
+        Assert.Equal(!hasUsedTrial, await HasAccess(client));
+
         (await Notify(client, "subscription_authorized_payment", "123")).EnsureSuccessStatusCode();
         (await Notify(client, "subscription_authorized_payment", "123")).EnsureSuccessStatusCode();
+        DateTime paidPeriodEnd;
         using (var db = factory.NewDbContext())
-            Assert.Single(db.SubscriptionInvoices);
-        (await client.PostAsJsonAsync("/api/subscription/cancel", new { })).EnsureSuccessStatusCode();
+        {
+            var subscription = Assert.Single(db.Subscriptions);
+            var invoice = Assert.Single(db.SubscriptionInvoices);
+            Assert.Equal(user.Id, invoice.UserId);
+            Assert.Equal(subscription.Id, invoice.SubscriptionId);
+            Assert.Equal("aprobado", invoice.Status);
+            Assert.NotNull(invoice.PaidAtUtc);
+            Assert.Equal("activa", subscription.Status);
+            Assert.Equal(invoice.PaidAtUtc, subscription.LastPaymentAtUtc);
+            paidPeriodEnd = Assert.IsType<DateTime>(invoice.PeriodEndUtc);
+            Assert.Equal(paidPeriodEnd, subscription.NextBillingAtUtc);
+        }
+        Assert.True(await HasAccess(client));
+
+        var cancellation = await client.PostAsJsonAsync("/api/subscription/cancel", new { });
+        cancellation.EnsureSuccessStatusCode();
         Assert.Equal("cancelled", factory.Provider.Status);
         Assert.True(await HasAccess(client));
         using (var db = factory.NewDbContext())
-            Assert.Equal("cancelada", Assert.Single(db.Subscriptions).Status);
+        {
+            var subscription = Assert.Single(db.Subscriptions);
+            Assert.Equal("cancelada", subscription.Status);
+            Assert.Equal(paidPeriodEnd, subscription.NextBillingAtUtc);
+        }
     }
 
     [Fact]
@@ -56,25 +80,30 @@ public sealed class MercadoPagoFlowTests
         var (client, user) = factory.CreateAuthenticatedClient(hasUsedTrial: true);
         (await client.PostAsJsonAsync("/api/subscription/checkout", new { payerEmail = "payer@example.com" })).EnsureSuccessStatusCode();
         Assert.False(factory.Provider.Checkout.GetProperty("auto_recurring").TryGetProperty("free_trial", out _));
+
         factory.Provider.Status = "authorized";
         (await Notify(client, "subscription_preapproval", "pre-1")).EnsureSuccessStatusCode();
         Assert.False(await HasAccess(client));
+
         factory.Provider.PaymentStatus = "rejected";
         (await Notify(client, "subscription_authorized_payment", "123")).EnsureSuccessStatusCode();
         (await Notify(client, "subscription_authorized_payment", "123")).EnsureSuccessStatusCode();
         Assert.False(await HasAccess(client));
+
         using var db = factory.NewDbContext();
         var subscription = Assert.Single(db.Subscriptions);
         Assert.Equal("pendiente", subscription.Status);
         Assert.Null(subscription.TrialEndsAtUtc);
         Assert.Null(subscription.GraceEndsAtUtc);
         Assert.Null(subscription.LastPaymentAtUtc);
+
         var invoice = Assert.Single(db.SubscriptionInvoices);
         Assert.Equal(user.Id, invoice.UserId);
         Assert.Equal(subscription.Id, invoice.SubscriptionId);
         Assert.Equal("rechazado", invoice.Status);
         Assert.Equal("cc_rejected_insufficient_amount", invoice.StatusDetail);
         Assert.Null(invoice.PaidAtUtc);
+
         var overview = await client.GetFromJsonAsync<JsonElement>("/api/subscription");
         Assert.Equal("declined", overview.GetProperty("current").GetProperty("phase").GetString());
     }
@@ -131,6 +160,7 @@ public sealed class MercadoPagoFlowTests
         public int Calls { get; private set; }
         public string PaymentStatus { get; set; } = "approved";
         private readonly DateTime _now = DateTime.UtcNow;
+        private DateTime? _paidPeriodEnd;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Calls++;
@@ -138,7 +168,8 @@ public sealed class MercadoPagoFlowTests
             object body;
             if (request.Method == HttpMethod.Post && path == "/preapproval")
             {
-                Checkout = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken)).RootElement.Clone();
+                using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                Checkout = document.RootElement.Clone();
                 Reference = Checkout.GetProperty("external_reference").GetString();
             }
             else if (request.Method == HttpMethod.Put && path == "/preapproval/pre-1")
@@ -151,12 +182,16 @@ public sealed class MercadoPagoFlowTests
             if (path is "/preapproval" or "/preapproval/pre-1")
                 body = new { id = "pre-1", status = Status, external_reference = Reference,
                     payer_email = "payer@example.com", init_point = "https://mp.test/checkout", date_created = _now,
-                    next_payment_date = _now.AddDays(7), auto_recurring = Checkout.GetProperty("auto_recurring") };
+                    next_payment_date = _paidPeriodEnd ?? _now.AddDays(7), auto_recurring = Checkout.GetProperty("auto_recurring") };
             else if (path == "/authorized_payments/123")
+            {
+                if (PaymentStatus == "approved")
+                    _paidPeriodEnd = _now.AddMonths(1);
                 body = new { id = 123, preapproval_id = "pre-1", status = "processed", transaction_amount = 7800,
                     currency_id = "ARS", date_created = _now, last_modified = _now, debit_date = _now,
                     period = new { start_date = _now, end_date = _now.AddMonths(1) },
                     payment = new { id = 456, status = PaymentStatus, status_detail = PaymentStatus == "approved" ? "accredited" : "cc_rejected_insufficient_amount" } };
+            }
             else if (path is "/authorized_payments/search" or "/v1/payments/search")
                 body = new { results = Array.Empty<object>() };
             else throw new InvalidOperationException($"Unexpected provider request: {request.Method} {path}");
