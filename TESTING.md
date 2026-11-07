@@ -41,6 +41,29 @@ Y el resumen combinado con los umbrales, igual que en CI:
 node scripts/coverage-gate.mjs
 ```
 
+## Flujo local de Mercado Pago
+
+Requiere el SDK de .NET 9. Para ejecutar únicamente estos escenarios:
+
+```bash
+dotnet test Wrapper.sln --filter FullyQualifiedName~MercadoPagoFlowTests
+```
+
+`MercadoPagoFlowTests` recorre los endpoints reales con autenticación JWT y una SQLite
+independiente en memoria por escenario. Solo reemplaza el transporte HTTP de Mercado
+Pago: las firmas de webhook, el cliente del proveedor y los servicios de suscripción
+siguen siendo reales. Usa credenciales ficticias, desactiva el reconciliador automático
+y rechaza las peticiones al proveedor que el simulador no contempla.
+
+Cubre checkout con trial, autorización por webhook o recuperación por `/sync`, pago
+aprobado, reentrega sin duplicar facturas, cancelación conservando el período y firma
+inválida. También cubre el primer pago rechazado de una cuenta que ya usó el trial:
+no envía otra prueba gratis, conserva el motivo del rechazo y no concede Pro ni gracia.
+
+Estos tests corren dentro del job de backend existente, sin cuentas externas ni cobros.
+No incluyen navegador ni verifican que Mercado Pago acepte el trial o permita completar
+su checkout alojado; esa validación requiere una prueba separada con el proveedor real.
+
 ## Qué corre en cada PR
 
 `.github/workflows/tests.yml` levanta cuatro jobs:

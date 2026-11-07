@@ -1244,6 +1244,11 @@ public sealed class SubscriptionService(
 
         var previousStatus = subscription.Status;
         var invoice = await UpsertInvoiceAsync(subscription, payment, cancellationToken);
+        // The scheduled-charge topic must expose the same outcome as the plain payment
+        // topic, otherwise a refused first charge still reads as processing in the UI.
+        subscription.LastPaymentStatus = payment.Payment?.Status ?? payment.Status;
+        subscription.LastPaymentStatusDetail = invoice.StatusDetail;
+
 
         // A cancelled subscription stays cancelled whatever a charge says. Mercado Pago
         // redelivers notifications long after the fact — one for a charge approved an hour
