@@ -1244,6 +1244,18 @@ public sealed class SubscriptionService(
 
         var previousStatus = subscription.Status;
         var invoice = await UpsertInvoiceAsync(subscription, payment, cancellationToken);
+        // Match the plain payment topic: an approved charge clears any previous refusal,
+        // including provider aliases such as processed/accredited and stale details.
+        if (invoice.Status == "aprobado")
+        {
+            subscription.LastPaymentStatus = null;
+            subscription.LastPaymentStatusDetail = null;
+        }
+        else
+        {
+            subscription.LastPaymentStatus = payment.Payment?.Status ?? payment.Status;
+            subscription.LastPaymentStatusDetail = invoice.StatusDetail;
+        }
 
         // A cancelled subscription stays cancelled whatever a charge says. Mercado Pago
         // redelivers notifications long after the fact — one for a charge approved an hour
