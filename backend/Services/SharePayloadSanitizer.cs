@@ -94,8 +94,93 @@ public static class SharePayloadSanitizer
                     .Select(entry => entry with { Chart = KeepChart(entry.Chart) })
                     .Where(entry => entry.Chart is not null)
                     .ToList(),
+                Profiles = CleanProfiles(card.Detail.Profiles),
             },
     };
+
+    /// <summary>
+    /// The personality profiles are the one place a card carries prose <em>about a named
+    /// person</em> that the model wrote, so they are rebuilt field by field and not passed
+    /// through: the label has to be one of the closed list, every string is bounded, the
+    /// numbers are clamped, and a summary holding a link, a mail address or a phone number
+    /// is dropped rather than published. A profile whose label is not recognised is dropped
+    /// whole — there is no safe way to show half of one.
+    /// </summary>
+    private static List<SharedProfile>? CleanProfiles(List<SharedProfile>? profiles)
+    {
+        if (profiles is null)
+        {
+            return null;
+        }
+
+        var cleaned = new List<SharedProfile>();
+
+        foreach (var profile in profiles)
+        {
+            if (cleaned.Count >= MaxProfiles)
+            {
+                break;
+            }
+
+            var labelId = AiProfilePrompts.NormalizeLabel(profile.LabelId);
+            var name = Bound(profile.Name, MaxProfileNameChars);
+
+            if (labelId is null || name.Length == 0)
+            {
+                continue;
+            }
+
+            var secondaryId = AiProfilePrompts.NormalizeLabel(profile.SecondaryLabelId);
+            var summary = Bound(profile.Summary, MaxProfileSummaryChars);
+
+            cleaned.Add(new SharedProfile
+            {
+                Name = name,
+                Color = IsSafeColor(profile.Color) ? profile.Color : null,
+                LabelId = labelId,
+                Label = Bound(profile.Label, MaxProfileLabelChars),
+                SecondaryLabelId = secondaryId == labelId ? null : secondaryId,
+                SecondaryLabel = secondaryId is null || secondaryId == labelId
+                    ? null
+                    : Bound(profile.SecondaryLabel, MaxProfileLabelChars),
+                Summary = AiProfileService.ContainsContactDetails(summary) ? string.Empty : summary,
+                Source = profile.Source == "ai" ? "ai" : "local",
+                MessageCount = Math.Clamp(profile.MessageCount, 0, 10_000_000),
+                Radar = profile.Radar?
+                    .Where(axis => !string.IsNullOrWhiteSpace(axis.Axis) && double.IsFinite(axis.Value))
+                    .Take(MaxRadarAxes)
+                    .Select(axis => new SharedRadarAxis
+                    {
+                        Axis = Bound(axis.Axis, MaxRadarAxisChars),
+                        Value = Math.Clamp(axis.Value, 0, 1000),
+                    })
+                    .ToList(),
+            });
+        }
+
+        return cleaned;
+    }
+
+    private const int MaxProfiles = 12;
+    private const int MaxProfileNameChars = 80;
+    private const int MaxProfileLabelChars = 40;
+    private const int MaxProfileSummaryChars = 600;
+    private const int MaxRadarAxes = 8;
+    private const int MaxRadarAxisChars = 30;
+
+    private static string Bound(string? value, int max)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.Length <= max ? trimmed : trimmed[..max];
+    }
+
+    /// <summary>
+    /// A participant color is rendered into a style attribute, so only the shapes the
+    /// palette actually produces are let through — no quotes, semicolons or angle brackets.
+    /// </summary>
+    private static bool IsSafeColor(string? color) =>
+        !string.IsNullOrEmpty(color) && color.Length <= 40 && color.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '#' or '(' or ')' or ',' or '.' or '%' or ' ' or '-');
 
     private static JsonElement? KeepChart(JsonElement? chart)
     {
@@ -153,6 +238,37 @@ public sealed record SharedDetail
     public string? GroupsLabel { get; init; }
     public List<string>? PaginatedItems { get; init; }
     public string? PaginatedItemsLabel { get; init; }
+
+    /// <summary>The personality profiles — see <see cref="SharePayloadSanitizer"/> for how they are cleaned.</summary>
+    public List<SharedProfile>? Profiles { get; init; }
+}
+
+/// <summary>
+/// One person's personality profile, as published. The summary is the model's prose, kept
+/// because the owner chose to share the whole card; everything else is a closed id, a short
+/// label or a number.
+/// </summary>
+public sealed record SharedProfile
+{
+    public string Name { get; init; } = string.Empty;
+    public string? Color { get; init; }
+    public string LabelId { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public string? SecondaryLabelId { get; init; }
+    public string? SecondaryLabel { get; init; }
+    public string Summary { get; init; } = string.Empty;
+
+    /// <summary>"ai" or "local": whether Gemini wrote it or the browser's own reading did.</summary>
+    public string Source { get; init; } = "local";
+
+    public int MessageCount { get; init; }
+    public List<SharedRadarAxis>? Radar { get; init; }
+}
+
+public sealed record SharedRadarAxis
+{
+    public string Axis { get; init; } = string.Empty;
+    public double Value { get; init; }
 }
 
 /// <summary>One collapsible group's heading, with its <c>bubbles</c> deliberately unmodeled —

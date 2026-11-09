@@ -9,6 +9,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<SavedAnalysis> Analyses => Set<SavedAnalysis>();
     public DbSet<AiMetricResult> AiMetricResults => Set<AiMetricResult>();
+    public DbSet<AiProfileResult> AiProfileResults => Set<AiProfileResult>();
     public DbSet<SubscriptionInvoice> SubscriptionInvoices => Set<SubscriptionInvoice>();
     public DbSet<SubscriptionEvent> SubscriptionEvents => Set<SubscriptionEvent>();
     public DbSet<TrialClaim> TrialClaims => Set<TrialClaim>();
@@ -220,6 +221,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => new { item.UserId, item.SourceHash, item.MetricId }).IsUnique();
             entity.HasOne(item => item.User)
                 .WithMany(item => item.AiMetricResults)
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AiProfileResult>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.SourceHash).HasMaxLength(64);
+            entity.Property(item => item.PersonId).HasMaxLength(4);
+            entity.Property(item => item.Language).HasMaxLength(10);
+            entity.Property(item => item.InputHash).HasMaxLength(64);
+            entity.Property(item => item.Status).HasMaxLength(20);
+            entity.Property(item => item.LabelId).HasMaxLength(30);
+            entity.Property(item => item.SecondaryLabelId).HasMaxLength(30);
+            entity.Property(item => item.Summary).HasMaxLength(1200);
+            entity.Property(item => item.ErrorCode).HasMaxLength(30);
+            // One profile per user + chat + language + person: the lookup that lets a second
+            // upload of the same export cost zero tokens.
+            entity.HasIndex(item => new { item.UserId, item.SourceHash, item.Language, item.PersonId }).IsUnique();
+            entity.HasOne(item => item.User)
+                .WithMany()
                 .HasForeignKey(item => item.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

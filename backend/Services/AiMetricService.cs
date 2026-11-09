@@ -140,45 +140,12 @@ public sealed class AiMetricService(
     }
 
     /// <summary>
-    /// The hard ceiling on what one account can cost in a day.
-    /// <para>
-    /// Counted in <em>distinct chats</em> rather than requests or tokens, because that is
-    /// the thing the caller controls and the thing that actually causes spend: a chat
-    /// already analysed is answered from cache forever, so repeat traffic is free no matter
-    /// how much of it there is, while a chat fingerprint never seen before always reaches
-    /// Gemini. Anything already counted today passes straight through — the cap must never
-    /// strand someone halfway through the chat they are actually looking at.
-    /// </para>
+    /// The hard ceiling on what one account can cost in a day. The rule itself lives in
+    /// <see cref="AiDailyBudget"/>, shared with the personality profiles so both draw from
+    /// the same allowance.
     /// </summary>
-    private async Task EnsureDailyChatBudgetAsync(Guid userId, string sourceHash, CancellationToken cancellationToken)
-    {
-        var limit = _options.MaxChatsPerDay;
-        if (limit <= 0)
-        {
-            return;
-        }
-
-        var since = DateTime.UtcNow.Date;
-
-        var chatsToday = await db.AiMetricResults
-            .Where(item => item.UserId == userId && item.CreatedAtUtc >= since)
-            .Select(item => item.SourceHash)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        if (chatsToday.Count < limit || chatsToday.Contains(sourceHash, StringComparer.Ordinal))
-        {
-            return;
-        }
-
-        logger.LogWarning(
-            "User {UserId} hit the daily AI chat limit ({Limit}). Refusing to analyse another chat today.",
-            userId,
-            limit);
-
-        throw new AiDailyLimitReachedException(
-            $"This account has already had {limit} chats analysed by the AI today. The allowance resets at UTC midnight.");
-    }
+    private Task EnsureDailyChatBudgetAsync(Guid userId, string sourceHash, CancellationToken cancellationToken) =>
+        AiDailyBudget.EnsureAsync(db, _options, logger, userId, sourceHash, cancellationToken);
 
     private async Task<AiMetricStateDto> ResolveAsync(
         Guid userId,

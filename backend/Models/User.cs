@@ -18,6 +18,15 @@ public sealed class User
     /// </summary>
     public DateTime? AiConsentAtUtc { get; set; }
 
+    /// <summary>
+    /// When the user agreed to have a <em>sample of their messages</em> — not just the
+    /// keyword hits — sent to Google's AI to write personality profiles. A stamp of its own
+    /// on purpose: <see cref="AiConsentAtUtc"/> was given for something narrower (short
+    /// flagged snippets), and widening what leaves the browser needs its own explicit yes.
+    /// An account that only has the old stamp is asked again instead of being carried over.
+    /// </summary>
+    public DateTime? AiProfileConsentAtUtc { get; set; }
+
     public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 

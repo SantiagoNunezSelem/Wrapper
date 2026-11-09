@@ -43,7 +43,39 @@ public static class SchemaUpgrades
             """,
             cancellationToken);
 
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "AiProfileResults" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_AiProfileResults" PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "SourceHash" TEXT NULL,
+                "PersonId" TEXT NULL,
+                "Language" TEXT NULL,
+                "InputHash" TEXT NULL,
+                "Status" TEXT NULL,
+                "LabelId" TEXT NULL,
+                "SecondaryLabelId" TEXT NULL,
+                "Summary" TEXT NULL,
+                "ErrorCode" TEXT NULL,
+                "RetryAvailableAtUtc" TEXT NULL,
+                "AttemptCount" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "UpdatedAtUtc" TEXT NOT NULL,
+                CONSTRAINT "FK_AiProfileResults_Users_UserId" FOREIGN KEY ("UserId")
+                    REFERENCES "Users" ("Id") ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_AiProfileResults_UserId_SourceHash_Language_PersonId"
+                ON "AiProfileResults" ("UserId", "SourceHash", "Language", "PersonId");
+            """,
+            cancellationToken);
+
         await AddColumnIfMissingAsync(db, "Users", "AiConsentAtUtc", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(db, "Users", "AiProfileConsentAtUtc", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(db, "Users", "PreferredLanguage", "TEXT NULL DEFAULT 'es'", cancellationToken);
 
         // ---------------------------------------------------------------------
