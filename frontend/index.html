@@ -6,25 +6,37 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Google pide el ícono de los resultados en múltiplos de 48 px: el SVG solo no alcanza
+         en todos los casos, el PNG de 192 sí. -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#f6f2e8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vistazo — Wrapped de tu chat de WhatsApp</title>
+    <title>Wrapped de WhatsApp: analizá tu chat gratis | Vistazo</title>
     <meta
       name="description"
-      content="Subí un export de WhatsApp y mirá el Wrapped de tu chat: quién monologuea, quién clava el visto, a qué hora explota la conversación y 25 métricas más. Se procesa en tu navegador."
+      content="Subí tu chat de WhatsApp y mirá su Wrapped: 25 métricas sobre quién habla más, quién tarda en responder y a qué hora se prende. Gratis y en tu navegador."
     />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Canónica: este mismo HTML se sirve en TODAS las rutas de la app (/terminos, /ayuda,
+         /s/{slug}, y cualquier URL mal escrita), así que todas declaran como original a la
+         portada. Las páginas de contenido (/guias/…, /metricas, /preguntas-frecuentes) son
+         HTML aparte, generado en seo/, y llevan su propia canónica.
+         __SITE_URL__ lo reemplaza seo/plugin.ts con el origen público; en local queda vacío
+         y las rutas caen a relativas. -->
+    <link rel="canonical" href="__SITE_URL__/" />
 
     <!-- Vista previa al pegar el link. El bucle central del producto es compartir un
          recorrido (/s/{slug}) por WhatsApp, donde sin esto aparecía como una URL pelada:
          sin título, sin imagen y sin una línea que explique qué es.
-         __SITE_URL__ lo reemplaza vite.config.ts con VITE_SITE_URL; sin esa variable
-         queda vacío y las rutas caen a relativas, que es lo correcto en local. -->
+         No hay og:url a propósito: este HTML es el de todos los links compartidos, y un
+         og:url fijo haría que los rastreadores los traten a todos como la portada. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Vistazo" />
     <meta property="og:locale" content="es_AR" />
-    <meta property="og:title" content="Vistazo — Wrapped de tu chat de WhatsApp" />
+    <meta property="og:title" content="Vistazo — el Wrapped de tu chat de WhatsApp" />
     <meta
       property="og:description"
       content="Quién monologuea, quién clava el visto y a qué hora explota la conversación. Tu chat, en 25 métricas."
@@ -37,15 +49,85 @@
     <meta property="og:image:alt" content="Vistazo: tu chat también merece su propio Wrapped" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Vistazo — Wrapped de tu chat de WhatsApp" />
+    <meta name="twitter:title" content="Vistazo — el Wrapped de tu chat de WhatsApp" />
     <meta
       name="twitter:description"
       content="Quién monologuea, quién clava el visto y a qué hora explota la conversación. Tu chat, en 25 métricas."
     />
     <meta name="twitter:image" content="__SITE_URL__/og-image.jpg" />
+
+    <!-- Datos estructurados: quién es el sitio y qué es la app, para que Google y los
+         buscadores con IA los reconozcan como una entidad. Sin aggregateRating ni reseñas
+         a propósito: no hay ninguna real que declarar. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "__SITE_URL__/#organization",
+            "name": "Vistazo",
+            "url": "__SITE_URL__/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "__SITE_URL__/icon-512.png",
+              "width": 512,
+              "height": 512
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "__SITE_URL__/#website",
+            "url": "__SITE_URL__/",
+            "name": "Vistazo",
+            "alternateName": "Vistazo Wrapped",
+            "inLanguage": "es",
+            "publisher": { "@id": "__SITE_URL__/#organization" }
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "__SITE_URL__/#app",
+            "name": "Vistazo",
+            "url": "__SITE_URL__/",
+            "description": "Convierte el chat de WhatsApp que exportás en un Wrapped con 25 métricas: quién habla más, a qué hora, quién tarda en responder y más. El análisis se hace en el navegador.",
+            "applicationCategory": "EntertainmentApplication",
+            "operatingSystem": "Web, Android, iOS",
+            "browserRequirements": "Requiere JavaScript",
+            "inLanguage": ["es", "en"],
+            "isAccessibleForFree": true,
+            "image": "__SITE_URL__/og-image.jpg",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "ARS" },
+            "publisher": { "@id": "__SITE_URL__/#organization" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Lo que ve quien no ejecuta JavaScript (rastreadores de IA, lectores simples):
+         la app se dibuja en el navegador, sin esto el HTML estaría vacío. Los links llevan
+         a las páginas de contenido, que son HTML puro. -->
+    <noscript>
+      <main style="max-width: 640px; margin: 0 auto; padding: 24px; font-family: system-ui, sans-serif; line-height: 1.6">
+        <h1>Vistazo: el Wrapped de tu chat de WhatsApp</h1>
+        <p>
+          Vistazo convierte el chat de WhatsApp que exportás en un Wrapped con 25 métricas: quién habla más, a qué hora
+          se prende la conversación, quién tarda en responder y mucho más. El análisis se hace en tu navegador, y
+          empezar es gratis. Necesita JavaScript para funcionar.
+        </p>
+        <ul>
+          <li><a href="/guias/como-exportar-chat-whatsapp">Cómo exportar un chat de WhatsApp</a></li>
+          <li><a href="/guias/que-es-el-wrapped-de-whatsapp">Qué es el Wrapped de WhatsApp</a></li>
+          <li><a href="/metricas">Las 25 métricas</a></li>
+          <li><a href="/guias/es-seguro-analizar-chat-whatsapp">Privacidad: qué pasa con tu chat</a></li>
+          <li><a href="/preguntas-frecuentes">Preguntas frecuentes</a></li>
+          <li><a href="/guias">Todas las guías</a></li>
+        </ul>
+      </main>
+    </noscript>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

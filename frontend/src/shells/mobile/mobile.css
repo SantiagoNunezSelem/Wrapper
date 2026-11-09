@@ -403,6 +403,26 @@
   margin-top: 6px;
 }
 
+/* Links a las guías, al pie del inicio: discretos, pero links de verdad. */
+.m-seo-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  padding: 0 2px 4px;
+}
+
+.m-seo-links a {
+  color: var(--vz-text-dim);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.m-seo-links a:hover {
+  color: var(--vz-text-strong);
+}
+
 /* ==========================================================================
    Resumen del chat
    ========================================================================== */
