@@ -1,5 +1,6 @@
 import type {
   AiMetricState,
+  AiProfileState,
   AuthResponse,
   CheckoutStart,
   FreeUnlockState,
@@ -166,6 +167,49 @@ export async function retryAiMetrics(token: string, sourceHash: string): Promise
       method: 'POST',
       body: JSON.stringify({ sourceHash }),
     },
+    token,
+  )
+
+  return response.results
+}
+
+interface AiProfilesEnvelope {
+  results: AiProfileState[]
+}
+
+/**
+ * Asks the backend to write the personalities of the people in this chat. Like the metrics
+ * above, it only calls Google for whoever has no stored profile and is outside a retry
+ * cooldown — so the same call serves the first attempt and every retry — and every rejection
+ * path (no Pro, no consent) costs zero tokens. The people are named by letter: the real
+ * names never leave the browser.
+ */
+export async function analyzeAiProfiles(
+  token: string,
+  payload: {
+    sourceHash: string
+    language: Language
+    group: Record<string, number>
+    people: { id: string; features: Record<string, number>; messages: string[] }[]
+  },
+): Promise<AiProfileState[]> {
+  const response = await request<AiProfilesEnvelope>(
+    '/api/ai/profiles',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+    token,
+  )
+
+  return response.results
+}
+
+/** Reads stored personalities without triggering any AI call. */
+export async function getAiProfiles(token: string, sourceHash: string, language: Language): Promise<AiProfileState[]> {
+  const response = await request<AiProfilesEnvelope>(
+    `/api/ai/profiles?sourceHash=${encodeURIComponent(sourceHash)}&language=${language}`,
+    { method: 'GET' },
     token,
   )
 

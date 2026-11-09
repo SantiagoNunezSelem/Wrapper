@@ -175,6 +175,43 @@ describe('buildAiCandidatesInWorker', () => {
   })
 })
 
+describe('buildProfileInputInWorker', () => {
+  const input = { people: [{ id: 'A', name: 'Ana', features: { share: 0.5 }, messages: ['hola'] }], group: { share: 0.5 } }
+
+  it('primero intenta sin reenviar los mensajes', async () => {
+    const { buildProfileInputInWorker } = await freshClient()
+    const pending = buildProfileInputInWorker('abc', [])
+
+    expect(worker().posted[0]).toMatchObject({ type: 'profileInput', sourceHash: 'abc', messages: undefined })
+
+    worker().reply({ requestId: 0, type: 'profileInput', input })
+    await expect(pending).resolves.toEqual(input)
+  })
+
+  it('reenvía los mensajes cuando el worker perdió el chat de su caché', async () => {
+    const { buildProfileInputInWorker } = await freshClient()
+    const messages = [{ id: 'm1' }] as never
+    const pending = buildProfileInputInWorker('abc', messages)
+
+    worker().reply({ requestId: 0, type: 'cacheMiss' })
+    await Promise.resolve()
+
+    expect(worker().posted[1]).toMatchObject({ type: 'profileInput', sourceHash: 'abc', messages })
+
+    worker().reply({ requestId: 1, type: 'profileInput', input })
+    await expect(pending).resolves.toEqual(input)
+  })
+
+  it('rechaza si el worker contesta otra cosa', async () => {
+    const { buildProfileInputInWorker } = await freshClient()
+    const pending = buildProfileInputInWorker('abc', [])
+
+    worker().reply({ requestId: 0, type: 'analyze', core })
+
+    await expect(pending).rejects.toThrow('Unexpected worker response for profileInput.')
+  })
+})
+
 describe('applyAiVerdictsInWorker', () => {
   it('manda el núcleo y los veredictos', async () => {
     const { applyAiVerdictsInWorker } = await freshClient()

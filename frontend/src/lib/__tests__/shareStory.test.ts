@@ -118,6 +118,35 @@ describe('buildSharePayload — qué tarjetas entran al link', () => {
     expect(payload.map((item) => item.id)).toEqual(['spammer'])
   })
 
+  it('las personalidades que la IA no pudo escribir se comparten con su lectura local, las pendientes no', () => {
+    const payload = buildSharePayload([
+      card({ id: 'personalidades', ai: { status: 'failed' } }),
+      card({ id: 'personalidades', ai: { status: 'unavailable' } }),
+      card({ id: 'personalidades', ai: { status: 'pending' } }),
+      card({ id: 'personalidades', ai: { status: 'consent' } }),
+    ])
+
+    expect(payload).toHaveLength(2)
+  })
+
+  it('las personalidades viajan enteras, con su explicación y su radar', () => {
+    const profile = {
+      name: 'Ana',
+      labelId: 'curioso' as const,
+      label: 'Curioso',
+      summary: 'Pregunta todo: siempre quiere saber más.',
+      source: 'ai' as const,
+      radar: [{ axis: 'Presencia', value: 50 }],
+      messageCount: 812,
+    }
+
+    const shared = toSharedCard(
+      card({ id: 'personalidades', detail: { intro: 'Cada integrante.', profiles: [profile] } }),
+    )
+
+    expect(shared.detail?.profiles).toEqual([profile])
+  })
+
   it('incluye una métrica de IA con veredicto listo', () => {
     const payload = buildSharePayload([card({ id: 'tonopicante', ai: { status: 'ready' } })])
 

@@ -1,6 +1,7 @@
 import type { ChatMessage, Language, MetricCard } from '../types'
 import type { AiCandidateSet } from './aiCandidates'
 import type { AiMetricId, AnalysisCore } from './metrics'
+import type { ProfileInput } from './personalityAi'
 import type { WorkerRequest, WorkerResponse } from './analysisWorker'
 
 // One worker for the app's whole lifetime — analysis requests are infrequent
@@ -141,6 +142,26 @@ export async function buildAiCandidatesInWorker(
   }
 
   return response.candidateSets
+}
+
+/**
+ * Builds what the AI is given to write the personalities: the measured numbers and a short,
+ * scrubbed sample of each person's messages. Runs in the worker for the same reason the
+ * candidates do — it walks every message.
+ */
+export async function buildProfileInputInWorker(
+  sourceHash: string,
+  messages: ChatMessage[],
+): Promise<ProfileInput> {
+  const response = await withMessageRetry(
+    (withMessages) => send({ type: 'profileInput', sourceHash, messages: withMessages ? messages : undefined }),
+  )
+
+  if (response.type !== 'profileInput') {
+    throw new Error('Unexpected worker response for profileInput.')
+  }
+
+  return response.input
 }
 
 /** Re-derives the AI-backed cards from the model's verdicts, leaving the rest of the

@@ -1,4 +1,5 @@
 import { memo, useRef, type MouseEvent } from 'react'
+import { isAiBlocked, isUsingLocalReading, PROFILE_METRIC_ID } from '../lib/metrics'
 import { prefersReducedMotion } from '../lib/prefersReducedMotion'
 import type { MetricCard as MetricCardData } from '../types'
 import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
@@ -48,8 +49,11 @@ export const MetricCard = memo(function MetricCard({
 }) {
   // "Pro, but the AI hasn't produced a verdict" is a different state from "not Pro":
   // it gets its own panel with a retry, instead of an upsell for a plan you already own.
-  const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
+  const aiBlocked = Boolean(ai) && isAiBlocked(card)
   const locked = !aiBlocked && card.tier === 'vip' && !card.basic
+  // The personalities card keeps its local reading when the AI fails; say so on the card
+  // itself, so that reading is never taken for the AI's.
+  const usesLocalReading = Boolean(ai) && isUsingLocalReading(card)
 
   // Tilt magnético al cursor + números que laten al entrar en pantalla.
   const cardRef = useRef<HTMLElement>(null)
@@ -102,7 +106,7 @@ export const MetricCard = memo(function MetricCard({
       </div>
 
       {aiBlocked ? (
-        <AiStatePanel state={card.ai!} {...ai!} />
+        <AiStatePanel state={card.ai!} {...ai!} forProfiles={card.id === PROFILE_METRIC_ID} />
       ) : locked || !card.basic ? (
         <LockedPanel preview={card.preview} unlockLabel={unlockLabel} onUnlock={onUnlock} />
       ) : (
@@ -112,6 +116,7 @@ export const MetricCard = memo(function MetricCard({
             <span>{card.basic.label}</span>
           </div>
           {card.basic.note ? <p className="metric-note">{card.basic.note}</p> : null}
+          {usesLocalReading ? <span className="ai-fallback-chip">{ai!.copy.fallbackBadge}</span> : null}
           {card.basic.chart ? (
             <div className="metric-chart">
               <ChartRenderer chart={card.basic.chart} compact />

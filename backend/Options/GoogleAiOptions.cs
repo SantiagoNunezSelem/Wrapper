@@ -66,6 +66,39 @@ public sealed class GoogleAiOptions
     public int MaxChatsPerDay { get; set; } = 10;
 
     /// <summary>
+    /// Most people one chat's personality profiles may cover. The browser picks the most
+    /// active ones; this is the same ceiling enforced on this side so a hand-built request
+    /// cannot ask for a whole group chat. Mirrors <c>MAX_PROFILED_PEOPLE</c> on the frontend.
+    /// </summary>
+    public int MaxProfilePeople { get; set; } = 8;
+
+    /// <summary>
+    /// Messages of one person's sample that reach Gemini. The other half of the spend guard
+    /// for profiles — people × this × <see cref="MaxProfileMessageChars"/> bounds a request.
+    /// Mirrors <c>PROFILE_SAMPLE_SIZE</c> on the frontend.
+    /// </summary>
+    public int MaxProfileMessages { get; set; } = 40;
+
+    /// <summary>Ceiling on one sample message, in characters. A client cannot make us pay for a novel.</summary>
+    public int MaxProfileMessageChars { get; set; } = 300;
+
+    /// <summary>Below this a "sample" is just a handful of lines and the profile would be made up.</summary>
+    public int MinProfileMessages { get; set; } = 10;
+
+    /// <summary>
+    /// People profiled at the same time. Profiles are independent calls, so running a few at
+    /// once keeps a full group inside one request's patience — without ever being able to
+    /// burst past the model's per-minute quota in one go.
+    /// </summary>
+    public int ProfileConcurrency { get; set; } = 3;
+
+    /// <summary>
+    /// A little above zero, unlike the classification calls: the summary is prose, and at
+    /// zero every profile in a group opens with the same sentence.
+    /// </summary>
+    public double ProfileTemperature { get; set; } = 0.4;
+
+    /// <summary>
     /// Reasoning-token budget. 0 disables "thinking" on Gemini 2.5 models, which is
     /// pure savings for a yes/no classification. Set to -1 to omit the field entirely
     /// if you switch to a model that rejects it (e.g. the 2.0 series).

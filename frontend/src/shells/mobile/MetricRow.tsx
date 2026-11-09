@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { AiPanelProps } from '../../components/AiStatePanel'
 import type { ShellCopy } from '../../copy/shellCopy'
+import { isAiBlocked, isUsingLocalReading } from '../../lib/metrics'
 import type { AiMetricStatus, MetricCard } from '../../types'
 import { ChevronIcon, CrownIcon, LockIcon, SparkIcon } from './icons'
 
@@ -39,8 +40,11 @@ export const MetricRow = memo(function MetricRow({
      el primero ya pagó, así que se le explica el estado en vez de venderle nada.
      El `ai &&` es la parte que distingue los dos casos — sin él, alguien sin Pro
      veía "Analizando con IA" en una métrica que en realidad tiene bloqueada. */
-  const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
+  const aiBlocked = Boolean(ai) && isAiBlocked(card)
   const locked = !aiBlocked && card.tier === 'vip' && !card.basic
+  // La tarjeta de personalidades sigue mostrando su lectura local cuando la IA falla; la fila
+  // lo dice, así esa lectura nunca pasa por la de la IA.
+  const usesLocalReading = Boolean(ai) && isUsingLocalReading(card)
 
   return (
     <button
@@ -87,6 +91,7 @@ export const MetricRow = memo(function MetricRow({
         <>
           <span className="m-row-value">{card.basic.value}</span>
           <span className="m-row-label">{card.basic.label}</span>
+          {usesLocalReading ? <span className="ai-fallback-chip">{copy.ai.fallbackBadge}</span> : null}
         </>
       ) : null}
     </button>

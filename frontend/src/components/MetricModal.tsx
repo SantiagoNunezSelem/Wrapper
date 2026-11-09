@@ -1,13 +1,14 @@
 import { useState, type KeyboardEvent } from 'react'
-import { isParticipantBarChart } from '../lib/metrics'
+import { isAiBlocked, isParticipantBarChart, isUsingLocalReading, PROFILE_METRIC_ID } from '../lib/metrics'
 import type { ChatMessage, MetricCard as MetricCardData } from '../types'
-import { AiStatePanel, type AiPanelProps } from './AiStatePanel'
+import { AiFallbackNotice, AiStatePanel, type AiPanelProps } from './AiStatePanel'
 import { BarRanking } from './charts/BarRanking'
 import { ChartRenderer } from './charts/ChartRenderer'
 import { SearchIcon } from './IconButton'
 import { LockedPanel, type FreeUnlockPrompt } from './LockedPanel'
 import { MessageGroupItem } from './MessageGroupItem'
 import { ModalShell } from './ModalShell'
+import { ProfilesPanel, type ProfilesCopy } from './ProfilesPanel'
 import { useCountUp } from './useCountUp'
 import type { WordCloudEditor, WordCloudSearchCopy } from './useEditableWordCloud'
 import { PAGE_SIZE, usePaginatedReveal } from './usePaginatedReveal'
@@ -21,6 +22,7 @@ export interface MetricModalCopy {
   searchPlaceholder: string
   freeUnlockLoading: string
   wordCloudSearch: WordCloudSearchCopy & { removeLabel: string }
+  profiles: ProfilesCopy
 }
 
 export function MetricModal({
@@ -60,7 +62,10 @@ export function MetricModal({
   const itemsPagination = usePaginatedReveal(PAGE_SIZE)
   const [wordSearch, setWordSearch] = useState('')
 
-  const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
+  const aiBlocked = Boolean(ai) && isAiBlocked(card)
+  // The card is showing its own local reading because the AI could not do it: not blocked,
+  // but it says so, and offers another go.
+  const usesLocalReading = Boolean(ai) && isUsingLocalReading(card)
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
   const statValue = useCountUp(card.basic?.value ?? '')
@@ -95,7 +100,7 @@ export function MetricModal({
         <h2>{card.title}</h2>
 
         {aiBlocked ? (
-          <AiStatePanel state={card.ai!} {...ai!} tall />
+          <AiStatePanel state={card.ai!} {...ai!} tall forProfiles={card.id === PROFILE_METRIC_ID} />
         ) : basicLocked ? (
           <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} />
         ) : card.basic ? (
@@ -144,7 +149,13 @@ export function MetricModal({
             />
           ) : card.detail ? (
             <>
+              {usesLocalReading ? <AiFallbackNotice state={card.ai!} {...ai!} /> : null}
+
               {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
+
+              {card.detail.profiles && card.detail.profiles.length > 0 ? (
+                <ProfilesPanel profiles={card.detail.profiles} copy={copy.profiles} />
+              ) : null}
 
               {canSearchWords ? (
                 <>

@@ -1,16 +1,17 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
+import { AiFallbackNotice, AiStatePanel, type AiPanelProps } from '../../components/AiStatePanel'
 import { BarRanking } from '../../components/charts/BarRanking'
 import { ChartRenderer, type WordCloudEditing } from '../../components/charts/ChartRenderer'
 import { LockedPanel, type FreeUnlockPrompt } from '../../components/LockedPanel'
 import { MessageGroupItem } from '../../components/MessageGroupItem'
+import { ProfilesPanel } from '../../components/ProfilesPanel'
 import { useCountUp } from '../../components/useCountUp'
 import type { WordCloudEditor } from '../../components/useEditableWordCloud'
 import { useModalDismiss } from '../../components/useModalDismiss'
 import { usePaginatedReveal } from '../../components/usePaginatedReveal'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
-import { isParticipantBarChart } from '../../lib/metrics'
+import { isAiBlocked, isParticipantBarChart, isUsingLocalReading, PROFILE_METRIC_ID } from '../../lib/metrics'
 import type { ChartData, ChatMessage, MetricCard } from '../../types'
 import { ChevronIcon, SearchIcon } from './icons'
 import { useSheetDrag } from './useSheetDrag'
@@ -108,7 +109,10 @@ export function MetricSheet({
   })
   useSheetDrag(panelRef, onClose)
 
-  const aiBlocked = Boolean(ai && card.ai && card.ai.status !== 'ready')
+  const aiBlocked = Boolean(ai) && isAiBlocked(card)
+  // Showing its own local reading because the AI could not do it: not blocked, but it
+  // says so and offers another go (the same case as in MetricModal).
+  const usesLocalReading = Boolean(ai) && isUsingLocalReading(card)
   const basicLocked = !aiBlocked && card.tier === 'vip' && !card.basic
   const detailLocked = !aiBlocked && !card.detail
 
@@ -164,7 +168,7 @@ export function MetricSheet({
 
         <div className="m-sheet-body">
           {aiBlocked ? (
-            <AiStatePanel state={card.ai!} {...ai!} tall />
+            <AiStatePanel state={card.ai!} {...ai!} tall forProfiles={card.id === PROFILE_METRIC_ID} />
           ) : basicLocked ? (
             <LockedPanel preview={card.preview} unlockLabel={copy.unlock} onUnlock={onUnlock} tall />
           ) : card.basic ? (
@@ -211,7 +215,13 @@ export function MetricSheet({
                 />
               ) : card.detail ? (
                 <>
+                  {usesLocalReading ? <AiFallbackNotice state={card.ai!} {...ai!} /> : null}
+
                   {card.detail.intro ? <p className="panel-copy">{card.detail.intro}</p> : null}
+
+                  {card.detail.profiles && card.detail.profiles.length > 0 ? (
+                    <ProfilesPanel profiles={card.detail.profiles} copy={copy.profiles} />
+                  ) : null}
 
                   {canSearchWords ? (
                     <>

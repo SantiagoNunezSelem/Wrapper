@@ -37,12 +37,6 @@ public sealed class GoogleAiClient(
         string userContent,
         CancellationToken cancellationToken)
     {
-        if (!_options.IsConfigured)
-        {
-            logger.LogWarning("GoogleAi:ApiKey is not set — refusing to call Gemini.");
-            return AiCallOutcome.Failure(AiErrorCode.Config);
-        }
-
         var payload = new
         {
             systemInstruction = new { parts = new[] { new { text = systemInstruction } } },
@@ -79,6 +73,85 @@ public sealed class GoogleAiClient(
                 new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE" },
             },
         };
+
+        var call = await SendAsync(payload, cancellationToken);
+
+        return call.Failure is not null
+            ? AiCallOutcome.Failure(call.Failure)
+            : WithUsage(ParseAcceptedIds(call.Body!), call.Body!);
+    }
+
+    /// <summary>
+    /// Asks the model to write one person's personality profile: a label from the closed
+    /// list and a short summary of why. Same contract as <see cref="ClassifyAsync"/> — an
+    /// expected failure comes back as an <see cref="AiErrorCode"/>, never as an exception.
+    /// </summary>
+    public async Task<AiProfileCallOutcome> GenerateProfileAsync(
+        string systemInstruction,
+        string userContent,
+        CancellationToken cancellationToken)
+    {
+        var payload = new
+        {
+            systemInstruction = new { parts = new[] { new { text = systemInstruction } } },
+            contents = new[] { new { role = "user", parts = new[] { new { text = userContent } } } },
+            generationConfig = new
+            {
+                temperature = _options.ProfileTemperature,
+                responseMimeType = "application/json",
+                // The label is a free STRING here and is checked against the closed list on
+                // our side. An `enum` in the schema would be tidier, but a schema the model
+                // rejects fails as a 400 — which this client reads as a server
+                // misconfiguration — and the list is validated afterwards either way.
+                responseSchema = new
+                {
+                    type = "OBJECT",
+                    properties = new
+                    {
+                        label = new { type = "STRING" },
+                        secondary = new { type = "STRING" },
+                        summary = new { type = "STRING" },
+                    },
+                    required = new[] { "label", "summary" },
+                },
+                thinkingConfig = _options.ThinkingBudget >= 0
+                    ? (object?)new { thinkingBudget = _options.ThinkingBudget }
+                    : null,
+            },
+            // Not BLOCK_NONE, unlike the classification calls. There the model only reads
+            // hostile or suggestive text and answers with ids; here it *writes* about named
+            // people, and the audience includes minors. The thresholds sit one step short of
+            // the strictest so ordinary teenage chat — swearing, teasing — still goes through.
+            safetySettings = new[]
+            {
+                new { category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_ONLY_HIGH" },
+                new { category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_ONLY_HIGH" },
+                new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_MEDIUM_AND_ABOVE" },
+                new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_ONLY_HIGH" },
+            },
+        };
+
+        var call = await SendAsync(payload, cancellationToken);
+
+        return call.Failure is not null
+            ? AiProfileCallOutcome.Failure(call.Failure)
+            : WithProfileUsage(ParseProfile(call.Body!), call.Body!);
+    }
+
+    /// <summary>One Gemini round trip: the raw body on success, or the failure code — never both.</summary>
+    private sealed record GeminiCall(string? Body, string? Failure);
+
+    /// <summary>
+    /// Posts a <c>generateContent</c> payload, riding out the transient failures. Shared by
+    /// every kind of call so the quota and "high demand" handling lives in one place.
+    /// </summary>
+    private async Task<GeminiCall> SendAsync(object payload, CancellationToken cancellationToken)
+    {
+        if (!_options.IsConfigured)
+        {
+            logger.LogWarning("GoogleAi:ApiKey is not set — refusing to call Gemini.");
+            return new GeminiCall(null, AiErrorCode.Config);
+        }
 
         var url = $"{_options.Endpoint.TrimEnd('/')}/models/{_options.Model}:generateContent";
         var requestBody = JsonSerializer.Serialize(payload, SerializerOptions);
@@ -139,7 +212,7 @@ public sealed class GoogleAiClient(
                 }
 
                 logger.LogWarning("Gemini call timed out after {Seconds}s.", _options.TimeoutSeconds);
-                return AiCallOutcome.Failure(AiErrorCode.Unavailable);
+                return new GeminiCall(null, AiErrorCode.Unavailable);
             }
             catch (HttpRequestException exception)
             {
@@ -155,7 +228,7 @@ public sealed class GoogleAiClient(
                 }
 
                 logger.LogWarning(exception, "Gemini call failed at the transport level.");
-                return AiCallOutcome.Failure(AiErrorCode.Unavailable);
+                return new GeminiCall(null, AiErrorCode.Unavailable);
             }
 
             using (response)
@@ -193,11 +266,11 @@ public sealed class GoogleAiClient(
                         (int)response.StatusCode,
                         code,
                         Truncate(body, 500));
-                    return AiCallOutcome.Failure(code);
+                    return new GeminiCall(null, code);
                 }
             }
 
-            return WithUsage(ParseAcceptedIds(body), body);
+            return new GeminiCall(body, null);
         }
     }
 
@@ -268,7 +341,12 @@ public sealed class GoogleAiClient(
         _ => AiErrorCode.Unknown,
     };
 
-    private AiCallOutcome ParseAcceptedIds(string body)
+    /// <summary>
+    /// Pulls the model's text out of a <c>generateContent</c> response, or says why there is
+    /// none. Refusals arrive as a 200 with no candidates and a block reason, not as an error,
+    /// so this is where they become <see cref="AiErrorCode.Blocked"/>.
+    /// </summary>
+    private (string? Answer, string? Failure) ExtractAnswer(string body)
     {
         try
         {
@@ -280,7 +358,7 @@ public sealed class GoogleAiClient(
                 feedback.TryGetProperty("blockReason", out var blockReason))
             {
                 logger.LogWarning("Gemini blocked the prompt: {Reason}", blockReason.GetString());
-                return AiCallOutcome.Failure(AiErrorCode.Blocked);
+                return (null, AiErrorCode.Blocked);
             }
 
             if (!root.TryGetProperty("candidates", out var candidates) ||
@@ -288,7 +366,7 @@ public sealed class GoogleAiClient(
                 candidates.GetArrayLength() == 0)
             {
                 logger.LogWarning("Gemini answered without candidates: {Body}", Truncate(body, 500));
-                return AiCallOutcome.Failure(AiErrorCode.Blocked);
+                return (null, AiErrorCode.Blocked);
             }
 
             var candidate = candidates[0];
@@ -297,7 +375,7 @@ public sealed class GoogleAiClient(
                 finishReason.GetString() is "SAFETY" or "PROHIBITED_CONTENT" or "BLOCKLIST")
             {
                 logger.LogWarning("Gemini stopped early: {Reason}", finishReason.GetString());
-                return AiCallOutcome.Failure(AiErrorCode.Blocked);
+                return (null, AiErrorCode.Blocked);
             }
 
             // Some model versions split the answer across several parts; join them all
@@ -320,13 +398,32 @@ public sealed class GoogleAiClient(
             if (answer.Length == 0)
             {
                 logger.LogWarning("Gemini answered with empty text: {Body}", Truncate(body, 500));
-                return AiCallOutcome.Failure(AiErrorCode.Invalid);
+                return (null, AiErrorCode.Invalid);
             }
 
-            using var parsed = JsonDocument.Parse(answer);
+            return (answer, null);
+        }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(exception, "Could not parse Gemini's answer: {Body}", Truncate(body, 500));
+            return (null, AiErrorCode.Invalid);
+        }
+    }
+
+    private AiCallOutcome ParseAcceptedIds(string body)
+    {
+        var (answer, failure) = ExtractAnswer(body);
+        if (failure is not null)
+        {
+            return AiCallOutcome.Failure(failure);
+        }
+
+        try
+        {
+            using var parsed = JsonDocument.Parse(answer!);
             if (!parsed.RootElement.TryGetProperty("ids", out var ids) || ids.ValueKind != JsonValueKind.Array)
             {
-                logger.LogWarning("Gemini answer had no ids array: {Answer}", Truncate(answer, 500));
+                logger.LogWarning("Gemini answer had no ids array: {Answer}", Truncate(answer!, 500));
                 return AiCallOutcome.Failure(AiErrorCode.Invalid);
             }
 
@@ -347,6 +444,57 @@ public sealed class GoogleAiClient(
             logger.LogWarning(exception, "Could not parse Gemini's answer: {Body}", Truncate(body, 500));
             return AiCallOutcome.Failure(AiErrorCode.Invalid);
         }
+    }
+
+    private AiProfileCallOutcome ParseProfile(string body)
+    {
+        var (answer, failure) = ExtractAnswer(body);
+        if (failure is not null)
+        {
+            return AiProfileCallOutcome.Failure(failure);
+        }
+
+        try
+        {
+            using var parsed = JsonDocument.Parse(answer!);
+            var root = parsed.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object ||
+                !TryReadString(root, "label", out var label) ||
+                !TryReadString(root, "summary", out var summary))
+            {
+                logger.LogWarning("Gemini profile answer was missing its label or summary: {Answer}", Truncate(answer!, 500));
+                return AiProfileCallOutcome.Failure(AiErrorCode.Invalid);
+            }
+
+            TryReadString(root, "secondary", out var secondary);
+
+            return AiProfileCallOutcome.Success(new AiProfileAnswer(label!, secondary, summary!));
+        }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(exception, "Could not parse Gemini's profile answer: {Body}", Truncate(body, 500));
+            return AiProfileCallOutcome.Failure(AiErrorCode.Invalid);
+        }
+    }
+
+    private static bool TryReadString(JsonElement element, string name, out string? value)
+    {
+        value = null;
+
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var text = property.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        value = text.Trim();
+        return true;
     }
 
     private static string Truncate(string value, int max) =>
@@ -370,12 +518,31 @@ public sealed class GoogleAiClient(
     /// </summary>
     internal static AiCallOutcome WithUsage(AiCallOutcome outcome, string body)
     {
+        var (input, output) = ReadUsage(body);
+
+        return input is null && output is null
+            ? outcome
+            : outcome with { InputTokens = input, OutputTokens = output };
+    }
+
+    /// <summary>The same bookkeeping for a profile call; see <see cref="WithUsage"/>.</summary>
+    internal static AiProfileCallOutcome WithProfileUsage(AiProfileCallOutcome outcome, string body)
+    {
+        var (input, output) = ReadUsage(body);
+
+        return input is null && output is null
+            ? outcome
+            : outcome with { InputTokens = input, OutputTokens = output };
+    }
+
+    private static (int? Input, int? Output) ReadUsage(string body)
+    {
         try
         {
             using var document = JsonDocument.Parse(body);
             if (!document.RootElement.TryGetProperty("usageMetadata", out var usage) || usage.ValueKind != JsonValueKind.Object)
             {
-                return outcome;
+                return (null, null);
             }
 
             int Read(string name) =>
@@ -383,15 +550,11 @@ public sealed class GoogleAiClient(
                     ? number
                     : 0;
 
-            return outcome with
-            {
-                InputTokens = Read("promptTokenCount"),
-                OutputTokens = Read("candidatesTokenCount") + Read("thoughtsTokenCount"),
-            };
+            return (Read("promptTokenCount"), Read("candidatesTokenCount") + Read("thoughtsTokenCount"));
         }
         catch (JsonException)
         {
-            return outcome;
+            return (null, null);
         }
     }
 }
@@ -406,4 +569,19 @@ public sealed record AiCallOutcome(bool IsSuccess, IReadOnlyList<string> Accepte
     public static AiCallOutcome Success(IReadOnlyList<string> acceptedIds) => new(true, acceptedIds, null);
 
     public static AiCallOutcome Failure(string errorCode) => new(false, [], errorCode);
+}
+
+/// <summary>What the model wrote for one person, exactly as it wrote it — validation comes later.</summary>
+public sealed record AiProfileAnswer(string Label, string? Secondary, string Summary);
+
+public sealed record AiProfileCallOutcome(bool IsSuccess, AiProfileAnswer? Answer, string? ErrorCode)
+{
+    /// <summary>Null when the call never reached Gemini, or its answer carried no usage.</summary>
+    public int? InputTokens { get; init; }
+
+    public int? OutputTokens { get; init; }
+
+    public static AiProfileCallOutcome Success(AiProfileAnswer answer) => new(true, answer, null);
+
+    public static AiProfileCallOutcome Failure(string errorCode) => new(false, null, errorCode);
 }

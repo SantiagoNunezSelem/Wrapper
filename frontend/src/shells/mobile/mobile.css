@@ -3561,3 +3561,13 @@
   background: var(--vz-danger-bg);
   color: var(--vz-danger-text);
 }
+
+/* La línea sobre el botón de compartir cuando el recorrido incluye personalidades:
+   descripciones de personas por su nombre, que conviene decir antes de mandar el link. */
+.m-story-share-note {
+  margin: 0 0 8px;
+  color: var(--vz-text-dim);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  text-align: center;
+}

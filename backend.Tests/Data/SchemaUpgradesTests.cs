@@ -80,6 +80,78 @@ public class SchemaUpgradesTests : IDisposable
         Assert.Contains("AiConsentAtUtc", await ColumnsOf("Users"));
     }
 
+    [Fact]
+    public async Task Deja_la_columna_del_consentimiento_de_perfiles_en_Users()
+    {
+        await SchemaUpgrades.ApplyAsync(_db.Context);
+
+        Assert.Contains("AiProfileConsentAtUtc", await ColumnsOf("Users"));
+    }
+
+    [Fact]
+    public async Task Agrega_la_columna_del_consentimiento_de_perfiles_a_una_base_que_no_la_tenia()
+    {
+        // Una base de antes de los perfiles: la columna no existe y EnsureCreated no la va a
+        // agregar. Es exactamente el caso para el que existe este archivo.
+        await _db.Context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" DROP COLUMN \"AiProfileConsentAtUtc\";");
+        Assert.DoesNotContain("AiProfileConsentAtUtc", await ColumnsOf("Users"));
+
+        await SchemaUpgrades.ApplyAsync(_db.Context);
+
+        Assert.Contains("AiProfileConsentAtUtc", await ColumnsOf("Users"));
+    }
+
+    [Fact]
+    public async Task Crea_la_tabla_de_perfiles_en_una_base_que_no_la_tenia()
+    {
+        await _db.Context.Database.ExecuteSqlRawAsync("DROP TABLE \"AiProfileResults\";");
+        Assert.Empty(await ColumnsOf("AiProfileResults"));
+
+        await SchemaUpgrades.ApplyAsync(_db.Context);
+
+        var columns = await ColumnsOf("AiProfileResults");
+        foreach (var expected in new[]
+                 {
+                     "Id", "UserId", "SourceHash", "PersonId", "Language", "InputHash", "Status",
+                     "LabelId", "SecondaryLabelId", "Summary", "ErrorCode", "RetryAvailableAtUtc",
+                     "AttemptCount", "CreatedAtUtc", "UpdatedAtUtc",
+                 })
+        {
+            Assert.Contains(expected, columns);
+        }
+    }
+
+    [Fact]
+    public async Task La_tabla_de_perfiles_creada_por_el_parche_hace_cumplir_una_fila_por_persona_e_idioma()
+    {
+        await _db.Context.Database.ExecuteSqlRawAsync("DROP TABLE \"AiProfileResults\";");
+        await SchemaUpgrades.ApplyAsync(_db.Context);
+
+        var user = new backend.Models.User { Email = "ana@example.com", DisplayName = "Ana" };
+        _db.Context.Users.Add(user);
+        await _db.Context.SaveChangesAsync();
+
+        _db.Context.AiProfileResults.Add(new backend.Models.AiProfileResult
+        {
+            UserId = user.Id, SourceHash = "abc", PersonId = "A", Language = "es",
+        });
+        await _db.Context.SaveChangesAsync();
+
+        // Otro idioma de la misma persona sí entra…
+        _db.Context.AiProfileResults.Add(new backend.Models.AiProfileResult
+        {
+            UserId = user.Id, SourceHash = "abc", PersonId = "A", Language = "en",
+        });
+        await _db.Context.SaveChangesAsync();
+
+        // …pero el mismo idioma otra vez, no: es el índice único que hace idempotente el perfil.
+        _db.Context.AiProfileResults.Add(new backend.Models.AiProfileResult
+        {
+            UserId = user.Id, SourceHash = "abc", PersonId = "A", Language = "es",
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => _db.Context.SaveChangesAsync());
+    }
+
     [Theory]
     [InlineData("ExternalPlanId")]
     [InlineData("ExternalPayerId")]

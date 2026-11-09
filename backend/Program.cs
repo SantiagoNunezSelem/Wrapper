@@ -97,6 +97,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddHttpClient<GoogleAiClient>();
 builder.Services.AddScoped<AiMetricService>();
+builder.Services.AddScoped<AiProfileService>();
 builder.Services.AddHttpClient<MercadoPagoClient>();
 builder.Services.AddSingleton<MercadoPagoSignatureValidator>();
 // Remembers what has actually reached the webhook, including the notifications the
@@ -580,7 +581,11 @@ app.MapPost("/api/ai/consent", [Authorize] async (
         return Results.Unauthorized();
     }
 
+    // One modal, one yes: it covers the keyword-hit metrics and the personality profiles
+    // together. Each keeps its own stamp, though — an account that agreed to the first
+    // scope back when it was the only one is not carried over to the second, it is asked.
     user.AiConsentAtUtc ??= DateTime.UtcNow;
+    user.AiProfileConsentAtUtc ??= DateTime.UtcNow;
     user.UpdatedAtUtc = DateTime.UtcNow;
     await db.SaveChangesAsync(cancellationToken);
 
@@ -760,6 +765,83 @@ app.MapPost("/api/ai/metrics/retry", [Authorize] async (
     // stored cooldown has elapsed — the button can't be used to hammer the quota.
     var results = await service.RetryFailedAsync(access.User.Id, request.SourceHash, cancellationToken);
     return Results.Ok(new AiMetricsResponse(results));
+}).RequireRateLimiting("ai");
+
+// Personality profiles. Same door as the metrics above — Pro first, so a free user's
+// request costs nothing — but with a consent of its own: this one sends a sample of
+// messages, not just the keyword hits.
+app.MapGet("/api/ai/profiles", [Authorize] async (
+    string sourceHash,
+    string? language,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    AiProfileService service,
+    CancellationToken cancellationToken) =>
+{
+    var access = await AiAccess.EvaluateAsync(principal, db, cancellationToken);
+    if (access.Failure is not null)
+    {
+        return access.Failure;
+    }
+
+    if (!IsValidSourceHash(sourceHash))
+    {
+        return Results.BadRequest(new { message = "A valid sourceHash is required." });
+    }
+
+    return Results.Ok(new AiProfilesResponse(await service.GetAsync(access.User!.Id, sourceHash, language, cancellationToken)));
+});
+
+app.MapPost("/api/ai/profiles", [Authorize] async (
+    AiProfilesRequest request,
+    ClaimsPrincipal principal,
+    AppDbContext db,
+    AiProfileService service,
+    CancellationToken cancellationToken) =>
+{
+    var access = await AiAccess.EvaluateAsync(principal, db, cancellationToken);
+    if (access.Failure is not null)
+    {
+        return access.Failure;
+    }
+
+    if (access.User!.AiProfileConsentAtUtc is null)
+    {
+        return Results.Json(
+            new { message = "AI profiles have not been authorized by this user.", code = "consent_required" },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (!IsValidSourceHash(request.SourceHash))
+    {
+        return Results.BadRequest(new { message = "A valid SourceHash is required." });
+    }
+
+    // The browser profiles at most the most active few. A longer list is not a real client,
+    // and every entry is a Gemini call.
+    if (request.People is { Count: > AiProfileService.MaxPeoplePerRequest })
+    {
+        return Results.BadRequest(new { message = "Too many people in one request." });
+    }
+
+    try
+    {
+        var results = await service.AnalyzeAsync(
+            access.User.Id,
+            request.SourceHash,
+            request.Language,
+            request.Group,
+            request.People,
+            cancellationToken);
+
+        return Results.Ok(new AiProfilesResponse(results));
+    }
+    catch (AiDailyLimitReachedException exception)
+    {
+        return Results.Json(
+            new { message = exception.Message, code = "ai_daily_limit_reached" },
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
 }).RequireRateLimiting("ai");
 
 app.MapSubscriptionEndpoints();
@@ -1077,6 +1159,14 @@ record AiRetryRequest(string SourceHash);
 
 record AiMetricsResponse(IReadOnlyList<AiMetricStateDto> Results);
 
+record AiProfilesRequest(
+    string SourceHash,
+    string? Language,
+    Dictionary<string, double>? Group,
+    List<AiProfilePersonInput>? People);
+
+record AiProfilesResponse(IReadOnlyList<AiProfileStateDto> Results);
+
 /// <summary>
 /// Shared entry check for the AI routes: the caller must be a real, signed-in user
 /// with Pro access. Returns the ready-to-return failure instead of throwing so each
@@ -1186,7 +1276,8 @@ record CurrentUserResponse(
     bool PaymentsEnabled,
     string? CheckoutTestPayerEmail,
     string PreferredLanguage,
-    string? AcceptedTermsVersion)
+    string? AcceptedTermsVersion,
+    bool HasAiProfileConsent)
 {
     /// <param name="aiEnabled">
     /// Whether this deployment actually has a Google AI Studio key. Lets the app hide
@@ -1217,7 +1308,8 @@ record CurrentUserResponse(
             mercadoPago.IsConfigured,
             string.IsNullOrWhiteSpace(mercadoPago.TestPayerEmail) ? null : mercadoPago.TestPayerEmail,
             user.PreferredLanguage,
-            user.TermsVersion);
+            user.TermsVersion,
+            user.AiProfileConsentAtUtc is not null);
 }
 
 record UpdateLanguageRequest(string Language);

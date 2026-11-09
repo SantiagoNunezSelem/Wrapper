@@ -1,6 +1,7 @@
 import type { ChatMessage, Language, MetricCard } from '../types'
 import { buildAllAiCandidates, type AiCandidateSet } from './aiCandidates'
 import { buildLandingPreviewCards } from './landingPreview'
+import { buildProfileInput, type ProfileInput } from './personalityAi'
 import {
   applyAiVerdicts,
   computeAnalysisCore,
@@ -20,6 +21,8 @@ export type WorkerRequest =
       sourceHash: string
     }
   | { requestId: number; type: 'aiCandidates'; sourceHash: string; messages?: ChatMessage[] }
+  /** The sample and the numbers the AI writes the personalities from — see buildProfileInput. */
+  | { requestId: number; type: 'profileInput'; sourceHash: string; messages?: ChatMessage[] }
   | {
       requestId: number
       type: 'applyAi'
@@ -46,6 +49,7 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { requestId: number; type: 'analyze'; core: AnalysisCore }
   | { requestId: number; type: 'aiCandidates'; candidateSets: AiCandidateSet[] }
+  | { requestId: number; type: 'profileInput'; input: ProfileInput }
   | { requestId: number; type: 'applyAi'; core: AnalysisCore }
   | { requestId: number; type: 'wordSearch'; count: number; countsByParticipant: Record<string, number> }
   | { requestId: number; type: 'landingPreview'; cards: MetricCard[] }
@@ -135,6 +139,16 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
     }
 
     return { requestId, type: 'aiCandidates', candidateSets: buildAllAiCandidates(messages) }
+  }
+
+  if (request.type === 'profileInput') {
+    const messages = messagesFor(request.sourceHash, request.messages)
+
+    if (!messages) {
+      return { requestId, type: 'cacheMiss' }
+    }
+
+    return { requestId, type: 'profileInput', input: buildProfileInput(messages) }
   }
 
   const messages = messagesFor(request.sourceHash, request.messages)
