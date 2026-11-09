@@ -38,9 +38,8 @@ const PER_PARTICIPANT_TOP_LIMIT = 15
  */
 const TONOPICANTE_EXAMPLE_LIMIT = 50
 const TONOPICANTE_PER_PARTICIPANT_LIMIT = 25
-/** Same idea as TONOPICANTE_EXAMPLE_LIMIT, for "Qué tan tensa está la conversación"
- * (redflags): how many AI-confirmed + structural (silence) examples the detail view
- * shows in total. */
+/** Same idea as TONOPICANTE_EXAMPLE_LIMIT, for "Red Flags" (redflags): how many
+ * AI-confirmed + structural (silence) examples the detail view shows in total. */
 const REDFLAGS_EXAMPLE_LIMIT = 50
 /**
  * Long-silence examples are all structurally identical ("nadie contestó por un
@@ -757,8 +756,8 @@ const metricMeta: MetaDictionary = {
     en: { title: 'The words that come up the most', description: 'Advanced Word Cloud', preview: 'Personal cloud and search per participant.' },
   },
   redflags: {
-    es: { title: 'Qué tan tensa está la conversación', description: 'Detector de Red Flags', preview: 'Desglose de patrones y momentos señalados.' },
-    en: { title: 'How tense the conversation gets', description: 'Red Flag Detector', preview: 'Pattern breakdown and flagged moments.' },
+    es: { title: 'Red Flags', description: 'Detector de Red Flags', preview: 'Desglose de patrones y momentos señalados.' },
+    en: { title: 'Red Flags', description: 'Red Flag Detector', preview: 'Pattern breakdown and flagged moments.' },
   },
   arrepentido: {
     es: { title: 'Quién borra más mensajes después de mandarlos', description: 'El Arrepentido', preview: 'Evolución de los borrados a lo largo del tiempo.' },
@@ -785,8 +784,8 @@ const metricMeta: MetaDictionary = {
     en: { title: 'Who writes the most in ALL CAPS', description: 'The Dramatic One', preview: "Each participant's top 3 loudest messages." },
   },
   tonopicante: {
-    es: { title: 'Quién manda los mensajes más subidos de tono', description: 'El Tono Picante', preview: 'Horarios preferidos, palabras más usadas y los mensajes exactos.' },
-    en: { title: 'Who sends the most suggestive messages', description: 'The Spicy Tone', preview: 'Preferred hours, the most used words, and the exact messages.' },
+    es: { title: 'Mensajes +18', description: 'El Tono Picante', preview: 'Horarios preferidos, palabras más usadas y los mensajes exactos.' },
+    en: { title: '18+ messages', description: 'The Spicy Tone', preview: 'Preferred hours, the most used words, and the exact messages.' },
   },
   curador: {
     es: { title: 'Quién comparte más videos y links', description: 'El Curador de Contenidos', preview: 'Categorías de contenido compartidas por integrante.' },
@@ -935,19 +934,24 @@ const freeMetricEntries: MetricEntry[] = [
   { id: 'arrepentido', tier: 'free', accent: 'tier-slate', compute: metricArrepentido },
 ]
 
+/**
+ * The order the Pro cards appear in. `interleave` (useVistazo) alternates them one-for-one
+ * with the free ones, so moving an entry here moves its card and nothing else: the
+ * free/Pro rhythm of the list stays as it was.
+ */
 const vipMetricEntries: MetricEntry[] = [
   { id: PROFILE_METRIC_ID, tier: 'vip', accent: 'tier-violet', compute: metricPersonalidades },
+  { id: 'redflags', tier: 'vip', accent: 'tier-red', compute: metricRedflags },
+  { id: 'tonopicante', tier: 'vip', accent: 'tier-magenta', compute: metricTonoPicante },
   { id: 'clavavistos', tier: 'vip', accent: 'tier-purple', compute: metricClavavistos },
   { id: 'inactividad', tier: 'vip', accent: 'tier-slate', compute: metricInactividad },
-  { id: 'wordcloud', tier: 'vip', accent: 'tier-cyan', compute: metricWordcloud },
-  { id: 'redflags', tier: 'vip', accent: 'tier-red', compute: metricRedflags },
   { id: 'rompehielo', tier: 'vip', accent: 'tier-blue', compute: metricRompehielo },
-  { id: 'top-dias', tier: 'vip', accent: 'tier-indigo', compute: metricTopDias },
   { id: 'metralleta', tier: 'vip', accent: 'tier-rose', compute: metricMetralleta },
   { id: 'interrogador', tier: 'vip', accent: 'tier-orange', compute: metricInterrogador },
   { id: 'dramatico', tier: 'vip', accent: 'tier-gold', compute: metricDramatico },
-  { id: 'tonopicante', tier: 'vip', accent: 'tier-magenta', compute: metricTonoPicante },
+  { id: 'top-dias', tier: 'vip', accent: 'tier-indigo', compute: metricTopDias },
   { id: 'curador', tier: 'vip', accent: 'tier-sky', compute: metricCurador },
+  { id: 'wordcloud', tier: 'vip', accent: 'tier-cyan', compute: metricWordcloud },
 ]
 
 /** Computes one tier's cards metric-by-metric (instead of one synchronous batch),

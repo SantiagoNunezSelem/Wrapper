@@ -62,7 +62,9 @@ const labelNames: Record<Language, Record<PersonalityLabelId, string>> = {
   es: {
     confianzudo: 'Confianzudo',
     timido: 'Tímido',
-    suizo: 'Suizo',
+    // The id stays `suizo` — stored results and the backend's list use it — but nobody reads
+    // "Suizo" as "neutral" without being told, and a card has to explain itself.
+    suizo: 'Neutral',
     agresivo: 'Agresivo',
     bromista: 'Bromista',
     intenso: 'Intenso',

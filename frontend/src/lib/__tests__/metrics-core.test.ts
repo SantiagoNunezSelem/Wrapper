@@ -173,6 +173,29 @@ describe('computeAnalysisCore', () => {
     }
   })
 
+  it('ordena las tarjetas Pro como se pidió; el intercalado con las gratis lo hace la lista, no el orden', async () => {
+    // Las que no tienen datos en este chat se descartan, así que se compara el orden relativo.
+    const wanted = [
+      'personalidades',
+      'redflags',
+      'tonopicante',
+      'clavavistos',
+      'inactividad',
+      'rompehielo',
+      'metralleta',
+      'interrogador',
+      'dramatico',
+      'top-dias',
+      'curador',
+      'wordcloud',
+    ]
+    const core = await computeAnalysisCore('Chat', sampleChat(), 'es', 'hash')
+    const ids = core.rawVipMetrics.map((card) => card.id)
+
+    expect(ids.length).toBeGreaterThanOrEqual(4)
+    expect(ids).toEqual(wanted.filter((id) => ids.includes(id)))
+  })
+
   it('reporta el progreso una vez por métrica, hasta el total', async () => {
     const onProgress = vi.fn()
     await computeAnalysisCore('Chat', sampleChat(), 'es', 'hash', onProgress)

@@ -5,6 +5,7 @@ import { ProfilesPanel, type ProfilesCopy } from '../ProfilesPanel'
 
 const copy: ProfilesCopy = {
   basedOn: 'Según {count} mensajes',
+  numberLocale: 'es-AR',
   aiBadge: 'IA',
   localBadge: 'Análisis local',
   also: 'También',
@@ -38,7 +39,17 @@ describe('ProfilesPanel', () => {
     expect(screen.getByRole('heading', { name: 'Ana' })).toBeInTheDocument()
     expect(screen.getByText('Curioso')).toBeInTheDocument()
     expect(screen.getByText('Pregunta todo: siempre quiere saber más.')).toBeInTheDocument()
-    expect(screen.getByText(`Según ${(1234).toLocaleString()} mensajes`)).toBeInTheDocument()
+    expect(screen.getByText(`Según ${(1234).toLocaleString('es-AR')} mensajes`)).toBeInTheDocument()
+  })
+
+  it('escribe la cantidad de mensajes con el idioma de la app y no con el del teléfono', () => {
+    // 19431 tiene cinco cifras: en cualquier versión de ICU lleva separador de miles.
+    const { rerender } = render(<ProfilesPanel profiles={[profile({ messageCount: 19431 })]} copy={copy} />)
+    expect(screen.getByText('Según 19.431 mensajes')).toBeInTheDocument()
+
+    const english: ProfilesCopy = { ...copy, basedOn: 'Based on {count} messages', numberLocale: 'en-US' }
+    rerender(<ProfilesPanel profiles={[profile({ messageCount: 19431 })]} copy={english} />)
+    expect(screen.getByText('Based on 19,431 messages')).toBeInTheDocument()
   })
 
   it('dibuja el radar de cada persona', () => {

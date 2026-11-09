@@ -119,6 +119,12 @@ describe('las etiquetas', () => {
     expect(personalityLabelName('timido', 'es')).toBe('Tímido')
     expect(personalityLabelName('suizo', 'en')).toBe('Neutral')
   })
+
+  it('el que no toma partido se llama "Neutral" en español también: "Suizo" no se entendía sin explicación', () => {
+    // El id sigue siendo `suizo` (los resultados guardados y la lista del backend lo usan);
+    // lo que se lee en pantalla es el nombre.
+    expect(personalityLabelName('suizo', 'es')).toBe('Neutral')
+  })
 })
 
 describe('rankScores', () => {
@@ -429,7 +435,7 @@ describe('profilesFromStats — el etiquetado', () => {
     expect(first.labelId).toBe(expected)
   })
 
-  it('"Suizo" es quien no se mete en los líos de un grupo que sí se mete', () => {
+  it('"Neutral" (id suizo) es quien no se mete en los líos de un grupo que sí se mete', () => {
     const loud = { conflictRate: 0.2, capsRate: 0.25, exclRate: 0.8, complaintRate: 0.2 }
     const stats = [
       stat('Neutral', { conflictRate: 0, capsRate: 0, exclRate: 0, complaintRate: 0, laughRate: 0.1 }),

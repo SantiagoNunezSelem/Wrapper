@@ -5,6 +5,11 @@ import { ChartRenderer } from './charts/ChartRenderer'
 export interface ProfilesCopy {
   /** Contains `{count}`, replaced with how many messages the reading is based on. */
   basedOn: string
+  /**
+   * BCP 47 tag the count is written with — "19.431" in es-AR, "19,431" in en-US. Without it
+   * the number follows the device, and a Spanish screen on an English phone prints the comma.
+   */
+  numberLocale: string
   /** Badge on a profile the AI wrote. */
   aiBadge: string
   /** Badge on a profile the browser's own reading wrote — only ever the fallback. */
@@ -54,7 +59,7 @@ export function ProfilesPanel({ profiles, copy }: { profiles: ParticipantProfile
           </div>
 
           <p className="profile-foot">
-            {copy.basedOn.replace('{count}', profile.messageCount.toLocaleString())}
+            {copy.basedOn.replace('{count}', profile.messageCount.toLocaleString(copy.numberLocale))}
           </p>
         </article>
       ))}
