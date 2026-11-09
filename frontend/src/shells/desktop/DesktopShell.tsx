@@ -677,6 +677,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             searchPlaceholder: copy.searchPlaceholder,
             freeUnlockLoading: copy.freeUnlock.loading,
             wordCloudSearch: copy.wordCloudSearch,
+            profiles: copy.profiles,
           }}
           ai={aiPanel}
           freeUnlock={freeUnlockFor(selectedMetric)}

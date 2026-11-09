@@ -3,10 +3,12 @@ import {
   ApiError,
   acceptTerms,
   analyzeAiMetrics,
+  analyzeAiProfiles,
   cancelSubscription,
   createShare,
   deleteAnalysis,
   getAiMetrics,
+  getAiProfiles,
   getCurrentUser,
   getFreeUnlocks,
   getSharedStory,
@@ -301,6 +303,48 @@ describe('métricas con IA', () => {
 
     expect(lastCall().url).toBe(`${BASE}/api/ai/metrics?sourceHash=a%20b%26c`)
     expect(lastCall().init.method).toBe('GET')
+  })
+
+  it('las personalidades se piden con un POST que no lleva ningún nombre', async () => {
+    respondWith({ results: [{ personId: 'A', status: 'ready' }] })
+
+    await expect(
+      analyzeAiProfiles('tok', {
+        sourceHash: 'abc',
+        language: 'es',
+        group: { share: 0.25 },
+        people: [{ id: 'A', features: { share: 0.3 }, messages: ['hola che'] }],
+      }),
+    ).resolves.toEqual([{ personId: 'A', status: 'ready' }])
+
+    expect(lastCall().url).toBe(`${BASE}/api/ai/profiles`)
+    expect(lastCall().init.method).toBe('POST')
+    expect(lastCall().headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      sourceHash: 'abc',
+      language: 'es',
+      group: { share: 0.25 },
+      people: [{ id: 'A', features: { share: 0.3 }, messages: ['hola che'] }],
+    })
+  })
+
+  it('la lectura de personalidades escapa el hash y manda el idioma', async () => {
+    respondWith({ results: [] })
+    await getAiProfiles('tok', 'a b&c', 'en')
+
+    expect(lastCall().url).toBe(`${BASE}/api/ai/profiles?sourceHash=a%20b%26c&language=en`)
+    expect(lastCall().init.method).toBe('GET')
+  })
+
+  it('un rechazo de las personalidades conserva el código para decidir qué mostrar', async () => {
+    failWith(403, JSON.stringify({ message: 'sin consentimiento', code: 'consent_required' }))
+
+    const error = await captureApiError(
+      analyzeAiProfiles('tok', { sourceHash: 'abc', language: 'es', group: {}, people: [] }),
+    )
+
+    expect(error.status).toBe(403)
+    expect(error.code).toBe('consent_required')
   })
 
   it('el consentimiento es un POST sin cuerpo', async () => {

@@ -5,10 +5,17 @@ import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
 import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
-import { analyzeInWorker, applyAiVerdictsInWorker, buildAiCandidatesInWorker, landingPreviewInWorker } from '../lib/analysisClient'
+import {
+  analyzeInWorker,
+  applyAiVerdictsInWorker,
+  buildAiCandidatesInWorker,
+  buildProfileInputInWorker,
+  landingPreviewInWorker,
+} from '../lib/analysisClient'
 import {
   acceptTerms,
   analyzeAiMetrics,
+  analyzeAiProfiles,
   ApiError,
   cancelSubscription,
   createShare,
@@ -41,19 +48,23 @@ import {
 import { executeRecaptchaV3 } from '../lib/recaptcha'
 import {
   aiMetricIds,
+  applyAiProfiles,
   gateAnalysis,
   gateForStorage,
   isAiMetricId,
+  PROFILE_METRIC_ID,
   regateReplayedFreeMetrics,
   type AiCardStates,
   type AiMetricId,
   type AnalysisCore,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
+import { profileCardState, toProfileOverrides, toProfilePayload, type ProfileInput } from '../lib/personalityAi'
 import { buildSharePayload, readShareSlug, shareUrlFor } from '../lib/shareStory'
 import { takeSharedFile } from '../lib/shareTargetFile'
 import { formatLongWait, useSecondsUntil } from '../lib/useCountdown'
 import type {
+  AiCardState,
   AiMetricStatus,
   AnalysisBundle,
   ChartData,
@@ -224,6 +235,21 @@ export function useVistazo() {
   // Which (chat, language) the AI phase has already been attempted for, so the effect
   // doesn't re-fire when applying the verdicts changes `core`.
   const aiAttemptedFor = useRef<string>('')
+  // The same guard for the personalities, which are asked for separately and under a
+  // consent of their own: an account that agreed to the metrics back when that was the
+  // only scope has the first guard spent and this one still open.
+  const profileAttemptedFor = useRef<string>('')
+  // What the AI is given to write the personalities (the numbers and the scrubbed sample).
+  // Derived from the messages alone, so one build per chat serves the first attempt and
+  // every retry.
+  const profileInputCache = useRef<Map<string, ProfileInput>>(new Map())
+  // The two AI passes end by rewriting the same core. Run side by side, the slower one would
+  // be rebuilt from a core that does not have the faster one's answer yet and quietly undo
+  // it, so their writes take turns (see `enqueueCoreUpdate`).
+  const coreUpdateQueue = useRef<Promise<void>>(Promise.resolve())
+  // How many AI passes are running, so one finishing does not switch the busy flag off
+  // under the other.
+  const aiBusyCount = useRef(0)
   // The consent modal opens by itself once per session, not on every upload.
   const consentPrompted = useRef(false)
 
@@ -243,17 +269,24 @@ export function useVistazo() {
     }
 
     // Local switch off: the cards read as "IA no disponible", which is exactly what they
-    // are right now, rather than falling back to the unverified keyword numbers.
+    // are right now, rather than falling back to the unverified keyword numbers. (The
+    // personalities are the exception: the gate gives that card its local reading.)
     if (devAiDisabled || !user?.aiEnabled) {
-      return everyAiMetric('unavailable')
+      return { ...everyAiMetric('unavailable'), [PROFILE_METRIC_ID]: { status: 'unavailable' } }
     }
+
+    // The personalities answer to their own consent: the metrics' yes was given for
+    // something narrower, so having one says nothing about the other.
+    const profileState: AiCardState = user.hasAiProfileConsent
+      ? (aiStates[PROFILE_METRIC_ID] ?? { status: 'pending' })
+      : { status: 'consent' }
 
     if (!user.hasAiConsent) {
-      return everyAiMetric('consent')
+      return { ...everyAiMetric('consent'), [PROFILE_METRIC_ID]: profileState }
     }
 
-    return aiStates
-  }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, aiStates])
+    return { ...aiStates, [PROFILE_METRIC_ID]: profileState }
+  }, [hasVipAccess, devAiDisabled, user?.aiEnabled, user?.hasAiConsent, user?.hasAiProfileConsent, aiStates])
 
   // Only the unlocks bought for the chat currently on screen — a live upload or a
   // replay from history, whichever is showing. The hash check is what keeps an answer
@@ -462,38 +495,57 @@ export function useVistazo() {
       return
     }
 
-    if (!user?.hasVipAccess || !user.aiEnabled || !user.hasAiConsent) {
+    if (!user?.hasVipAccess || !user.aiEnabled) {
       return
     }
 
+    // Two passes, each under its own consent and its own guard. They are independent: a
+    // chat can have one done and the other still waiting on a yes, and one failing never
+    // touches the other.
     const runKey = `${activeChat.sourceHash}:${language}`
-    if (aiAttemptedFor.current === runKey) {
-      return
+
+    if (user.hasAiConsent && aiAttemptedFor.current !== runKey) {
+      aiAttemptedFor.current = runKey
+      void runAiPhase(token, activeChat, core, { retry: false })
     }
 
-    aiAttemptedFor.current = runKey
-    void runAiPhase(token, activeChat, core, { retry: false })
+    if (user.hasAiProfileConsent && profileAttemptedFor.current !== runKey) {
+      profileAttemptedFor.current = runKey
+      void runProfilePhase(token, activeChat, core)
+    }
     // `runAiPhase` is a plain function declaration in the hook body, so it is a new
     // value on every render: in the array it would re-run this effect on every render,
     // and every run sets state. What actually makes the pass run once per chat+language
     // is the `aiAttemptedFor` guard above, which is what the array is trying to express.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChat, core, token, language, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
+  }, [
+    activeChat,
+    core,
+    token,
+    language,
+    devAiDisabled,
+    user?.hasVipAccess,
+    user?.aiEnabled,
+    user?.hasAiConsent,
+    user?.hasAiProfileConsent,
+  ])
 
   // Asked once per session, and only where it's actionable: a Pro viewer looking at a
-  // chat whose spicy/red-flag cards are waiting on exactly this permission.
+  // chat whose spicy/red-flag/personality cards are waiting on exactly this permission.
+  // Whoever said yes back when the metrics were the only scope is asked again for the wider
+  // one — the personalities send a sample of messages, which that yes never covered.
   useEffect(() => {
     if (consentPrompted.current || !core || devAiDisabled) {
       return
     }
 
-    if (!user?.hasVipAccess || !user.aiEnabled || user.hasAiConsent) {
+    if (!user?.hasVipAccess || !user.aiEnabled || (user.hasAiConsent && user.hasAiProfileConsent)) {
       return
     }
 
     consentPrompted.current = true
     setIsConsentModalOpen(true)
-  }, [core, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent])
+  }, [core, devAiDisabled, user?.hasVipAccess, user?.aiEnabled, user?.hasAiConsent, user?.hasAiProfileConsent])
 
   useEffect(() => {
     if (!pendingPersist || !storageAnalysis) {
@@ -842,6 +894,7 @@ export function useVistazo() {
       }
 
       aiAttemptedFor.current = ''
+      profileAttemptedFor.current = ''
       return next
     })
   }
@@ -964,6 +1017,7 @@ export function useVistazo() {
     setFreeUnlocks(null)
     setPendingFreeUnlockId(null)
     aiAttemptedFor.current = ''
+    profileAttemptedFor.current = ''
   }
 
   function openFilePicker() {
@@ -1132,6 +1186,7 @@ export function useVistazo() {
       // the backend's stored verdicts for free if this chat was analyzed before).
       setAiStates({})
       aiAttemptedFor.current = ''
+      profileAttemptedFor.current = ''
       setActiveChat({ chatName: stripExtension(file.name), messages, sourceHash })
       setPendingPersist(true)
       setSelectedMetricId(null)
@@ -1191,7 +1246,7 @@ export function useVistazo() {
     // aiCardStates), so the rest of the dashboard should stay fully interactive while
     // it runs in the background — whether it started automatically after upload or was
     // triggered by hand from a card's consent/retry button.
-    setIsAiBusy(true)
+    beginAiWork()
 
     try {
       const candidateSets = await getAiCandidates(chat)
@@ -1238,23 +1293,11 @@ export function useVistazo() {
       setAiStates((current) => ({ ...current, ...nextStates }))
 
       if (Object.keys(verdicts).length > 0) {
-        const enriched = await applyAiVerdictsInWorker(
-          currentCore,
-          chat.sourceHash,
-          language,
-          chat.messages,
-          verdicts,
-        )
-
-        if (isStale()) {
-          return
-        }
-
-        analysisCoreCache.current.set(runKey, enriched)
-        setCore(enriched)
         // Store the enriched bundle so reopening this chat from history shows the
         // verified numbers without asking the model anything again.
-        setPendingPersist(true)
+        await enqueueCoreUpdate(runKey, isStale, currentCore, (latest) =>
+          applyAiVerdictsInWorker(latest, chat.sourceHash, language, chat.messages, verdicts),
+        )
       }
 
       setError(results.some((result) => result.status === 'failed') ? copy.aiPartialError : '')
@@ -1274,8 +1317,142 @@ export function useVistazo() {
       }))
       setError(copy.aiPartialError)
     } finally {
-      setIsAiBusy(false)
+      endAiWork()
     }
+  }
+
+  /** Counts the AI passes in flight, so the busy flag stays on until the last one ends. */
+  function beginAiWork() {
+    aiBusyCount.current += 1
+    setIsAiBusy(true)
+  }
+
+  function endAiWork() {
+    aiBusyCount.current = Math.max(0, aiBusyCount.current - 1)
+    setIsAiBusy(aiBusyCount.current > 0)
+  }
+
+  /**
+   * Rewrites the core with what an AI pass found, one pass at a time. Each update starts from
+   * the *latest* core, not the one its pass began with: the metrics and the personalities
+   * finish in whatever order the network gives them, and an update built on a core that is
+   * already out of date would put it back.
+   */
+  function enqueueCoreUpdate(
+    runKey: string,
+    isStale: () => boolean,
+    fallback: AnalysisCore,
+    update: (latest: AnalysisCore) => Promise<AnalysisCore> | AnalysisCore,
+  ): Promise<void> {
+    const next = coreUpdateQueue.current.then(async () => {
+      if (isStale()) {
+        return
+      }
+
+      const updated = await update(analysisCoreCache.current.get(runKey) ?? fallback)
+
+      if (isStale()) {
+        return
+      }
+
+      analysisCoreCache.current.set(runKey, updated)
+      setCore(updated)
+      setPendingPersist(true)
+    })
+
+    // A failed update must not jam the queue for the next one; the caller still sees it.
+    coreUpdateQueue.current = next.catch(() => undefined)
+    return next
+  }
+
+  /** What the AI is given for the personalities depends on the messages alone: one build per chat. */
+  async function getProfileInput(chat: ActiveChat): Promise<ProfileInput> {
+    const cached = profileInputCache.current.get(chat.sourceHash)
+
+    if (cached) {
+      return cached
+    }
+
+    const built = await buildProfileInputInWorker(chat.sourceHash, chat.messages)
+    profileInputCache.current.set(chat.sourceHash, built)
+    return built
+  }
+
+  /**
+   * Asks for the personalities and folds the answer into the core. The card's state is its
+   * own: this can fail, or be waiting on a consent, while every metric is fine — and the
+   * other way round. A person the AI could not write for keeps the local reading, which is
+   * already in the core; only the people it did write for are changed.
+   */
+  async function runProfilePhase(authToken: string, chat: ActiveChat, currentCore: AnalysisCore) {
+    const runKey = `${chat.sourceHash}:${language}`
+    const isStale = () => profileAttemptedFor.current !== runKey
+
+    beginAiWork()
+
+    try {
+      const input = await getProfileInput(chat)
+
+      // Nobody wrote enough to be worth a call: the local reading is the whole card, and
+      // there was no AI attempt that could have failed.
+      if (input.people.length === 0) {
+        setAiStates((current) => ({ ...current, [PROFILE_METRIC_ID]: { status: 'ready' } }))
+        return
+      }
+
+      const results = await analyzeAiProfiles(authToken, {
+        sourceHash: chat.sourceHash,
+        language,
+        ...toProfilePayload(input),
+      })
+
+      if (isStale()) {
+        return
+      }
+
+      // The core first, the card's state after: the card opens when its state says so, and
+      // by then it must already hold what the AI wrote. The other order would show the local
+      // reading for an instant, as if it were the answer.
+      const overrides = toProfileOverrides(input, results)
+
+      if (overrides.size > 0) {
+        await enqueueCoreUpdate(runKey, isStale, currentCore, (latest) => applyAiProfiles(latest, language, overrides))
+      }
+
+      if (isStale()) {
+        return
+      }
+
+      setAiStates((current) => ({ ...current, [PROFILE_METRIC_ID]: profileCardState(input, results) }))
+    } catch (caught) {
+      console.error(caught)
+
+      if (isStale()) {
+        return
+      }
+
+      // The request never landed (offline, server down, consent revoked, daily limit). The
+      // card keeps its local reading and says why; everything else stays up.
+      const code = caught instanceof ApiError ? caught.code : undefined
+      setAiStates((current) => ({
+        ...current,
+        [PROFILE_METRIC_ID]: code === 'consent_required' ? { status: 'consent' } : { status: 'failed', errorCode: code ?? null },
+      }))
+    } finally {
+      endAiWork()
+    }
+  }
+
+  function handleProfileRetry() {
+    if (!token || !activeChat || !core) {
+      // Nothing in memory to build the sample from — ask for the chat instead of firing a
+      // retry whose answer could never be shown.
+      openFilePicker()
+      return
+    }
+
+    profileAttemptedFor.current = `${activeChat.sourceHash}:${language}`
+    void runProfilePhase(token, activeChat, core)
   }
 
   function handleAiRetry() {
@@ -1299,8 +1476,9 @@ export function useVistazo() {
     try {
       setUser(await grantAiConsent(token))
       setIsConsentModalOpen(false)
-      // Clear the guard so the AI effect fires for the chat already on screen.
+      // Clear the guards so the AI effect fires for the chat already on screen.
       aiAttemptedFor.current = ''
+      profileAttemptedFor.current = ''
     } catch (caught) {
       console.error(caught)
       setError(caught instanceof Error ? caught.message : copy.loadError)
@@ -1530,11 +1708,13 @@ export function useVistazo() {
             canRetry: canRetryAi,
             isBusy: isAiBusy,
             onRetry: handleAiRetry,
+            onRetryProfiles: handleProfileRetry,
             onConsent: () => setIsConsentModalOpen(true),
           }
         : undefined,
-    // handleAiRetry se redeclara en cada render, pero lee todo de refs y de estado
-    // que ya están en esta lista; incluirlo anularía el memo sin agregar frescura.
+    // handleAiRetry y handleProfileRetry se redeclaran en cada render, pero leen todo de
+    // refs y de estado que ya están en esta lista; incluirlos anularía el memo sin
+    // agregar frescura.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasVipAccess, copy.ai, canRetryAi, isAiBusy],
   )

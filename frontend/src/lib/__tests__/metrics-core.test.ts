@@ -128,8 +128,8 @@ describe('createMetricContext', () => {
 })
 
 describe('computeAnalysisCore', () => {
-  it('cuenta 24 métricas entre gratis y Pro', () => {
-    expect(totalMetricCount).toBe(24)
+  it('cuenta 25 métricas entre gratis y Pro', () => {
+    expect(totalMetricCount).toBe(25)
   })
 
   it('devuelve un núcleo vacío y explícito cuando no hay mensajes reales', async () => {

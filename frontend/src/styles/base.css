@@ -4113,3 +4113,147 @@ button.chat-bubble-divider.is-expandable:hover {
   flex-shrink: 0;
   accent-color: var(--vz-green-deep);
 }
+
+/* --- Personalidades ("Quién es Quién") ---------------------------------------- */
+
+/* Una ficha por persona. Se acomoda sola a lo ancho disponible: dos o tres columnas en el
+   modal de desktop, una en la hoja del teléfono. */
+.profile-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--vz-radius-sm);
+  background: var(--vz-surface-1);
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* El color fijo de la persona, el mismo que tiene en todas las demás métricas. */
+.profile-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-text-faint);
+}
+
+.profile-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--vz-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.profile-source {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-dim);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.profile-source.is-ai {
+  background: rgba(30, 215, 96, 0.16);
+  color: var(--vz-green-deep);
+}
+
+.profile-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.profile-label {
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: var(--vz-text-strong);
+}
+
+.profile-label-secondary {
+  font-size: 0.8rem;
+  color: var(--vz-text-muted);
+}
+
+.profile-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--vz-text-soft);
+}
+
+.profile-radar {
+  display: flex;
+  justify-content: center;
+}
+
+.profile-foot {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--vz-text-dim);
+}
+
+/* El aviso sobre una tarjeta que muestra su lectura local porque la IA falló. No es un
+   bloqueo —la tarjeta tiene contenido real—, así que se lee como un estado con una acción,
+   en el mismo verde que el resto de lo que es de la IA. */
+.ai-fallback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(30, 215, 96, 0.28);
+  border-radius: var(--vz-radius-sm);
+  background: rgba(30, 215, 96, 0.1);
+}
+
+.ai-fallback-text {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.ai-fallback-text strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--vz-text-strong);
+}
+
+.ai-fallback-text p {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--vz-text-muted);
+}
+
+/* La marca chica sobre la tarjeta o la fila: la lectura local nunca se confunde con la de la IA. */
+.ai-fallback-chip {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: var(--vz-radius-pill);
+  background: var(--vz-surface-3);
+  color: var(--vz-text-dim);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}

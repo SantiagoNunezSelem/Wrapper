@@ -19,6 +19,13 @@ import type {
   WordCloudDatum,
 } from '../types'
 import { colorForIndex } from '../components/charts/palette'
+import {
+  extractFeatures,
+  mergeProfileOverrides,
+  profilesFromStats,
+  profilesResult,
+  type ProfileOverride,
+} from './personality'
 
 const GROUP_CAP = 40
 const PER_PARTICIPANT_TOP_LIMIT = 15
@@ -519,6 +526,61 @@ export function isAiMetricId(metricId: string): metricId is AiMetricId {
 }
 
 /**
+ * The personalities card. It depends on the AI like the two metrics above, but it is not one
+ * of them: those judge keyword hits and answer with a list of ids (`aiMetricIds`), while this
+ * one hands the model a sample of messages and gets prose back. It has its own id, its own
+ * request and its own consent — and one rule the others deliberately do not have: when the AI
+ * cannot do it, the card shows the local reading instead of staying locked (see `gateCard`).
+ */
+export const PROFILE_METRIC_ID = 'personalidades'
+
+/** Every card whose content waits on the AI. */
+export type AiCardId = AiMetricId | typeof PROFILE_METRIC_ID
+
+export function isAiCardId(cardId: string): cardId is AiCardId {
+  return isAiMetricId(cardId) || cardId === PROFILE_METRIC_ID
+}
+
+/**
+ * Cards that fall back to their own local reading when the AI fails, instead of locking.
+ * The keyword-hit metrics must never do this: their local numbers are the false positives
+ * the AI exists to remove. The personalities' local reading is a different thing — a
+ * complete answer from the same measurements, less detailed, not a noisy version of it.
+ */
+const aiFallbackCardIds: ReadonlySet<string> = new Set([PROFILE_METRIC_ID])
+
+/** Whether this card shows its own local reading in place of an AI answer that failed. */
+function fallsBackToLocal(cardId: string, state: AiCardState | undefined): boolean {
+  return aiFallbackCardIds.has(cardId) && (state?.status === 'failed' || state?.status === 'unavailable')
+}
+
+/**
+ * A card that is waiting on the AI with nothing to show: not ready, and not one of the cards
+ * that has a local reading to fall back on. The keyword-hit metrics are blocked in every
+ * state but `ready`; the personalities stay open when the AI fails.
+ */
+export function isAiBlocked(card: MetricCard): boolean {
+  return Boolean(card.ai && card.ai.status !== 'ready' && !fallsBackToLocal(card.id, card.ai))
+}
+
+/**
+ * A card that is showing its local reading because the AI failed — the one the interface has
+ * to say so about, so that reading is never taken for the AI's.
+ */
+export function isUsingLocalReading(card: MetricCard): boolean {
+  return fallsBackToLocal(card.id, card.ai) && Boolean(card.basic)
+}
+
+/**
+ * Whether a message reads as a reproach or a clash, for the personalities. The same
+ * dictionaries the red-flags metric starts from, without its AI verdict: here a hit is one
+ * input among sixteen measures, not a claim about the chat.
+ */
+export function matchesConflict(text: string): boolean {
+  return matchAiKeywordExplicit('redflags', text) !== null || matchAiKeywordGeneral('redflags', text) !== null
+}
+
+/**
  * The exact dictionary phrase that made this message a candidate for an AI-backed
  * metric, restricted to the strongest tier — for tonopicante, the crude/vulgar words
  * (see `flirtyCrudeWords`): a lone "teta" is far more likely to be genuinely +18 than a
@@ -614,7 +676,7 @@ export type AiVerdicts = Partial<Record<AiMetricId, AiMetricVerdict>>
 
 /** Per-metric AI state handed to `gateAnalysis`. A metric missing from this map is
  * treated as still pending, which keeps it locked rather than leaking raw numbers. */
-export type AiCardStates = Partial<Record<AiMetricId, AiCardState>>
+export type AiCardStates = Partial<Record<AiCardId, AiCardState>>
 
 const weekdayLabels: Record<Language, string[]> = {
   es: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
@@ -729,6 +791,10 @@ const metricMeta: MetaDictionary = {
   curador: {
     es: { title: 'Quién comparte más videos y links', description: 'El Curador de Contenidos', preview: 'Categorías de contenido compartidas por integrante.' },
     en: { title: 'Who shares the most videos and links', description: 'The Content Curator', preview: "Content categories shared by each participant." },
+  },
+  personalidades: {
+    es: { title: 'La personalidad de cada integrante', description: 'Quién es Quién', preview: 'Una personalidad y la razón, para cada integrante del chat.' },
+    en: { title: 'The personality of each participant', description: "Who's Who", preview: 'A personality, and the reason why, for every participant in the chat.' },
   },
 }
 
@@ -870,6 +936,7 @@ const freeMetricEntries: MetricEntry[] = [
 ]
 
 const vipMetricEntries: MetricEntry[] = [
+  { id: PROFILE_METRIC_ID, tier: 'vip', accent: 'tier-violet', compute: metricPersonalidades },
   { id: 'clavavistos', tier: 'vip', accent: 'tier-purple', compute: metricClavavistos },
   { id: 'inactividad', tier: 'vip', accent: 'tier-slate', compute: metricInactividad },
   { id: 'wordcloud', tier: 'vip', accent: 'tier-cyan', compute: metricWordcloud },
@@ -999,6 +1066,34 @@ export async function applyAiVerdicts(
     .filter((card) => card.hasData)
 
   return { ...core, rawVipMetrics }
+}
+
+/**
+ * Folds the profiles the AI wrote into the personalities card, leaving everyone it did not
+ * write one for with the local reading. Pure and instant — the card already holds the
+ * measured radar and numbers for every person, so there is nothing to recompute and nothing
+ * for the worker to do.
+ */
+export function applyAiProfiles(
+  core: AnalysisCore,
+  language: Language,
+  overrides: ReadonlyMap<string, ProfileOverride>,
+): AnalysisCore {
+  if (overrides.size === 0) {
+    return core
+  }
+
+  return {
+    ...core,
+    rawVipMetrics: core.rawVipMetrics.map((card) => {
+      if (card.id !== PROFILE_METRIC_ID || !card.detail?.profiles) {
+        return card
+      }
+
+      const result = profilesResult(mergeProfileOverrides(card.detail.profiles, overrides, language), language)
+      return { ...card, hasData: result.hasData, basic: result.basic, detail: result.detail }
+    }),
+  }
 }
 
 /** Cheap: just decides which cards' `basic`/`detail` are visible for this viewer.
@@ -1176,15 +1271,20 @@ function gateCard(
   aiStates: AiCardStates,
   freeUnlockedIds: ReadonlySet<string>,
 ): MetricCard {
-  const aiState: AiCardState | undefined = isAiMetricId(card.id)
+  const aiState: AiCardState | undefined = isAiCardId(card.id)
     ? aiStates[card.id] ?? { status: 'pending' }
     : undefined
 
+  // The one exception to the rule below: a card with a local reading of its own keeps
+  // showing it when the AI fails (or this installation has no AI at all). Waiting
+  // (`pending`) and not-yet-allowed (`consent`) are different — nothing failed, so the
+  // card stays closed until the AI has had its turn, and the local reading is never
+  // shown as if it were the real answer.
   // An AI metric without a verdict must never fall back to the raw keyword numbers:
   // those false positives are the whole reason the AI pass exists. It stays locked and
   // the card shows why — which is also what keeps one failed metric from taking the
   // other twenty-three down with it.
-  const aiUnresolved = aiState !== undefined && aiState.status !== 'ready'
+  const aiUnresolved = aiState !== undefined && aiState.status !== 'ready' && !fallsBackToLocal(card.id, aiState)
   const basicLocked = (card.tier === 'vip' && !hasVipAccess) || aiUnresolved
   // A daily free unlock only ever opens a free-tier card: the paid metrics are the
   // product, so the tier check stays here even though the server enforces it too.
@@ -2412,6 +2512,21 @@ function metricTonoPicante(ctx: MetricContext, verdict?: AiMetricVerdict): Metri
       groupsLabel: language === 'es' ? 'Los mensajes más picantes de cada uno' : "Each participant's spiciest messages",
     },
   }
+}
+
+/**
+ * "La personalidad de cada integrante", read locally. With Pro and the AI's consent the card
+ * is rewritten with what the AI wrote (`applyAiProfiles`); this is what it holds until then,
+ * and what it keeps for anyone the AI could not write a profile for. See lib/personality.ts.
+ */
+function metricPersonalidades(ctx: MetricContext): MetricResult {
+  const stats = extractFeatures(ctx.chatMessages, { isConflict: matchesConflict })
+  const profiles = profilesFromStats(stats, ctx.language).map((profile) => ({
+    ...profile,
+    color: colorForParticipant(profile.name, ctx.participants),
+  }))
+
+  return profilesResult(profiles, ctx.language)
 }
 
 function metricCurador(ctx: MetricContext): MetricResult {

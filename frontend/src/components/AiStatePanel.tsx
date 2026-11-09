@@ -13,11 +13,22 @@ export interface AiPanelCopy {
   needsUpload: string
   consentTitle: string
   consentBody: string
+  /** The same ask, for the personalities card: it is not about false positives. */
+  consentBodyProfiles: string
   consentCta: string
   unavailableTitle: string
   unavailableBody: string
   pendingTitle: string
   pendingBody: string
+  pendingBodyProfiles: string
+  /** Heading of the notice over a card that is showing its local reading. */
+  fallbackTitle: string
+  /** What the notice says the card is showing instead. */
+  fallbackBody: string
+  /** The notice's reason when this installation simply has no AI configured. */
+  fallbackUnavailable: string
+  /** Small chip on the card itself, so the local reading is never mistaken for the AI's. */
+  fallbackBadge: string
 }
 
 /** Everything a card needs to render the AI state, passed down as one unit. Present
@@ -28,6 +39,8 @@ export interface AiPanelProps {
   canRetry: boolean
   isBusy: boolean
   onRetry: () => void
+  /** Retries just the personalities, which are asked for separately from the metrics. */
+  onRetryProfiles: () => void
   onConsent: () => void
 }
 
@@ -52,7 +65,8 @@ export function AiStatePanel({
   onRetry,
   onConsent,
   tall = false,
-}: AiPanelProps & { state: AiCardState; tall?: boolean }) {
+  forProfiles = false,
+}: Omit<AiPanelProps, 'onRetryProfiles'> & { state: AiCardState; tall?: boolean; forProfiles?: boolean }) {
   const secondsLeft = useSecondsUntil(state.status === 'failed' ? state.retryAvailableAtUtc : null)
   const isCoolingDown = secondsLeft > 0
 
@@ -78,7 +92,7 @@ export function AiStatePanel({
         {state.status === 'consent' ? (
           <>
             <strong className="ai-panel-title">{copy.consentTitle}</strong>
-            <p>{copy.consentBody}</p>
+            <p>{forProfiles ? copy.consentBodyProfiles : copy.consentBody}</p>
             <button type="button" className="unlock-button" onClick={onConsent}>
               {copy.consentCta}
             </button>
@@ -95,7 +109,7 @@ export function AiStatePanel({
         {state.status === 'pending' ? (
           <>
             <strong className="ai-panel-title">{copy.pendingTitle}</strong>
-            <p>{copy.pendingBody}</p>
+            <p>{forProfiles ? copy.pendingBodyProfiles : copy.pendingBody}</p>
           </>
         ) : null}
 
@@ -119,6 +133,48 @@ export function AiStatePanel({
           </>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The strip over a card that is showing its own local reading because the AI could not do
+ * it. The card is not blocked — it has real content — so this says what the content is,
+ * why, and offers another go. Never shown for a card the AI answered: the local reading is
+ * the fallback, not an alternative.
+ */
+export function AiFallbackNotice({
+  state,
+  copy,
+  canRetry,
+  isBusy,
+  onRetryProfiles,
+}: Omit<AiPanelProps, 'onRetry' | 'onConsent'> & { state: AiCardState }) {
+  const secondsLeft = useSecondsUntil(state.status === 'failed' ? state.retryAvailableAtUtc : null)
+  const isCoolingDown = secondsLeft > 0
+  const canAskAgain = state.status === 'failed'
+  const reason =
+    state.status === 'unavailable'
+      ? copy.fallbackUnavailable
+      : (copy.reasons[state.errorCode ?? 'default'] ?? copy.reasons.default)
+
+  return (
+    <div className="ai-fallback" role="status">
+      <div className="ai-fallback-text">
+        <strong>{copy.fallbackTitle}</strong>
+        <p>
+          {reason} {copy.fallbackBody}
+        </p>
+        {canAskAgain && isCoolingDown ? (
+          <p className="ai-countdown">{copy.retryIn.replace('{time}', formatCountdown(secondsLeft))}</p>
+        ) : null}
+      </div>
+
+      {canAskAgain ? (
+        <button type="button" className="ghost-button" onClick={onRetryProfiles} disabled={isBusy || isCoolingDown}>
+          {isBusy ? copy.retrying : canRetry ? copy.retry : copy.needsUpload}
+        </button>
+      ) : null}
     </div>
   )
 }

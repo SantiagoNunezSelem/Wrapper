@@ -57,8 +57,8 @@ describe('analysisWorker', () => {
     const replies = await send({ requestId: 1, type: 'analyze', chatName: 'Grupo', messages, language: 'es', sourceHash: 'abc' })
     const progress = replies.filter((message) => message.type === 'progress')
 
-    expect(progress.length).toBe(24)
-    expect(progress[0]).toEqual({ requestId: 1, type: 'progress', completed: 1, total: 24 })
+    expect(progress.length).toBe(25)
+    expect(progress[0]).toEqual({ requestId: 1, type: 'progress', completed: 1, total: 25 })
     expect(replies.at(-1)!.type).toBe('analyze')
   })
 
@@ -101,6 +101,26 @@ describe('analysisWorker', () => {
     const [reply] = await send({ requestId: 3, type: 'aiCandidates', sourceHash: 'abc' })
 
     expect(reply.type).toBe('cacheMiss')
+  })
+
+  it('avisa cacheMiss cuando le piden la muestra de un chat que nunca vio', async () => {
+    const { send } = await bootWorker()
+
+    const [reply] = await send({ requestId: 1, type: 'profileInput', sourceHash: 'desconocido' })
+
+    expect(reply.type).toBe('cacheMiss')
+  })
+
+  it('arma lo que se le da a la IA con el chat del análisis, o con los mensajes que le reenvían', async () => {
+    const { send } = await bootWorker()
+    await send({ requestId: 1, type: 'analyze', chatName: 'Grupo', messages, language: 'es', sourceHash: 'abc' })
+
+    const [cached] = await send({ requestId: 2, type: 'profileInput', sourceHash: 'abc' })
+    const [resent] = await send({ requestId: 3, type: 'profileInput', sourceHash: 'abc', messages })
+
+    // Dos mensajes no alcanzan para perfilar a nadie: el pedido vuelve vacío, pero vuelve.
+    expect(cached.type === 'profileInput' && cached.input).toEqual({ people: [], group: {} })
+    expect(resent.type).toBe('profileInput')
   })
 
   it('aplica los veredictos sobre el núcleo que le pasan', async () => {

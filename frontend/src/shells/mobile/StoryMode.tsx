@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCountUp } from '../../components/useCountUp'
 import type { ShellCopy } from '../../copy/shellCopy'
 import { splitLeadingEmoji } from '../../lib/format'
+import { isAiBlocked, PROFILE_METRIC_ID } from '../../lib/metrics'
 import { prefersReducedMotion } from '../../lib/prefersReducedMotion'
 import type { MetricCard } from '../../types'
 import { ChevronIcon } from './icons'
@@ -90,9 +91,12 @@ export function StoryMode({
   const m = copy.mobile.story
 
   const visible = useMemo(
-    () => metrics.filter((card) => card.basic && !(card.ai && card.ai.status !== 'ready')),
+    () => metrics.filter((card) => card.basic && !isAiBlocked(card)),
     [metrics],
   )
+  // El recorrido incluye las personalidades, y esas llevan descripciones de personas por su
+  // nombre: antes de mandar el link se avisa, en una línea y sin frenar nada.
+  const sharesProfiles = useMemo(() => visible.some((card) => card.id === PROFILE_METRIC_ID), [visible])
   const lockedCount = useMemo(
     () => metrics.filter((card) => card.tier === 'vip' && !card.basic).length,
     [metrics],
@@ -509,20 +513,23 @@ export function StoryMode({
             {outro ? outro.ctaLabel : m.outroCta}
           </button>
         ) : share ? (
-          <button
-            type="button"
-            className="primary-button m-full"
-            onClick={() => void handleShare()}
-            disabled={shareState === 'busy'}
-          >
-            {shareState === 'busy'
-              ? m.creatingLink
-              : shareState === 'error'
-                ? m.linkError
-                : copied
-                  ? m.linkCopied
-                  : m.share}
-          </button>
+          <>
+            {sharesProfiles ? <p className="m-story-share-note">{m.profilesShareNote}</p> : null}
+            <button
+              type="button"
+              className="primary-button m-full"
+              onClick={() => void handleShare()}
+              disabled={shareState === 'busy'}
+            >
+              {shareState === 'busy'
+                ? m.creatingLink
+                : shareState === 'error'
+                  ? m.linkError
+                  : copied
+                    ? m.linkCopied
+                    : m.share}
+            </button>
+          </>
         ) : null}
       </footer>
 

@@ -11,6 +11,11 @@ export interface UserProfile {
   subscriptionState: string
   /** Whether this user agreed to send filtered snippets to the AI. */
   hasAiConsent: boolean
+  /** Whether this user agreed to send a *sample of their messages* — not just the keyword
+   * hits — to the AI, for the personality profiles. A separate yes from `hasAiConsent` on
+   * purpose: the first covers something narrower. Optional because a profile cached before
+   * the field existed simply does not have it, which reads as "not yet". */
+  hasAiProfileConsent?: boolean
   /** Whether the backend has a Google AI Studio key configured at all. */
   aiEnabled: boolean
   /** Whether the backend has Mercado Pago credentials. Without them the upsell says so
@@ -284,6 +289,60 @@ export interface AiMetricState {
   updatedAtUtc: string
 }
 
+/**
+ * The closed vocabulary of personalities. The model picks one of these ids and anything
+ * else is rejected on both sides, which is what lets every profile be translated, get an
+ * icon and a color, and never be a label somebody made up about a real person.
+ */
+export type PersonalityLabelId =
+  | 'confianzudo'
+  | 'timido'
+  | 'suizo'
+  | 'agresivo'
+  | 'bromista'
+  | 'intenso'
+  | 'carinoso'
+  | 'lider'
+  | 'dramatico'
+  | 'seco'
+  | 'curioso'
+  | 'quejoso'
+
+/** One person's personality, on the card. */
+export interface ParticipantProfile {
+  name: string
+  /** The participant's fixed color, same as in every other metric. */
+  color?: string
+  labelId: PersonalityLabelId
+  /** `labelId` in the card's language. */
+  label: string
+  secondaryLabelId?: PersonalityLabelId
+  secondaryLabel?: string
+  /** Why this label — a few sentences. Written by the AI, or by the local reading when
+   * the AI could not. */
+  summary: string
+  /** Who wrote `summary` and picked the label. `local` is the fallback that only shows
+   * when the AI failed for this person. */
+  source: 'ai' | 'local'
+  /** Always computed locally, so it reads the same whichever source wrote the label. */
+  radar: RadarDatum[]
+  /** How many messages this reading is based on. */
+  messageCount: number
+}
+
+/** One person's stored profile, exactly as the backend returns it. */
+export interface AiProfileState {
+  /** The letter the browser gave this person for this chat — the real name never travels. */
+  personId: string
+  status: 'ready' | 'failed'
+  labelId: string | null
+  secondaryLabelId: string | null
+  summary: string | null
+  errorCode: string | null
+  retryAvailableAtUtc: string | null
+  updatedAtUtc: string
+}
+
 export interface AuthResponse {
   token: string
   user: UserProfile
@@ -444,6 +503,8 @@ export interface MetricDetail {
   /** Plain list, for metrics with no literal messages to quote (e.g. word tallies). */
   paginatedItems?: string[]
   paginatedItemsLabel?: string
+  /** One personality per person (used only by the personalities metric). */
+  profiles?: ParticipantProfile[]
 }
 
 export interface MetricCard {

@@ -111,9 +111,9 @@ export const TERMS_SECTIONS: readonly TermsSection[] = [
   {
     title: '7. Métricas con inteligencia artificial',
     blocks: [
-      'Algunas métricas Pro usan un servicio de inteligencia artificial de Google (Gemini) para revisar mensajes que un filtro de palabras ya marcó. Sólo se usan si el Usuario da su consentimiento expreso dentro de la aplicación, que se pide una única vez.',
-      'Con ese consentimiento se envían únicamente fragmentos breves de los mensajes marcados, con los nombres reemplazados por letras. El resto del chat no sale del dispositivo. El Usuario puede no darlo: en ese caso esas métricas no se calculan con IA.',
-      'Los resultados generados con IA son automáticos y pueden contener errores, omisiones o interpretaciones equivocadas.',
+      'Algunas métricas Pro usan un servicio de inteligencia artificial de Google (Gemini): unas para revisar mensajes que un filtro de palabras ya marcó, y otra ("Quién es Quién") para escribir la personalidad de cada integrante a partir de una muestra de sus mensajes. Sólo se usan si el Usuario da su consentimiento expreso dentro de la aplicación, que se pide una única vez.',
+      'Con ese consentimiento se envían fragmentos breves de los mensajes marcados y, para las personalidades, hasta 40 mensajes cortos de cada una de las 8 personas que más escriben, junto con cifras sobre cómo escriben. Los nombres se reemplazan por letras, y los links, correos y teléfonos se sacan antes de salir del dispositivo. El resto del chat no sale del dispositivo. El Usuario puede no darlo: en ese caso esas métricas no se calculan con IA.',
+      'Los resultados generados con IA son automáticos y pueden contener errores, omisiones o interpretaciones equivocadas. Las personalidades describen cómo se escribe en un chat: son un juego y no una evaluación de nadie.',
     ],
   },
   {
@@ -194,9 +194,9 @@ export const TERMS_SECTIONS: readonly TermsSection[] = [
         'De los análisis que el Usuario guarda: los resultados (cifras, rankings y gráficos), que pueden incluir nombres de participantes y fragmentos breves de mensajes usados como ejemplo dentro de una métrica. El archivo del chat completo nunca se sube.',
         'De la suscripción: estado, fechas, montos, correo del pagador y tipo de medio de pago informados por Mercado Pago. No guardamos números de tarjeta.',
         'Para prevenir abusos de la prueba gratis: una huella irreversible (hash) de la dirección IP, de la red y de un identificador del dispositivo, y el país de conexión.',
-        'Si el Usuario activa las métricas con IA: los fragmentos marcados que se envían a Google y el resultado, para no volver a procesarlos.',
+        'Si el Usuario activa las métricas con IA: los fragmentos marcados que se envían a Google y el resultado, para no volver a procesarlos; y, para las personalidades, el texto que se genera sobre cada integrante. Los mensajes de la muestra que se envían a Google no se guardan.',
         'Si el Usuario manda un reporte desde la página de ayuda: el correo de contacto que indique, la descripción, el navegador y el tamaño de pantalla.',
-        'Los links compartidos: el recorrido publicado, sin el texto de los mensajes, hasta su vencimiento.',
+        'Los links compartidos: el recorrido publicado, sin el texto de los mensajes pero con las descripciones de personalidad por nombre si el Usuario tiene esa métrica, hasta su vencimiento.',
       ],
       'Para qué los usamos: para prestar el Servicio y guardar el historial del Usuario, cobrar y administrar la suscripción, prevenir fraudes y abusos, responder consultas y reclamos, mantener la seguridad, mejorar el producto con estadísticas agregadas y cumplir obligaciones legales. No vendemos datos personales ni los usamos para publicidad de terceros.',
       'Con quién los compartimos: sólo con los proveedores que necesitamos para funcionar —Google (inicio de sesión, verificación reCAPTCHA y, con consentimiento, las métricas con IA), Mercado Pago (cobros) y los proveedores de alojamiento e infraestructura—, cada uno para su finalidad, y con autoridades cuando una norma o una orden lo exija. Algunos de esos proveedores pueden almacenar datos fuera de la Argentina; al aceptar estos Términos, el Usuario presta su consentimiento para esa transferencia, que se hace con proveedores que ofrecen niveles adecuados de protección.',

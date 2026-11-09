@@ -1,4 +1,5 @@
 import type { MessageGroup, MetricCard } from '../types'
+import { isAiBlocked } from './metrics'
 
 /**
  * Un recorrido publicado, tal como lo devuelve `GET /api/shares/{slug}`.
@@ -92,7 +93,7 @@ export function toSharedCard(card: MetricCard): SharedCard {
  */
 export function buildSharePayload(metrics: MetricCard[]): SharedCard[] {
   return metrics
-    .filter((card) => card.basic && !(card.ai && card.ai.status !== 'ready'))
+    .filter((card) => card.basic && !isAiBlocked(card))
     .map(toSharedCard)
 }
 

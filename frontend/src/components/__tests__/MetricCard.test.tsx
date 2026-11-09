@@ -37,12 +37,19 @@ const aiPanel: AiPanelProps = {
     consentCta: 'Autorizar',
     unavailableTitle: 'No disponible',
     unavailableBody: 'Esta instalación no tiene IA configurada.',
+    consentBodyProfiles: 'Autorizá la IA para ver las personalidades.',
     pendingTitle: 'Analizando',
     pendingBody: 'La IA está revisando los mensajes.',
+    pendingBodyProfiles: 'La IA está armando las personalidades.',
+    fallbackTitle: 'La IA no pudo con todos',
+    fallbackBody: 'Mostramos un análisis local.',
+    fallbackUnavailable: 'No hay IA configurada.',
+    fallbackBadge: 'Análisis local',
   },
   canRetry: true,
   isBusy: false,
   onRetry: vi.fn(),
+  onRetryProfiles: vi.fn(),
   onConsent: vi.fn(),
 }
 
@@ -280,5 +287,52 @@ describe('MetricCard — métrica con IA', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Autorizar' }))
 
     expect(onConsent).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('MetricCard — personalidades', () => {
+  function profilesCard(ai: AiCardState) {
+    return card({ id: 'personalidades', tier: 'vip', ai, basic: { value: 'Curioso', label: 'la personalidad de Ana, quien más escribe' } })
+  }
+
+  it.each<AiCardState['status']>(['failed', 'unavailable'])(
+    'si la IA no pudo (%s) sigue mostrando su lectura local y lo dice en la tarjeta',
+    (status) => {
+      renderCard(profilesCard({ status }), { ai: aiPanel })
+
+      expect(screen.getByText('Curioso')).toBeInTheDocument()
+      expect(screen.getByText('Análisis local')).toBeInTheDocument()
+      expect(screen.queryByText('No se pudo analizar')).not.toBeInTheDocument()
+    },
+  )
+
+  it('con la respuesta de la IA lista no hay nada que aclarar' , () => {
+    renderCard(profilesCard({ status: 'ready' }), { ai: aiPanel })
+
+    expect(screen.getByText('Curioso')).toBeInTheDocument()
+    expect(screen.queryByText('Análisis local')).not.toBeInTheDocument()
+  })
+
+  it('mientras espera a la IA o al permiso, la tarjeta sigue cerrada y habla de las personalidades', () => {
+    const pending = renderCard(profilesCard({ status: 'pending' }), { ai: aiPanel })
+    expect(screen.getByText('La IA está armando las personalidades.')).toBeInTheDocument()
+    expect(screen.queryByText('Curioso')).not.toBeInTheDocument()
+    pending.unmount()
+
+    renderCard(profilesCard({ status: 'consent' }), { ai: aiPanel })
+    expect(screen.getByText('Autorizá la IA para ver las personalidades.')).toBeInTheDocument()
+  })
+
+  it('quien no es Pro nunca ve la marca de análisis local', () => {
+    renderCard(profilesCard({ status: 'failed' }))
+
+    expect(screen.queryByText('Análisis local')).not.toBeInTheDocument()
+  })
+
+  it('en cambio una métrica de palabras clave que falló sigue bloqueada: su lectura local son los falsos positivos', () => {
+    renderCard(card({ id: 'tonopicante', tier: 'vip', ai: { status: 'failed' }, basic: { value: '73/100', label: 'x' } }), { ai: aiPanel })
+
+    expect(screen.getByText('No se pudo analizar')).toBeInTheDocument()
+    expect(screen.queryByText('Análisis local')).not.toBeInTheDocument()
   })
 })

@@ -36,6 +36,9 @@ const testsSinDom = [
   'src/lib/__tests__/metrics-free.test.ts',
   'src/lib/__tests__/metrics-vip.test.ts',
   'src/lib/__tests__/parser.test.ts',
+  'src/lib/__tests__/personality.test.ts',
+  'src/lib/__tests__/personalityAi.test.ts',
+  'src/lib/__tests__/metrics-profiles.test.ts',
   'src/lib/__tests__/shareTargetFile.test.ts',
 ]
 
