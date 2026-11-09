@@ -241,6 +241,44 @@ public sealed class AiEndpointTests(ApiFactory factory) : IClassFixture<ApiFacto
     }
 
     [Fact]
+    public async Task Una_parte_de_la_lectura_sin_lineas_queda_lista_gratis_y_el_pedido_acepta_los_participantes()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(
+            hasAiConsent: true, subscriptions: ApiFactory.ActiveSubscription());
+        var body = new
+        {
+            sourceHash = ValidHash,
+            participants = 2,
+            metrics = new[] { new { metricId = "redflags-scan-1", snippets = new object[0] } },
+        };
+
+        var response = await client.PostAsJsonAsync("/api/ai/metrics", body);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = (await ReadJson(response)).GetProperty("results")[0];
+        Assert.Equal("redflags-scan-1", result.GetProperty("metricId").GetString());
+        Assert.Equal("ready", result.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Una_parte_de_la_lectura_pasa_por_la_misma_puerta_y_sin_API_key_falla_con_codigo_config()
+    {
+        var (client, _) = factory.CreateAuthenticatedClient(
+            hasAiConsent: true, subscriptions: ApiFactory.ActiveSubscription());
+        var metrics = new[]
+        {
+            new { metricId = "redflags-scan-2", snippets = new[] { new { id = "r1", keyword = "", text = "1 A: hola\n2 B: chau" } } },
+        };
+
+        var response = await client.PostAsJsonAsync("/api/ai/metrics", AnalyzeBody(metrics: metrics));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = (await ReadJson(response)).GetProperty("results")[0];
+        Assert.Equal("failed", result.GetProperty("status").GetString());
+        Assert.Equal("config", result.GetProperty("errorCode").GetString());
+    }
+
+    [Fact]
     public async Task Sin_API_key_configurada_la_metrica_falla_con_codigo_config()
     {
         // Falla la métrica, no la pantalla: el cliente muestra un botón de reintento.

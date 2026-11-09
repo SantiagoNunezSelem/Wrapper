@@ -48,6 +48,34 @@ public sealed class GoogleAiOptions
     /// </summary>
     public int MaxSnippetsPerMetric { get; set; } = 300;
 
+    /// <summary>
+    /// Numbered lines of the red-flags scan that go to Gemini in one call. The whole stretch the
+    /// browser sends — the last five thousand messages, plus the few hundred it picked from
+    /// earlier on — is far too much for one prompt that must also come back as parseable JSON
+    /// within <see cref="TimeoutSeconds"/>, so it is read a few hundred lines at a time.
+    /// </summary>
+    public int ScanLinesPerCall { get; set; } = 500;
+
+    /// <summary>
+    /// Most lines one scan request may carry. The browser splits its sample into parts of about
+    /// this size so no single request has to wait for the whole chat to be read, and this is the
+    /// same ceiling enforced on this side: a hand-built request cannot ask for more.
+    /// </summary>
+    public int MaxScanLinesPerPart { get; set; } = 2000;
+
+    /// <summary>Most lines in one stretch of the scan. Must not exceed <see cref="ScanLinesPerCall"/> by much, or one stretch is more than a call can take.</summary>
+    public int MaxScanChunkLines { get; set; } = 500;
+
+    /// <summary>Ceiling on one scanned line, in characters. A client cannot make us pay for a novel.</summary>
+    public int MaxScanLineChars { get; set; } = 400;
+
+    /// <summary>
+    /// Calls of one scan part that run at the same time. They are independent, and a part is
+    /// several of them; this keeps it inside one request's patience without bursting past the
+    /// model's per-minute quota.
+    /// </summary>
+    public int ScanConcurrency { get; set; } = 4;
+
     /// <summary>Cooldown before a failed metric may be retried, in seconds.</summary>
     public int RetryCooldownSeconds { get; set; } = 120;
 

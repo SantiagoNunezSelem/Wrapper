@@ -29,13 +29,13 @@ export const shellCopy = {
     howItWorksTitle: 'Cómo funciona',
     howItWorksSteps: [
       { title: 'Subí tu chat', body: 'Exportá la conversación desde WhatsApp (.txt o .zip) y soltala acá.' },
-      { title: 'Se procesa en tu navegador', body: 'Las métricas se calculan ahí mismo: el chat completo nunca se sube.' },
+      { title: 'Se procesa en tu navegador', body: 'Las métricas se calculan ahí mismo. Nada del chat se sube sin tu permiso.' },
       { title: 'Mirá tu Wrapped', body: 'Recorré tarjetas tipo historia con los datos más divertidos del chat.' },
       { title: 'Desbloqueá lo picante', body: 'Con Pro ves red flags, tono picante, quién clava el visto y mucho más.' },
     ],
     examplesTitle: 'Así se sienten las analíticas',
     demoTag: 'Ejemplo',
-    heroTrust: 'Se procesa en tu navegador. El chat nunca se sube.',
+    heroTrust: 'Se procesa en tu navegador. Sin tu permiso, no sale nada.',
     howToExport: '¿Cómo exporto mi chat?',
     setupWarning:
       'Falta configurar VITE_GOOGLE_CLIENT_ID en el frontend o GoogleAuth:AllowedAudience en el backend.',
@@ -129,10 +129,10 @@ export const shellCopy = {
       body:
         'El Detector de Red Flags y El Tono Picante usan filtros de palabras que se equivocan seguido: sin IA, "la comida estaba caliente" cuenta como mensaje subido de tono. La IA revisa esos mensajes marcados y descarta los que no corresponden. "Quién es Quién" va más allá: lee una muestra de los mensajes de cada integrante para escribir su personalidad y explicar por qué.',
       bullets: [
-        'Red Flags y Tono Picante: solo se envían los mensajes que ya pasaron el filtro de palabras, recortados y con un par de líneas de contexto.',
+        'Red Flags y Mensajes +18: se envían los mensajes marcados por el filtro de palabras, con un par de líneas de contexto. En Red Flags, además, los últimos 5.000 mensajes del chat y algunos tramos anteriores.',
         'Quién es Quién: se envían hasta 40 mensajes cortos de cada integrante (de las 8 personas que más escriben) y números sobre cómo escribe.',
         'No viajan nombres: cada participante aparece como una letra, y los nombres, links, mails y teléfonos que haya dentro de los mensajes se reemplazan o se sacan antes de que salgan de tu navegador.',
-        'Los mensajes se envían a Google (Gemini) para generar el resultado. El resto del chat se sigue procesando en tu navegador y nunca sale de tu dispositivo.',
+        'Los mensajes se envían a Google (Gemini) para generar el resultado. Lo demás se sigue procesando en tu navegador.',
         'El resultado se guarda una sola vez por chat: no se vuelve a analizar ni a cobrar.',
       ],
       accept: 'Activar y analizar',
@@ -173,7 +173,7 @@ export const shellCopy = {
       pick: 'Elegir archivo',
       next: 'Siguiente paso',
       goToWhatsApp: 'Ir a WhatsApp',
-      privacy: 'El archivo se procesa en tu dispositivo. Nunca se sube el texto crudo del chat.',
+      privacy: 'El archivo se procesa en tu dispositivo. Nada sale de ahí sin tu permiso.',
       installCta: 'Instalar app',
       installDone: 'Ya está instalada ✓',
       installedNext: 'Continuar',
@@ -646,7 +646,7 @@ export const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Tu chat se procesa en tu dispositivo y nunca se sube entero. No compartimos nada sin tu permiso.',
+      'Tu chat se procesa en tu dispositivo. No sale nada sin tu permiso.',
     footerRights: 'Hecho sin nada mejor que hacer.',
     footerTerms: 'Términos y condiciones',
     /* Textos que sólo existen en el shell de mobile: pestañas, hoja de subida,
@@ -718,13 +718,13 @@ export const shellCopy = {
     howItWorksTitle: 'How it works',
     howItWorksSteps: [
       { title: 'Upload your chat', body: 'Export the conversation from WhatsApp (.txt or .zip) and drop it here.' },
-      { title: "It's processed in your browser", body: 'Metrics are computed right there — the full chat is never uploaded.' },
+      { title: "It's processed in your browser", body: 'Metrics are computed right there. Nothing from your chat is uploaded without your permission.' },
       { title: 'See your Wrapped', body: 'Swipe through story-style cards with the most fun stats from the chat.' },
       { title: 'Unlock the spicy stuff', body: 'Pro gets you red flags, spicy tone, who leaves everyone on read, and a lot more.' },
     ],
     examplesTitle: 'This is how the analytics feel',
     demoTag: 'Example',
-    heroTrust: 'Processed in your browser. Your chat is never uploaded.',
+    heroTrust: 'Processed in your browser. Nothing leaves it without your permission.',
     howToExport: 'How do I export my chat?',
     setupWarning:
       'VITE_GOOGLE_CLIENT_ID in the frontend or GoogleAuth:AllowedAudience in the backend is still missing.',
@@ -818,10 +818,10 @@ export const shellCopy = {
       body:
         'The Red Flag Detector and The Spicy Tone rely on keyword filters that get it wrong often: without AI, "the food was hot" counts as a suggestive message. The AI reviews those flagged messages and drops the ones that do not belong. "Who\'s Who" goes further: it reads a sample of each participant\'s messages to write their personality and explain why.',
       bullets: [
-        'Red Flags and Spicy Tone: only the messages that already passed the keyword filter are sent, trimmed and with a couple of context lines.',
+        'Red Flags and 18+ messages: the messages the word filter flagged are sent, with a couple of lines of context. For Red Flags, also the last 5,000 messages of the chat and some earlier stretches.',
         "Who's Who: up to 40 short messages from each participant (the 8 who write the most) are sent, plus numbers about how they write.",
         'No names travel: each participant shows up as a letter, and any names, links, mail addresses and phone numbers inside the messages are replaced or removed before they leave your browser.',
-        'The messages are sent to Google (Gemini) to generate the result. The rest of the chat is still processed in your browser and never leaves your device.',
+        'The messages are sent to Google (Gemini) to generate the result. The rest is still processed in your browser.',
         'The result is stored once per chat: it is never analyzed — or billed — twice.',
       ],
       accept: 'Turn on and analyze',
@@ -862,7 +862,7 @@ export const shellCopy = {
       pick: 'Choose file',
       next: 'Next step',
       goToWhatsApp: 'Go to WhatsApp',
-      privacy: 'The file is processed on your device. The raw chat text is never uploaded.',
+      privacy: 'The file is processed on your device. Nothing leaves it without your permission.',
       installCta: 'Install app',
       installDone: 'Already installed ✓',
       installedNext: 'Continue',
@@ -1287,7 +1287,7 @@ export const shellCopy = {
       },
     ],
     footerPrivacy:
-      'Your chat is processed on your device and never fully uploaded. Nothing is shared without your permission.',
+      'Your chat is processed on your device. Nothing leaves it without your permission.',
     footerRights: 'Made with nothing better to do.',
     footerTerms: 'Terms and conditions',
     mobile: {

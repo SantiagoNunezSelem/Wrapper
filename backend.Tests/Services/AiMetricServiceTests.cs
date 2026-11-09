@@ -701,6 +701,377 @@ public class AiMetricServiceTests : IDisposable
         Assert.Empty(_http.Requests);
     }
 
+    // -----------------------------------------------------------------------
+    // La lectura del chat
+    // -----------------------------------------------------------------------
+
+    /// <summary>Un tramo del chat ya numerado, como lo arma el navegador: "3 A: mensaje 3".</summary>
+    private static AiSnippetInput Chunk(string id, int firstLine, int lines, string text = "mensaje") =>
+        new(id, string.Empty, string.Join('\n', Enumerable.Range(firstLine, lines).Select(number => $"{number} A: {text} {number}")));
+
+    private static List<AiMetricRequestItem> ScanPart(params AiSnippetInput[] chunks) => ScanPartNumber(1, chunks);
+
+    private static List<AiMetricRequestItem> ScanPartNumber(int part, params AiSnippetInput[] chunks) =>
+        [new($"redflags-scan-{part}", [.. chunks])];
+
+    private static string GeminiAnswer(params string[] ids) =>
+        JsonSerializer.Serialize(new
+        {
+            candidates = new[] { new { content = new { parts = new[] { new { text = JsonSerializer.Serialize(new { ids }) } } } } },
+        });
+
+    private static string GeminiBlocked() =>
+        JsonSerializer.Serialize(new { promptFeedback = new { blockReason = "PROHIBITED_CONTENT" } });
+
+    [Fact]
+    public async Task La_lectura_guarda_lo_que_Gemini_encontró_con_su_categoría_y_no_el_texto_que_leyó()
+    {
+        GeminiAccepts("3:ins", "7:cel");
+
+        var result = Assert.Single(await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 10)), default));
+
+        Assert.Equal("redflags-scan-1", result.MetricId);
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Equal(["3:ins", "7:cel"], result.AcceptedIds);
+        Assert.Empty(result.RejectedIds);
+
+        var stored = await _db.NewContext().AiMetricResults.SingleAsync();
+        Assert.Equal(1, stored.AttemptCount);
+        // Son miles de líneas de una conversación ajena: no se guardan, solo un hash de lo que se preguntó.
+        Assert.Equal(string.Empty, stored.InputJson);
+        Assert.NotEqual(string.Empty, stored.InputHash);
+    }
+
+    [Fact]
+    public async Task Una_línea_que_Gemini_no_vio_un_código_inventado_o_una_respuesta_rota_no_entran()
+    {
+        // "99" no estaba en lo que se mandó, "4:xxx" no es un código, "bad" no tiene forma, y el
+        // "3" se repite: gana la primera. Un código en mayúsculas se acepta.
+        GeminiAccepts("3:ins", "99:ins", "4:xxx", "bad", "5:CEL", "3:cul", "6:ins:de-más");
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 10)), default))[0];
+
+        Assert.Equal(["3:ins", "5:cel"], result.AcceptedIds);
+    }
+
+    [Fact]
+    public async Task Una_parte_ya_leída_no_vuelve_a_gastar_tokens()
+    {
+        GeminiAccepts("2:ins");
+        var service = Service();
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default);
+        var again = (await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default))[0];
+
+        Assert.Single(_http.Requests);
+        Assert.Equal(["2:ins"], again.AcceptedIds);
+    }
+
+    [Fact]
+    public async Task Si_lo_que_se_lee_cambia_se_vuelve_a_preguntar()
+    {
+        GeminiAccepts();
+        var service = Service();
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default);
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 6)), default);
+
+        Assert.Equal(2, _http.Requests.Count);
+        Assert.Single(await _db.NewContext().AiMetricResults.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Entre_dos_personas_se_lee_con_la_instrucción_de_pareja_y_se_vuelve_a_juzgar_si_cambia()
+    {
+        GeminiAccepts();
+        var service = Service();
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default, participants: 2);
+        Assert.Contains("entre dos personas", _http.LastRequest.Body);
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default, participants: 2);
+        Assert.Single(_http.Requests);
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default, participants: 5);
+        Assert.Equal(2, _http.Requests.Count);
+        Assert.Contains("El chat es un grupo", _http.LastRequest.Body);
+    }
+
+    [Fact]
+    public async Task Los_fragmentos_de_red_flags_también_se_juzgan_según_el_vínculo()
+    {
+        GeminiAccepts("1");
+
+        await Service().AnalyzeAsync(_userId, "abc", OneMetric("redflags"), default, participants: 2);
+
+        Assert.Contains("entre dos personas", _http.LastRequest.Body);
+    }
+
+    [Fact]
+    public async Task Las_líneas_se_reparten_en_llamadas_sin_partir_un_tramo_entre_dos()
+    {
+        GeminiAccepts();
+
+        // Tres tramos de 4 líneas y un máximo de 5 por llamada: 4 + 4 + 4, cada uno en su llamada.
+        var result = (await Service(new GoogleAiOptions { ApiKey = "k", ScanLinesPerCall = 5, ScanConcurrency = 1 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4), Chunk("r2", 5, 4), Chunk("r3", 9, 4)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Equal(3, _http.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Los_tramos_que_caben_juntos_viajan_en_la_misma_llamada_separados_por_una_línea_en_blanco()
+    {
+        GeminiAccepts();
+
+        await Service(new GoogleAiOptions { ApiKey = "k", ScanLinesPerCall = 100 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("h1", 1, 3), Chunk("h2", 4, 3)), default);
+
+        Assert.Single(_http.Requests);
+        Assert.Contains("3 A: mensaje 3\\n\\n4 A: mensaje 4", _http.LastRequest.Body);
+    }
+
+    [Fact]
+    public async Task Varias_llamadas_de_una_parte_corren_a_la_vez_pero_cada_una_se_cuenta()
+    {
+        // Cada llamada dice lo que costó, y el gasto se anota aunque corran juntas.
+        _http.Always(HttpStatusCode.OK, JsonSerializer.Serialize(new
+        {
+            candidates = new[] { new { content = new { parts = new[] { new { text = "{\"ids\":[]}" } } } } },
+            usageMetadata = new { promptTokenCount = 100, candidatesTokenCount = 4 },
+        }));
+
+        await Service(new GoogleAiOptions { ApiKey = "k", ScanLinesPerCall = 4, ScanConcurrency = 3 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4), Chunk("r2", 5, 4), Chunk("r3", 9, 4)), default);
+
+        var usage = await _db.NewContext().AiUsage.Where(item => item.MetricId == "redflags-scan-1").ToListAsync();
+        Assert.Equal(3, usage.Count);
+        Assert.All(usage, item => Assert.Equal(100, item.InputTokens));
+        Assert.All(usage, item => Assert.Equal(_userId, item.UserId));
+    }
+
+    [Fact]
+    public async Task Una_llamada_que_falla_tumba_la_parte_entera_y_deja_la_cuenta_regresiva()
+    {
+        // Un veredicto parcial subcontaría el chat sin que nadie pueda notarlo.
+        // Un 401 (la key) no se reintenta, así que el test no espera ninguna pausa.
+        _http.Enqueue(HttpStatusCode.OK, GeminiAnswer("1:ins"))
+             .Always(HttpStatusCode.Unauthorized, "{\"error\":{}}");
+
+        var result = (await Service(new GoogleAiOptions { ApiKey = "k", ScanLinesPerCall = 4, ScanConcurrency = 1 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4), Chunk("r2", 5, 4)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Failed, result.Status);
+        Assert.Equal(AiErrorCode.Config, result.ErrorCode);
+        Assert.NotNull(result.RetryAvailableAtUtc);
+        Assert.Empty(result.AcceptedIds);
+    }
+
+    [Fact]
+    public async Task Una_parte_que_falló_no_vuelve_a_llamar_hasta_que_pasa_el_enfriamiento_y_después_sí()
+    {
+        GeminiFails(HttpStatusCode.Unauthorized);
+        var service = Service();
+
+        await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default);
+        Assert.Single(_http.Requests);
+
+        var cooling = (await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Failed, cooling.Status);
+        Assert.Single(_http.Requests);
+
+        // El navegador la manda de nuevo cuando termina la cuenta regresiva: esta vez contesta.
+        var row = await _db.Context.AiMetricResults.SingleAsync();
+        row.RetryAvailableAtUtc = DateTime.UtcNow.AddSeconds(-1);
+        await _db.Context.SaveChangesAsync();
+        GeminiAccepts("4:cha");
+
+        var retried = (await service.AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 5)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, retried.Status);
+        Assert.Equal(["4:cha"], retried.AcceptedIds);
+        Assert.Equal(2, (await _db.NewContext().AiMetricResults.SingleAsync()).AttemptCount);
+    }
+
+    [Fact]
+    public async Task Una_llamada_bloqueada_se_parte_en_dos_y_se_juntan_las_respuestas()
+    {
+        _http.Enqueue(HttpStatusCode.OK, GeminiBlocked())
+             .Enqueue(HttpStatusCode.OK, GeminiAnswer("1:ins"))
+             .Enqueue(HttpStatusCode.OK, GeminiAnswer("4:cul"));
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Equal(["1:ins", "4:cul"], result.AcceptedIds);
+        Assert.Equal(3, _http.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Cada_mitad_de_una_llamada_bloqueada_solo_puede_contestar_por_sus_líneas()
+    {
+        // La segunda mitad (líneas 3 y 4) no puede afirmar nada de la línea 1.
+        _http.Enqueue(HttpStatusCode.OK, GeminiBlocked())
+             .Enqueue(HttpStatusCode.OK, GeminiAnswer())
+             .Enqueue(HttpStatusCode.OK, GeminiAnswer("1:ins", "3:ame"));
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4)), default))[0];
+
+        Assert.Equal(["3:ame"], result.AcceptedIds);
+    }
+
+    [Fact]
+    public async Task Una_línea_que_Gemini_se_niega_a_leer_ni_sola_se_deja_afuera_sin_tumbar_la_parte()
+    {
+        // Un bloqueo es un "no sé", no un error: la parte queda lista, sin hallazgos.
+        _http.Always(HttpStatusCode.OK, GeminiBlocked());
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 2)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Empty(result.AcceptedIds);
+    }
+
+    [Fact]
+    public async Task Un_bloqueo_seguido_de_otro_error_tumba_la_parte()
+    {
+        _http.Enqueue(HttpStatusCode.OK, GeminiBlocked())
+             .Always(HttpStatusCode.Unauthorized, "{\"error\":{}}");
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Failed, result.Status);
+        Assert.Equal(AiErrorCode.Config, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Las_líneas_sin_número_y_las_repetidas_no_llegan_a_Gemini()
+    {
+        GeminiAccepts();
+        var dirty = new AiSnippetInput("r1", string.Empty, "10 A: uno\nzzsinnumero\n10 B: zzrepetida\n0 A: zzcero\n-3 A: zznegativo\n11 A: dos\n12");
+
+        await Service().AnalyzeAsync(_userId, "abc", ScanPart(dirty), default);
+
+        var body = _http.LastRequest.Body!;
+        Assert.Contains("10 A: uno", body);
+        Assert.Contains("11 A: dos", body);
+        Assert.DoesNotContain("zzsinnumero", body);
+        Assert.DoesNotContain("zzrepetida", body);
+        Assert.DoesNotContain("zznegativo", body);
+        Assert.DoesNotContain("zzcero", body);
+    }
+
+    [Fact]
+    public async Task Una_parte_no_pasa_del_tope_de_líneas()
+    {
+        GeminiAccepts();
+
+        await Service(new GoogleAiOptions { ApiKey = "k", MaxScanLinesPerPart = 5 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 4), Chunk("r2", 5, 4), Chunk("r3", 9, 4)), default);
+
+        var body = string.Join(" ", _http.Requests.Select(request => request.Body));
+        Assert.Contains("5 A:", body);
+        Assert.DoesNotContain("6 A:", body);
+        Assert.DoesNotContain("9 A:", body);
+    }
+
+    [Fact]
+    public async Task Un_tramo_no_pasa_del_tope_de_líneas_de_un_tramo()
+    {
+        GeminiAccepts();
+
+        await Service(new GoogleAiOptions { ApiKey = "k", MaxScanChunkLines = 3 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(Chunk("r1", 1, 10)), default);
+
+        var body = _http.LastRequest.Body!;
+        Assert.Contains("3 A:", body);
+        Assert.DoesNotContain("4 A:", body);
+    }
+
+    [Fact]
+    public async Task Una_línea_larga_se_recorta_para_que_nadie_nos_haga_pagar_una_novela()
+    {
+        GeminiAccepts();
+        var novel = new AiSnippetInput("r1", string.Empty, $"1 A: {new string('x', 2000)}");
+
+        await Service(new GoogleAiOptions { ApiKey = "k", MaxScanLineChars = 50 })
+            .AnalyzeAsync(_userId, "abc", ScanPart(novel), default);
+
+        Assert.DoesNotContain(new string('x', 60), _http.LastRequest.Body!);
+    }
+
+    [Fact]
+    public async Task Una_parte_sin_líneas_es_un_veredicto_gratis()
+    {
+        GeminiAccepts("1:ins");
+
+        var result = (await Service().AnalyzeAsync(_userId, "abc", ScanPart(), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, result.Status);
+        Assert.Empty(result.AcceptedIds);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Cada_parte_tiene_su_propio_veredicto_y_su_propia_falla()
+    {
+        _http.Enqueue(HttpStatusCode.OK, GeminiAnswer("2:ins"))
+             .Always(HttpStatusCode.Unauthorized, "{\"error\":{}}");
+
+        var service = Service();
+        var first = (await service.AnalyzeAsync(_userId, "abc", ScanPartNumber(1, Chunk("r1", 1, 3)), default))[0];
+        var second = (await service.AnalyzeAsync(_userId, "abc", ScanPartNumber(2, Chunk("r2", 4, 3)), default))[0];
+
+        Assert.Equal(AiMetricStatus.Ready, first.Status);
+        Assert.Equal(AiMetricStatus.Failed, second.Status);
+        Assert.Equal(2, (await _db.NewContext().AiMetricResults.ToListAsync()).Count);
+    }
+
+    [Fact]
+    public async Task La_lectura_cuenta_para_el_tope_diario_como_cualquier_otra()
+    {
+        await SeedChatsToday(10);
+        GeminiAccepts();
+
+        await Assert.ThrowsAsync<AiDailyLimitReachedException>(() =>
+            Service().AnalyzeAsync(_userId, "chat-nuevo", ScanPart(Chunk("r1", 1, 3)), default));
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Reintentar_no_toca_una_parte_de_la_lectura_que_falló_porque_no_guardó_nada_que_reenviar()
+    {
+        // Sin el texto guardado no hay nada que reenviar: se la reintenta como se la mandó la primera
+        // vez, desde el navegador. Un "reintento" con cero líneas la daría por lista y vacía.
+        _db.Context.AiMetricResults.Add(new AiMetricResult
+        {
+            UserId = _userId, SourceHash = "abc", MetricId = "redflags-scan-2",
+            Status = AiMetricStatus.Failed, ErrorCode = AiErrorCode.Quota,
+            RetryAvailableAtUtc = DateTime.UtcNow.AddMinutes(-5),
+        });
+        await _db.Context.SaveChangesAsync();
+        GeminiAccepts();
+
+        var result = Assert.Single(await Service().RetryFailedAsync(_userId, "abc", default));
+
+        Assert.Equal(AiMetricStatus.Failed, result.Status);
+        Assert.Equal("redflags-scan-2", result.MetricId);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Una_parte_con_un_número_fuera_de_rango_se_ignora_como_cualquier_métrica_desconocida()
+    {
+        GeminiAccepts();
+
+        var results = await Service().AnalyzeAsync(_userId, "abc", ScanPartNumber(9, Chunk("r1", 1, 3)), default);
+
+        Assert.Empty(results);
+        Assert.Empty(_http.Requests);
+    }
+
     [Fact]
     public async Task RetryFailedAsync_tolera_un_InputJson_corrupto()
     {

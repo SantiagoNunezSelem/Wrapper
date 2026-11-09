@@ -143,6 +143,8 @@ export async function analyzeAiMetrics(
   token: string,
   payload: {
     sourceHash: string
+    /** How many people the chat has. Between two, the red-flags prompts read it as a couple. */
+    participants?: number
     metrics: { metricId: string; snippets: AiSnippetPayload[] }[]
   },
 ): Promise<AiMetricState[]> {

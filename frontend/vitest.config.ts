@@ -29,16 +29,21 @@ import { defaultExclude, defineConfig } from 'vitest/config'
  */
 const testsSinDom = [
   'src/lib/__tests__/aiCandidates.test.ts',
+  'src/lib/__tests__/aiCandidatesSelection.test.ts',
+  'src/lib/__tests__/aiScan.test.ts',
   'src/lib/__tests__/format.test.ts',
   'src/lib/__tests__/hash.test.ts',
   'src/lib/__tests__/landingPreview.test.ts',
   'src/lib/__tests__/metrics-core.test.ts',
   'src/lib/__tests__/metrics-free.test.ts',
+  'src/lib/__tests__/metrics-redflags.test.ts',
   'src/lib/__tests__/metrics-vip.test.ts',
   'src/lib/__tests__/parser.test.ts',
   'src/lib/__tests__/personality.test.ts',
   'src/lib/__tests__/personalityAi.test.ts',
   'src/lib/__tests__/metrics-profiles.test.ts',
+  'src/lib/__tests__/redflagsDictionary.test.ts',
+  'src/lib/__tests__/scrub.test.ts',
   'src/lib/__tests__/shareTargetFile.test.ts',
 ]
 

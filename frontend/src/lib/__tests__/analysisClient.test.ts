@@ -175,6 +175,43 @@ describe('buildAiCandidatesInWorker', () => {
   })
 })
 
+describe('buildAiScanInWorker', () => {
+  const plan = { parts: [], lines: new Map<number, string>() }
+
+  it('primero intenta sin reenviar los mensajes', async () => {
+    const { buildAiScanInWorker } = await freshClient()
+    const pending = buildAiScanInWorker('abc', [])
+
+    expect(worker().posted[0]).toMatchObject({ type: 'aiScan', sourceHash: 'abc', messages: undefined })
+
+    worker().reply({ requestId: 0, type: 'aiScan', plan })
+    await expect(pending).resolves.toEqual(plan)
+  })
+
+  it('reenvía los mensajes cuando el worker perdió el chat de su caché', async () => {
+    const { buildAiScanInWorker } = await freshClient()
+    const messages = [{ id: 'm1' }] as never
+    const pending = buildAiScanInWorker('abc', messages)
+
+    worker().reply({ requestId: 0, type: 'cacheMiss' })
+    await Promise.resolve()
+
+    expect(worker().posted[1]).toMatchObject({ type: 'aiScan', sourceHash: 'abc', messages })
+
+    worker().reply({ requestId: 1, type: 'aiScan', plan })
+    await expect(pending).resolves.toEqual(plan)
+  })
+
+  it('rechaza si el worker contesta otra cosa', async () => {
+    const { buildAiScanInWorker } = await freshClient()
+    const pending = buildAiScanInWorker('abc', [])
+
+    worker().reply({ requestId: 0, type: 'analyze', core })
+
+    await expect(pending).rejects.toThrow('Unexpected worker response for aiScan.')
+  })
+})
+
 describe('buildProfileInputInWorker', () => {
   const input = { people: [{ id: 'A', name: 'Ana', features: { share: 0.5 }, messages: ['hola'] }], group: { share: 0.5 } }
 

@@ -87,6 +87,114 @@ public class AiMetricPromptsTests
         Assert.Contains("ironía", instruction);
     }
 
+    [Fact]
+    public void La_instrucción_de_red_flags_nombra_la_manipulación_además_del_conflicto()
+    {
+        var instruction = AiMetricPrompts.SystemInstruction("redflags");
+
+        foreach (var kind in new[] { "chantaje emocional", "gaslighting", "aislamiento", "presión o coerción", "celos o control" })
+        {
+            Assert.Contains(kind, instruction);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Pareja o grupo
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(2, ChatBond.Pair)]
+    [InlineData(3, ChatBond.Group)]
+    [InlineData(1, ChatBond.Group)]
+    [InlineData(null, ChatBond.Group)]
+    public void Dos_participantes_son_una_pareja_y_todo_lo_demás_un_grupo(int? participants, ChatBond expected)
+    {
+        Assert.Equal(expected, AiMetricPrompts.BondFor(participants));
+    }
+
+    [Theory]
+    [InlineData("redflags")]
+    [InlineData("redflags-scan-1")]
+    public void Entre_dos_personas_los_celos_y_el_chantaje_no_se_toman_como_broma(string metricId)
+    {
+        var pair = AiMetricPrompts.SystemInstruction(metricId, ChatBond.Pair);
+        var group = AiMetricPrompts.SystemInstruction(metricId, ChatBond.Group);
+
+        Assert.Contains("entre dos personas", pair);
+        Assert.DoesNotContain("entre dos personas", group);
+        Assert.Contains("El chat es un grupo", group);
+        Assert.DoesNotContain("El chat es un grupo", pair);
+    }
+
+    [Fact]
+    public void Sin_decir_nada_la_instrucción_es_la_del_grupo()
+    {
+        Assert.Equal(
+            AiMetricPrompts.SystemInstruction("redflags", ChatBond.Group),
+            AiMetricPrompts.SystemInstruction("redflags"));
+    }
+
+    [Fact]
+    public void El_tono_picante_no_cambia_según_el_vínculo()
+    {
+        Assert.Equal(
+            AiMetricPrompts.SystemInstruction("tonopicante", ChatBond.Pair),
+            AiMetricPrompts.SystemInstruction("tonopicante", ChatBond.Group));
+    }
+
+    // -----------------------------------------------------------------------
+    // La lectura
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("redflags-scan-1", true, 1)]
+    [InlineData("redflags-scan-8", true, 8)]
+    [InlineData("redflags-scan-0", false, 0)]
+    [InlineData("redflags-scan-9", false, 0)]
+    [InlineData("redflags-scan-", false, 0)]
+    [InlineData("redflags-scan-x", false, 0)]
+    [InlineData("redflags-scan--1", false, 0)]
+    [InlineData("redflags", false, 0)]
+    [InlineData("REDFLAGS-SCAN-1", false, 0)]
+    public void Las_partes_de_la_lectura_se_reconocen_por_su_número(string metricId, bool isScan, int part)
+    {
+        Assert.Equal(isScan, AiMetricPrompts.IsScan(metricId));
+        Assert.Equal(isScan, AiMetricPrompts.TryGetScanPart(metricId, out var found));
+        Assert.Equal(part, found);
+    }
+
+    [Fact]
+    public void Una_parte_de_la_lectura_es_soportada_pero_no_es_una_tarjeta()
+    {
+        Assert.True(AiMetricPrompts.IsSupported("redflags-scan-3"));
+        Assert.DoesNotContain("redflags-scan-3", AiMetricPrompts.SupportedMetricIds);
+    }
+
+    [Fact]
+    public void La_lectura_tiene_su_propia_instrucción_con_los_nueve_códigos()
+    {
+        var instruction = AiMetricPrompts.SystemInstruction("redflags-scan-2");
+
+        Assert.NotEqual(AiMetricPrompts.SystemInstruction("redflags"), instruction);
+        Assert.Contains("número:código", instruction);
+        Assert.Contains("Ante la duda, excluí.", instruction);
+
+        foreach (var code in AiMetricPrompts.ScanCodes)
+        {
+            Assert.Contains($"{code} =", instruction);
+        }
+
+        Assert.Equal(9, AiMetricPrompts.ScanCodes.Count);
+    }
+
+    [Fact]
+    public void Todas_las_partes_de_la_lectura_comparten_la_misma_instrucción()
+    {
+        Assert.Equal(
+            AiMetricPrompts.SystemInstruction("redflags-scan-1"),
+            AiMetricPrompts.SystemInstruction("redflags-scan-4"));
+    }
+
     // -----------------------------------------------------------------------
     // Renderizado del lote
     // -----------------------------------------------------------------------

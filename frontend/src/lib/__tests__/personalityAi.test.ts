@@ -81,12 +81,13 @@ describe('buildProfileInput — la muestra', () => {
     expect(ana.messages).toHaveLength(PROFILE_SAMPLE_SIZE)
   })
 
-  it('va en el orden del chat y repartida a lo largo de todo, no concentrada en un tramo', () => {
+  it('va en el orden del chat y sale de lo más reciente: lo que no entra es lo más viejo', () => {
     const order = orderOf(ana.messages)
 
     expect(order).toEqual([...order].sort((left, right) => left - right))
-    expect(order[0]).toBeLessThan(30)
-    expect(order.at(-1)).toBeGreaterThan(170)
+    // Ana escribió 200 mensajes y la muestra tiene 40: son los últimos.
+    expect(order.at(-1)).toBe(199)
+    expect(order[0]).toBeGreaterThanOrEqual(140)
   })
 
   it('mezcla mensajes con contenido y respuestas cortas', () => {

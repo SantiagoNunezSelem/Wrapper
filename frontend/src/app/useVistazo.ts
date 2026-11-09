@@ -5,10 +5,12 @@ import type { FreeUnlockPrompt } from '../components/LockedPanel'
 import type { SubscriptionBusyAction } from '../components/SubscriptionPage'
 import { shellCopy } from '../copy/shellCopy'
 import { toMessageIds, type AiCandidateSet } from '../lib/aiCandidates'
+import { parseScanFindings, type ScanPlan } from '../lib/aiScan'
 import {
   analyzeInWorker,
   applyAiVerdictsInWorker,
   buildAiCandidatesInWorker,
+  buildAiScanInWorker,
   buildProfileInputInWorker,
   landingPreviewInWorker,
 } from '../lib/analysisClient'
@@ -28,13 +30,13 @@ import {
   loginWithGoogle,
   resetDevFreeUnlocks,
   resumeSubscription,
-  retryAiMetrics,
   saveAnalysis,
   spendFreeUnlock,
   syncSubscription,
   toggleDevSubscription,
   updatePreferredLanguage,
 } from '../lib/api'
+import type { WireVerdict } from '../lib/analysisWorker'
 import { CHECKOUT_WINDOW_OPENED, isCheckoutReturn, onCheckoutReturn } from '../lib/checkoutWindow'
 import { needsTermsAcceptance, TERMS_VERSION } from '../lib/terms'
 import { phaseOf } from '../lib/subscriptionPhase'
@@ -57,6 +59,7 @@ import {
   type AiCardStates,
   type AiMetricId,
   type AnalysisCore,
+  type RedFlagCategoryId,
 } from '../lib/metrics'
 import { parseChatFile } from '../lib/parser'
 import { profileCardState, toProfileOverrides, toProfilePayload, type ProfileInput } from '../lib/personalityAi'
@@ -232,6 +235,11 @@ export function useVistazo() {
   // Snippets are derived from the messages, not from VIP state, so one build per chat
   // serves the first analysis and every later retry.
   const aiCandidateCache = useRef<Map<string, AiCandidateSet[]>>(new Map())
+  // The red-flags scan: what is sent (built once per chat, like the snippets) and, once every part
+  // of it has been answered, what it found. The answer does not depend on the language, so a
+  // language toggle reuses it instead of sending the chat again.
+  const aiScanCache = useRef<Map<string, ScanPlan>>(new Map())
+  const aiScanFound = useRef<Map<string, Map<string, RedFlagCategoryId>>>(new Map())
   // Which (chat, language) the AI phase has already been attempted for, so the effect
   // doesn't re-fire when applying the verdicts changes `core`.
   const aiAttemptedFor = useRef<string>('')
@@ -506,7 +514,7 @@ export function useVistazo() {
 
     if (user.hasAiConsent && aiAttemptedFor.current !== runKey) {
       aiAttemptedFor.current = runKey
-      void runAiPhase(token, activeChat, core, { retry: false })
+      void runAiPhase(token, activeChat, core)
     }
 
     if (user.hasAiProfileConsent && profileAttemptedFor.current !== runKey) {
@@ -1224,17 +1232,95 @@ export function useVistazo() {
     return built
   }
 
+  /** What the red-flags scan sends depends only on the messages too: one build per chat. */
+  async function getAiScan(chat: ActiveChat): Promise<ScanPlan> {
+    const cached = aiScanCache.current.get(chat.sourceHash)
+
+    if (cached) {
+      return cached
+    }
+
+    const built = await buildAiScanInWorker(chat.sourceHash, chat.messages)
+    aiScanCache.current.set(chat.sourceHash, built)
+    return built
+  }
+
+  /**
+   * The red-flags scan: the AI reads the chat itself, one part at a time, a couple at once so the
+   * whole of it is not one long wait. What it finds is only ever added to what the keyword hits
+   * already gave. A scan that cannot run is not an error the user can do anything about — the card
+   * already answers from the keyword hits, and the next analysis of this chat asks for the scan
+   * again — so a part that fails is left out and logged, never shown. What comes back is kept once
+   * every part has been answered, so a language toggle does not send the chat a second time.
+   */
+  async function runAiScan(
+    authToken: string,
+    chat: ActiveChat,
+    participants: number,
+    isStale: () => boolean,
+  ): Promise<Map<string, RedFlagCategoryId> | null> {
+    const cached = aiScanFound.current.get(chat.sourceHash)
+
+    if (cached) {
+      return cached
+    }
+
+    const plan = await getAiScan(chat)
+
+    if (plan.parts.length === 0) {
+      return null
+    }
+
+    const found = new Map<string, RedFlagCategoryId>()
+    const queue = [...plan.parts]
+    let answered = 0
+
+    const work = async () => {
+      for (let part = queue.shift(); part; part = queue.shift()) {
+        if (isStale()) {
+          return
+        }
+
+        try {
+          const [result] = await analyzeAiMetrics(authToken, {
+            sourceHash: chat.sourceHash,
+            participants,
+            metrics: [
+              {
+                metricId: part.metricId,
+                snippets: part.chunks.map(({ id, text }) => ({ id, keyword: '', text })),
+              },
+            ],
+          })
+
+          if (result?.status === 'ready') {
+            answered += 1
+
+            for (const [messageId, category] of parseScanFindings(plan.lines, result.acceptedIds)) {
+              found.set(messageId, category)
+            }
+          }
+        } catch (caught) {
+          console.warn(`The red-flags scan could not run for ${part.metricId}.`, caught)
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(SCAN_PART_CONCURRENCY, queue.length) }, work))
+
+    if (answered === plan.parts.length) {
+      aiScanFound.current.set(chat.sourceHash, found)
+    }
+
+    return found
+  }
+
   /**
    * Sends the filtered snippets for judging and folds the answer back into the core.
    * Metrics are handled one by one all the way down, so a metric that runs out of
    * quota leaves the others — AI-backed or not — exactly as they were.
    */
-  async function runAiPhase(
-    authToken: string,
-    chat: ActiveChat,
-    currentCore: AnalysisCore,
-    options: { retry: boolean },
-  ) {
+  async function runAiPhase(authToken: string, chat: ActiveChat, currentCore: AnalysisCore) {
     // Toggling the language mid-flight rebuilds the core under a different key. This
     // request's answer belongs to the core it started from, so it's dropped rather
     // than allowed to overwrite a newer one.
@@ -1251,20 +1337,22 @@ export function useVistazo() {
     try {
       const candidateSets = await getAiCandidates(chat)
 
-      const results = options.retry
-        ? // A retry needs no payload: the backend still holds the snippets from the
-          // attempt that failed, and only re-runs the metrics still marked failed.
-          await retryAiMetrics(authToken, chat.sourceHash)
-        : await analyzeAiMetrics(authToken, {
-            sourceHash: chat.sourceHash,
-            metrics: candidateSets.map((set) => ({
-              metricId: set.metricId,
-              snippets: set.candidates.map(({ id, keyword, text }) => ({ id, keyword, text })),
-            })),
-          })
+      // A retry sends the same snippets as the first run. The server already answers what it has
+      // answered, and a metric still cooling down, without spending a token; and sending them
+      // again is what keeps the ids in its answer matching the candidates built here, which a
+      // retry from what the server stored could not promise once the way candidates are picked
+      // changes.
+      const results = await analyzeAiMetrics(authToken, {
+        sourceHash: chat.sourceHash,
+        participants: currentCore.participantCount,
+        metrics: candidateSets.map((set) => ({
+          metricId: set.metricId,
+          snippets: set.candidates.map(({ id, keyword, text }) => ({ id, keyword, text })),
+        })),
+      })
 
       const nextStates: AiCardStates = {}
-      const verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>> = {}
+      const verdicts: Partial<Record<AiMetricId, WireVerdict>> = {}
 
       for (const result of results) {
         if (!isAiMetricId(result.metricId)) {
@@ -1301,6 +1389,20 @@ export function useVistazo() {
       }
 
       setError(results.some((result) => result.status === 'failed') ? copy.aiPartialError : '')
+
+      // The scan comes last and only for a card that is already open: it adds to what the keyword
+      // hits found, so there is nothing to add to — and nothing worth spending tokens on — while
+      // the card is still locked or has failed.
+      const redflags = verdicts.redflags
+      const found = redflags ? await runAiScan(authToken, chat, currentCore.participantCount, isStale) : null
+
+      if (redflags && found && found.size > 0 && !isStale()) {
+        await enqueueCoreUpdate(runKey, isStale, currentCore, (latest) =>
+          applyAiVerdictsInWorker(latest, chat.sourceHash, language, chat.messages, {
+            redflags: { ...redflags, found: [...found] },
+          }),
+        )
+      }
     } catch (caught) {
       console.error(caught)
 
@@ -1463,7 +1565,7 @@ export function useVistazo() {
       return
     }
 
-    void runAiPhase(token, activeChat, core, { retry: true })
+    void runAiPhase(token, activeChat, core)
   }
 
   async function handleConsentAccept() {
@@ -1977,6 +2079,9 @@ function stripExtension(fileName: string): string {
   parts.pop()
   return parts.join('.') || fileName
 }
+
+/** Parts of the red-flags scan asked for at the same time: enough to cut the wait, few enough to stay inside the rate limit. */
+const SCAN_PART_CONCURRENCY = 2
 
 // Long enough to read as "fetching something real," short enough not to feel broken;
 // randomized within the range so it never looks like a canned constant. See
