@@ -651,6 +651,10 @@ export const shellCopy = {
       'Tu chat se procesa en tu dispositivo. No sale nada sin tu permiso.',
     footerRights: 'Hecho sin nada mejor que hacer.',
     footerTerms: 'Términos y condiciones',
+    // Links a las páginas de contenido (seo/): HTML estático que sólo existe en español.
+    footerGuides: 'Guías',
+    footerMetrics: 'Métricas',
+    footerFaq: 'Preguntas frecuentes',
     /* Textos que sólo existen en el shell de mobile: pestañas, hoja de subida,
        modo historia. Viven acá y no adentro de los componentes, para que sigan
        la misma regla que el resto — un solo lugar, los dos idiomas. */
@@ -1294,6 +1298,12 @@ export const shellCopy = {
       'Your chat is processed on your device. Nothing leaves it without your permission.',
     footerRights: 'Made with nothing better to do.',
     footerTerms: 'Terms and conditions',
+    // Las páginas de contenido (seo/) sólo existen en español: el shell no muestra estos
+    // links en inglés. Quedan acá porque `ShellCopy` pide las mismas claves en los dos
+    // idiomas, y para cuando existan las páginas en inglés.
+    footerGuides: 'Guides',
+    footerMetrics: 'Metrics',
+    footerFaq: 'FAQ',
     mobile: {
       tabs: { home: 'Home', metrics: 'Metrics', history: 'History', account: 'Account' },
       openMenu: 'Open menu',

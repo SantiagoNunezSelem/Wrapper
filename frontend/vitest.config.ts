@@ -45,6 +45,9 @@ const testsSinDom = [
   'src/lib/__tests__/redflagsDictionary.test.ts',
   'src/lib/__tests__/scrub.test.ts',
   'src/lib/__tests__/shareTargetFile.test.ts',
+  // El generador de SEO (seo/) es texto adentro, texto afuera, y los tests leen archivos
+  // del repo (index.html, vercel.json, metrics.ts): nada de esto necesita un DOM.
+  'seo/__tests__/seo.test.ts',
 ]
 
 /** Higiene de mocks entre tests: la misma para los dos proyectos. */

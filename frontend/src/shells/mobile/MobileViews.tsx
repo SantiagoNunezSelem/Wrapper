@@ -103,6 +103,16 @@ export function MobileHome({
           ))}
         </ol>
       </section>
+
+      {/* Links de verdad a las páginas de contenido (seo/), que sólo existen en español:
+          es por donde Google llega a ellas desde la portada. */}
+      {language === 'es' ? (
+        <nav className="m-seo-links" aria-label={copy.footerGuides}>
+          <a href="/guias">{copy.footerGuides}</a>
+          <a href="/metricas">{copy.footerMetrics}</a>
+          <a href="/preguntas-frecuentes">{copy.footerFaq}</a>
+        </nav>
+      ) : null}
     </>
   )
 }

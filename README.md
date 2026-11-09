@@ -12,6 +12,7 @@ Arquitectura inicial del proyecto basada en los documentos de `Project_Context\`
 ## Estructura
 
 - `frontend\` — app web, parser de export de WhatsApp y dashboard de métricas
+- `frontend\seo\` — páginas de contenido (guías, métricas, preguntas), sitemap y robots.txt: ver **[SEO.md](SEO.md)**
 - `backend\` — API, login con Google, JWT, SQLite y guardado de análisis
 - `backend.Tests\` — pruebas de los servicios y de los 23 endpoints
 - `Project_Context\` — especificación funcional y técnica fuente
@@ -58,14 +59,16 @@ VITE_API_URL=http://localhost:5175
 VITE_GOOGLE_CLIENT_ID=<el mismo Google Web Client ID usado en el backend>
 ```
 
-En producción, sumá además `VITE_SITE_URL` con el origen público del sitio (sin barra
-final, p. ej. `https://vistazo.app`).
+En producción, el origen público del sitio (sin barra final, p. ej. `https://vistazo.app`)
+sale de `VITE_SITE_URL` y, si no está, del dominio de producción que Vercel expone en cada
+build (`VERCEL_PROJECT_PRODUCTION_URL`): en Vercel no hace falta definir nada, y conectar un
+dominio propio lo actualiza solo.
 
-> `VITE_SITE_URL` sirve para una sola cosa: las etiquetas Open Graph de `index.html`.
-> `vite.config.ts` la usa para reemplazar el marcador `__SITE_URL__` y dejar la imagen
-> de la vista previa en una URL absoluta, que es lo que piden los crawlers que arman
-> la tarjeta al pegar un link en WhatsApp. Vacía (el default) las rutas quedan
-> relativas, que es lo correcto en local.
+> El origen público es la base del SEO. `seo/plugin.ts` lo usa para reemplazar el marcador
+> `__SITE_URL__` de `index.html` (canónica, vista previa al pegar un link en WhatsApp y datos
+> estructurados, que piden URLs absolutas) y para generar el sitemap, el `robots.txt` y las
+> páginas de contenido. Vacío (el default en local) las rutas quedan relativas y la canónica
+> se omite. Qué hay hecho, qué falta hacer a mano y por qué está así: **[SEO.md](SEO.md)**.
 
 ## Configurar Google AI Studio (métricas con IA)
 

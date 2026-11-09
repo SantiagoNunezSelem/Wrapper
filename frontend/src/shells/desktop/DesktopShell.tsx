@@ -612,6 +612,24 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
           <button type="button" className="footer-link" onClick={goToTermsPage}>
             {copy.footerTerms}
           </button>
+          {/* Links de verdad (no botones): es por donde Google llega a las páginas de
+              contenido desde la portada. Esas páginas sólo existen en español. */}
+          {language === 'es' ? (
+            <>
+              {' · '}
+              <a className="footer-link" href="/guias">
+                {copy.footerGuides}
+              </a>
+              {' · '}
+              <a className="footer-link" href="/metricas">
+                {copy.footerMetrics}
+              </a>
+              {' · '}
+              <a className="footer-link" href="/preguntas-frecuentes">
+                {copy.footerFaq}
+              </a>
+            </>
+          ) : null}
         </p>
       </footer>
         </>
