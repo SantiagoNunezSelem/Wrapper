@@ -257,11 +257,17 @@ await using (var scope = app.Services.CreateAsyncScope())
     await db.Database.EnsureCreatedAsync();
     // EnsureCreated skips databases that already exist, so anything added to the schema
     // after the first run has to be applied by hand. See SchemaUpgrades.
-    // The statements are SQLite dialect; a Postgres database is always born from the
-    // current model by EnsureCreated, so it has nothing to upgrade.
+    // SQLite and Postgres each have their own list, in their own dialect. A Postgres database is
+    // born from the current model by EnsureCreated — but only once, so whatever was added to the
+    // model after that has to be listed in ApplyPostgresAsync. Skipping it is not harmless: the
+    // seed below reads Users, and a column the database lacks fails that read at startup.
     if (db.Database.IsSqlite())
     {
         await SchemaUpgrades.ApplyAsync(db);
+    }
+    else if (db.Database.IsNpgsql())
+    {
+        await SchemaUpgrades.ApplyPostgresAsync(db);
     }
     await SeedData.InitializeAsync(scope.ServiceProvider, db);
 }
