@@ -62,7 +62,15 @@ describe('buildLandingPreviewCards', () => {
   })
 
   it('el texto cambia entre español e inglés', () => {
+    // "Red Flags" se dice igual en los dos idiomas: es un préstamo que el español usa tal cual,
+    // así que traducirlo solo para que el título "cambie" sería inventar una palabra.
+    const sameInBothLanguages = new Set(['Red Flags'])
+
     for (let index = 0; index < cards.es.length; index += 1) {
+      if (sameInBothLanguages.has(cards.es[index].title)) {
+        continue
+      }
+
       expect(cards.en[index].title, `${cards.es[index].id}.title`).not.toBe(cards.es[index].title)
     }
   })

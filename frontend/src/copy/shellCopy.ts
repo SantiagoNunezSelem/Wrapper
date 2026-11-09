@@ -118,6 +118,7 @@ export const shellCopy = {
     },
     profiles: {
       basedOn: 'Según {count} mensajes',
+      numberLocale: 'es-AR',
       aiBadge: 'IA',
       localBadge: 'Análisis local',
       also: 'También',
@@ -685,8 +686,6 @@ export const shellCopy = {
         creatingLink: 'Creando link…',
         linkCopied: 'Link copiado',
         linkError: 'No se pudo crear el link',
-        profilesShareNote:
-          'Este recorrido incluye descripciones de personas por su nombre. Compartilo solo con quien corresponda.',
       },
       account: { signedInAs: 'Sesión iniciada como', noSubscription: 'Sin suscripción' },
     },
@@ -808,6 +807,7 @@ export const shellCopy = {
     },
     profiles: {
       basedOn: 'Based on {count} messages',
+      numberLocale: 'en-US',
       aiBadge: 'AI',
       localBadge: 'Local reading',
       also: 'Also',
@@ -1324,8 +1324,6 @@ export const shellCopy = {
         creatingLink: 'Creating link…',
         linkCopied: 'Link copied',
         linkError: "Couldn't create the link",
-        profilesShareNote:
-          'This story includes descriptions of people by name. Share it only with the people it is meant for.',
       },
       account: { signedInAs: 'Signed in as', noSubscription: 'No subscription' },
     },
