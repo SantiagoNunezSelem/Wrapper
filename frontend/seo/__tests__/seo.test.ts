@@ -388,6 +388,22 @@ describe('index.html', () => {
   })
 })
 
+describe('verificación de Search Console', () => {
+  const files = readdirSync(`${frontendRoot}public`).filter((name) => /^google[0-9a-f]+\.html$/.test(name))
+
+  // Google pide que el archivo quede publicado "aunque la verificación ya haya salido bien":
+  // lo vuelve a chequear de tanto en tanto, y si no está, se pierde la propiedad sin aviso.
+  it('el archivo de verificación sigue en public/', () => {
+    expect(files.length, 'falta el archivo googleXXXX.html de Search Console').toBeGreaterThan(0)
+  })
+
+  it('cada archivo dice su propio nombre, tal como lo genera Google', () => {
+    for (const name of files) {
+      expect(read(`public/${name}`).trim(), name).toBe(`google-site-verification: ${name}`)
+    }
+  })
+})
+
 describe('plugin', () => {
   it('reemplaza __SITE_URL__ en todo el HTML', () => {
     expect(applySiteUrl('a __SITE_URL__/x b __SITE_URL__/y', SITE)).toBe(`a ${SITE}/x b ${SITE}/y`)

@@ -61,10 +61,14 @@ y 12 Pro). Si se agrega una métrica y no se actualiza el catálogo, el test fal
    - Sí hay que actualizar lo que apunta al dominio viejo: `Cors:AllowedOrigins` del backend,
      los orígenes autorizados del cliente OAuth de Google y `MercadoPago:BackUrl`.
 2. **Google Search Console** ([search.google.com/search-console](https://search.google.com/search-console)).
-   Crear la propiedad con el dominio final, elegir verificar con la etiqueta HTML, copiar el
-   `content` de `google-site-verification` a la variable `VITE_GOOGLE_SITE_VERIFICATION` en
-   Vercel, redesplegar y apretar *Verificar*. Después: *Sitemaps* → enviar `sitemap.xml`, y en
-   *Inspección de URLs* pedir la indexación de la portada y de cada página nueva.
+   Crear la propiedad de tipo *Prefijo de la URL* con el dominio final (el tipo *Dominio* pide
+   DNS, y un `.vercel.app` no tiene) y verificarla. La de `whatsapp-wrapper-metrics.vercel.app`
+   se verifica con el archivo HTML `frontend/public/google9c605e67392eaf8e.html`: **no se
+   borra**, Google lo vuelve a chequear de tanto en tanto, y un test avisa si falta. Con un
+   dominio propio la propiedad nueva se verifica igual: bajar el archivo que da Google y
+   ponerlo en `frontend/public/`, o usar la etiqueta HTML con `VITE_GOOGLE_SITE_VERIFICATION`
+   en Vercel. Después: *Sitemaps* → enviar `sitemap.xml`, y en *Inspección de URLs* pedir la
+   indexación de la portada y de cada página nueva.
 3. **Bing Webmaster Tools**: *Importar desde Google Search Console*. Bing alimenta a
    DuckDuckGo, Ecosia y Copilot. Si pide verificación con etiqueta, va en `VITE_BING_SITE_VERIFICATION`.
 4. **Medición**: con Search Console alcanza para saber qué se busca y qué clics llegan. Vercel
