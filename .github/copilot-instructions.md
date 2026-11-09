@@ -19,9 +19,9 @@
 - The core architecture is **hybrid and privacy-first**:
   1. The user uploads a WhatsApp `.txt` or `.zip` export in the browser.
   2. Parsing and metric computation happen **locally in the frontend**.
-  3. Raw chat messages must **never** be sent to the backend.
+  3. Raw chat messages are **not** sent to the backend, with one exception: what the Pro AI features send after the user's explicit consent (keyword-hit fragments, personality samples and, for Red Flags, the most recent messages), always with names replaced by letters.
   4. Only a lightweight JSON of aggregated results is sent to the backend and stored per authenticated user.
-  5. Premium features that truly require external AI should send only the minimum necessary text, never the full chat, and only after backend-side entitlement checks.
+  5. Premium features that truly require external AI should send only the minimum necessary text, only after the user consents, and only after backend-side entitlement checks.
 - The backend is responsible for:
   - Persisting users, subscriptions, and saved analyses.
   - Enforcing PRO access on every premium request.

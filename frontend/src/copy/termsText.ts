@@ -62,7 +62,7 @@ export const TERMS_SECTIONS: readonly TermsSection[] = [
     title: '3. Qué es Vistazo',
     blocks: [
       'Vistazo es una herramienta de entretenimiento que genera estadísticas y resúmenes (métricas, gráficos y recorridos tipo "Wrapped") a partir del archivo de exportación de un chat de WhatsApp que el propio Usuario elige cargar.',
-      'El archivo se procesa en el navegador del dispositivo del Usuario. El chat completo nunca se envía a nuestros servidores. Lo que sí se guarda en la cuenta, y con qué alcance, se detalla en la Política de Privacidad (sección 16).',
+      'El archivo se procesa en el navegador del dispositivo del Usuario. Nada del chat se envía a nuestros servidores sin su permiso. Lo que sí se guarda en la cuenta, y con qué alcance, se detalla en la Política de Privacidad (sección 16).',
       'Vistazo no está afiliado, asociado, autorizado ni respaldado por WhatsApp ni por Meta Platforms, Inc. "WhatsApp" es una marca de sus respectivos titulares y se menciona sólo para describir el formato de archivo que el Servicio lee.',
     ],
   },
@@ -111,8 +111,8 @@ export const TERMS_SECTIONS: readonly TermsSection[] = [
   {
     title: '7. Métricas con inteligencia artificial',
     blocks: [
-      'Algunas métricas Pro usan un servicio de inteligencia artificial de Google (Gemini): unas para revisar mensajes que un filtro de palabras ya marcó, y otra ("Quién es Quién") para escribir la personalidad de cada integrante a partir de una muestra de sus mensajes. Sólo se usan si el Usuario da su consentimiento expreso dentro de la aplicación, que se pide una única vez.',
-      'Con ese consentimiento se envían fragmentos breves de los mensajes marcados y, para las personalidades, hasta 40 mensajes cortos de cada una de las 8 personas que más escriben, junto con cifras sobre cómo escriben. Los nombres se reemplazan por letras, y los links, correos y teléfonos se sacan antes de salir del dispositivo. El resto del chat no sale del dispositivo. El Usuario puede no darlo: en ese caso esas métricas no se calculan con IA.',
+      'Algunas métricas Pro usan un servicio de inteligencia artificial de Google (Gemini): unas para revisar mensajes que un filtro de palabras ya marcó, una ("Red Flags") que además lee los mensajes más recientes del chat para encontrar lo que ese filtro no ve, y otra ("Quién es Quién") para escribir la personalidad de cada integrante a partir de una muestra de sus mensajes. Sólo se usan si el Usuario da su consentimiento expreso dentro de la aplicación, que se pide una única vez.',
+      'Con ese consentimiento se envían fragmentos breves de los mensajes marcados; para Red Flags, además, los últimos 5.000 mensajes del chat y algunos tramos anteriores; y, para las personalidades, hasta 40 mensajes cortos de cada una de las 8 personas que más escriben, junto con cifras sobre cómo escriben. Los nombres se reemplazan por letras, y los links, correos y teléfonos se sacan antes de salir del dispositivo. Lo demás no sale del dispositivo. El Usuario puede no darlo: en ese caso esas métricas no se calculan con IA.',
       'Los resultados generados con IA son automáticos y pueden contener errores, omisiones o interpretaciones equivocadas. Las personalidades describen cómo se escribe en un chat: son un juego y no una evaluación de nadie.',
     ],
   },
@@ -191,10 +191,10 @@ export const TERMS_SECTIONS: readonly TermsSection[] = [
       'Qué datos guardamos:',
       [
         'De la cuenta: nombre, correo electrónico y foto de perfil que provee Google al iniciar sesión, idioma elegido y fecha de último ingreso.',
-        'De los análisis que el Usuario guarda: los resultados (cifras, rankings y gráficos), que pueden incluir nombres de participantes y fragmentos breves de mensajes usados como ejemplo dentro de una métrica. El archivo del chat completo nunca se sube.',
+        'De los análisis que el Usuario guarda: los resultados (cifras, rankings y gráficos), que pueden incluir nombres de participantes y fragmentos breves de mensajes usados como ejemplo dentro de una métrica. El archivo del chat no se guarda en la cuenta.',
         'De la suscripción: estado, fechas, montos, correo del pagador y tipo de medio de pago informados por Mercado Pago. No guardamos números de tarjeta.',
         'Para prevenir abusos de la prueba gratis: una huella irreversible (hash) de la dirección IP, de la red y de un identificador del dispositivo, y el país de conexión.',
-        'Si el Usuario activa las métricas con IA: los fragmentos marcados que se envían a Google y el resultado, para no volver a procesarlos; y, para las personalidades, el texto que se genera sobre cada integrante. Los mensajes de la muestra que se envían a Google no se guardan.',
+        'Si el Usuario activa las métricas con IA: los fragmentos marcados que se envían a Google y el resultado, para no volver a procesarlos; y, para las personalidades, el texto que se genera sobre cada integrante. Los mensajes de la muestra de las personalidades y de la lectura de Red Flags que se envían a Google no se guardan; se guarda lo que respondió la IA.',
         'Si el Usuario manda un reporte desde la página de ayuda: el correo de contacto que indique, la descripción, el navegador y el tamaño de pantalla.',
         'Los links compartidos: el recorrido publicado, sin el texto de los mensajes pero con las descripciones de personalidad por nombre si el Usuario tiene esa métrica, hasta su vencimiento.',
       ],

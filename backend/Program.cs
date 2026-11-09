@@ -189,12 +189,13 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("ai", httpContext =>
         RateLimitPartition.GetTokenBucketLimiter(AiRateLimitPartitionKey(httpContext), _ => new TokenBucketRateLimiterOptions
         {
-            // Room for the handful of metrics a genuine upload fires off back-to-back…
-            TokenLimit = 12,
+            // Room for the requests a genuine upload fires off back-to-back: the keyword
+            // metrics, the personalities and the handful of parts the red-flags scan is cut into…
+            TokenLimit = 20,
             // …then down to a trickle, so a script gets minutes-per-call rather than
             // hundreds-per-minute. The daily cap in AiMetricService is the harder ceiling;
             // this is what stops a burst from reaching it in seconds.
-            TokensPerPeriod = 4,
+            TokensPerPeriod = 6,
             ReplenishmentPeriod = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
             AutoReplenishment = true,
@@ -730,7 +731,8 @@ app.MapPost("/api/ai/metrics", [Authorize] async (
             access.User.Id,
             request.SourceHash,
             request.Metrics ?? [],
-            cancellationToken);
+            cancellationToken,
+            request.Participants);
 
         return Results.Ok(new AiMetricsResponse(results));
     }
@@ -1159,7 +1161,7 @@ static async Task<bool> PassesRecaptchaAsync(
 
 record GoogleLoginRequest(string IdToken, string? RecaptchaToken = null, bool RecaptchaIsFallback = false);
 
-record AiAnalyzeRequest(string SourceHash, List<AiMetricRequestItem>? Metrics);
+record AiAnalyzeRequest(string SourceHash, List<AiMetricRequestItem>? Metrics, int? Participants = null);
 
 record AiRetryRequest(string SourceHash);
 

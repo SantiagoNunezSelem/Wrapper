@@ -6,7 +6,7 @@ Arquitectura inicial del proyecto basada en los documentos de `Project_Context\`
 - **Backend:** ASP.NET Core 9 + SQLite
 - **Auth:** Google Sign-In validado por el backend
 - **Persistencia:** usuarios, análisis guardados y estado de suscripción/VIP
-- **Procesamiento del chat:** client-side. La única excepción son dos métricas Pro con IA, que envían al backend solo los mensajes ya filtrados (ver más abajo)
+- **Procesamiento del chat:** client-side. La única excepción son las métricas Pro con IA, que envían al backend solo lo que el usuario autorizó (ver más abajo)
 - **IA:** Google AI Studio (Gemini), llamado siempre desde el backend para que la API key nunca llegue al navegador
 
 ## Estructura
@@ -71,7 +71,10 @@ final, p. ej. `https://vistazo.app`).
 
 Dos métricas Pro — **Detector de Red Flags** y **El Tono Picante** — se apoyan en filtros de
 palabras que producen falsos positivos ("la comida estaba caliente" no es un mensaje subido
-de tono). La IA revisa esos mensajes ya marcados y descarta los que no corresponden.
+de tono). La IA revisa esos mensajes ya marcados y descarta los que no corresponden. Red
+Flags, además, deja que la IA lea los últimos 5.000 mensajes del chat y algunos tramos
+anteriores para encontrar lo que ninguna palabra marcó (la lectura se explica en "Cómo se
+controla el gasto").
 
 1. Entrar a [Google AI Studio](https://aistudio.google.com/) con tu cuenta de Google.
 2. Crear una **API key** (menú *Get API key*).
@@ -102,9 +105,16 @@ El resto de la configuración vive en `backend\appsettings.json`, bajo `GoogleAi
 - **Sin consentimiento tampoco.** El usuario Pro tiene que autorizarlo una vez.
 - **Una vez por chat.** El veredicto se guarda en la tabla `AiMetricResults` y se reutiliza
   para siempre; volver a subir el mismo export no cuesta nada.
-- **Nunca se manda el chat.** Solo los mensajes que ya pasaron el filtro de palabras,
-  recortados a 50 palabras alrededor de la palabra clave, con un par de líneas de contexto
-  y con los nombres reemplazados por letras.
+- **Solo viaja lo que hace falta, y con permiso.** Los mensajes que pasaron el filtro de
+  palabras, recortados a 50 palabras alrededor de la palabra clave, con un par de líneas de
+  contexto; para Red Flags, además, los últimos 5.000 mensajes y hasta 100 tramos calientes
+  de lo anterior, en líneas numeradas y partidos en pedidos de a 2.000 líneas
+  (`redflags-scan-N`). Siempre con los nombres reemplazados por letras.
+- **La lectura no se guarda.** De la lectura el servidor conserva lo que contestó la IA y un
+  hash de lo que se le preguntó; el texto no. Reintentar una parte fallada es mandarla de
+  nuevo desde el navegador.
+- **Las muestras van de lo más reciente a lo más antiguo.** Si el cupo se acaba antes que
+  el chat, quedan afuera los mensajes viejos. Vale para todas las métricas con IA.
 
 ## Configurar Mercado Pago (suscripciones)
 

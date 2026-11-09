@@ -83,14 +83,20 @@ public sealed class AiMetricService(
     /// Runs the metrics that still need a verdict. Each metric succeeds or fails on its
     /// own — one running out of quota never invalidates another that already answered.
     /// </summary>
+    /// <param name="participants">
+    /// How many people the chat has, when the browser says. Two is a pair — a couple, or close to
+    /// one — and changes how strict the red-flags prompts are; anything else, or nothing, is a group.
+    /// </param>
     public async Task<List<AiMetricStateDto>> AnalyzeAsync(
         Guid userId,
         string sourceHash,
         IReadOnlyList<AiMetricRequestItem> requests,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? participants = null)
     {
         await EnsureDailyChatBudgetAsync(userId, sourceHash, cancellationToken);
 
+        var bond = AiMetricPrompts.BondFor(participants);
         var results = new List<AiMetricStateDto>();
 
         foreach (var request in requests.Take(MaxMetricsPerRequest))
@@ -101,8 +107,9 @@ public sealed class AiMetricService(
                 continue;
             }
 
-            var snippets = Sanitize(request.Snippets);
-            results.Add(await ResolveAsync(userId, sourceHash, request.MetricId, snippets, cancellationToken));
+            results.Add(AiMetricPrompts.IsScan(request.MetricId)
+                ? await ResolveScanAsync(userId, sourceHash, request.MetricId, SanitizeScan(request.Snippets), bond, cancellationToken)
+                : await ResolveAsync(userId, sourceHash, request.MetricId, Sanitize(request.Snippets), bond, cancellationToken));
         }
 
         return results;
@@ -132,8 +139,17 @@ public sealed class AiMetricService(
 
         foreach (var row in rows.Where(item => item.Status == AiMetricStatus.Failed))
         {
+            // A scan keeps no copy of what it read — it is a stretch of someone's conversation, and
+            // the browser still has it — so there is nothing to re-run here. It is retried the same
+            // way it was first run: by the browser sending it again.
+            if (AiMetricPrompts.IsScan(row.MetricId))
+            {
+                results.Add(ToDto(row));
+                continue;
+            }
+
             var snippets = DeserializeSnippets(row.InputJson);
-            results.Add(await ResolveAsync(userId, sourceHash, row.MetricId, snippets, cancellationToken));
+            results.Add(await ResolveAsync(userId, sourceHash, row.MetricId, snippets, ChatBond.Group, cancellationToken));
         }
 
         return results;
@@ -152,9 +168,10 @@ public sealed class AiMetricService(
         string sourceHash,
         string metricId,
         IReadOnlyList<AiSnippetInput> snippets,
+        ChatBond bond,
         CancellationToken cancellationToken)
     {
-        var inputHash = ComputeInputHash(metricId, snippets);
+        var inputHash = ComputeInputHash(metricId, snippets, bond);
         var now = DateTime.UtcNow;
 
         var row = await db.AiMetricResults.FirstOrDefaultAsync(
@@ -196,7 +213,7 @@ public sealed class AiMetricService(
         else
         {
             row.AttemptCount += 1;
-            Apply(row, await ClassifyInBatchesAsync(metricId, snippets, cancellationToken));
+            Apply(row, await ClassifyInBatchesAsync(metricId, snippets, bond, cancellationToken));
         }
 
         if (db.Entry(row).State == EntityState.Detached)
@@ -269,9 +286,10 @@ public sealed class AiMetricService(
     private async Task<ClassificationOutcome> ClassifyInBatchesAsync(
         string metricId,
         IReadOnlyList<AiSnippetInput> snippets,
+        ChatBond bond,
         CancellationToken cancellationToken)
     {
-        var instruction = AiMetricPrompts.SystemInstruction(metricId);
+        var instruction = AiMetricPrompts.SystemInstruction(metricId, bond);
         var batchSize = Math.Max(1, _options.BatchSize);
         var accepted = new List<string>();
         var rejected = new List<string>();
@@ -398,6 +416,293 @@ public sealed class AiMetricService(
         return (firstAccepted, firstRejected, null);
     }
 
+    /// <summary>
+    /// The scan: instead of judging the keyword hits, Gemini reads a stretch of the chat itself and
+    /// names the messages that are red flags, each with a category. It is how a threat nobody
+    /// listed in a dictionary, or a manipulation with no insult in it, gets found. Same rule as
+    /// every other metric — a part is judged once, ever — with one difference: the browser's
+    /// sample is not stored. It is a long stretch of someone's conversation, and what is kept is
+    /// what the model answered and a fingerprint of what it was asked.
+    /// </summary>
+    private async Task<AiMetricStateDto> ResolveScanAsync(
+        Guid userId,
+        string sourceHash,
+        string metricId,
+        IReadOnlyList<ScanBlock> blocks,
+        ChatBond bond,
+        CancellationToken cancellationToken)
+    {
+        var inputHash = ComputeScanInputHash(metricId, blocks, bond);
+        var now = DateTime.UtcNow;
+
+        var row = await db.AiMetricResults.FirstOrDefaultAsync(
+            item => item.UserId == userId && item.SourceHash == sourceHash && item.MetricId == metricId,
+            cancellationToken);
+
+        if (row is { Status: AiMetricStatus.Ready } && row.InputHash == inputHash)
+        {
+            return ToDto(row);
+        }
+
+        if (row is { Status: AiMetricStatus.Failed }
+            && row.RetryAvailableAtUtc is { } retryAt
+            && retryAt > now)
+        {
+            return ToDto(row);
+        }
+
+        row ??= new AiMetricResult
+        {
+            UserId = userId,
+            SourceHash = sourceHash,
+            MetricId = metricId,
+        };
+
+        row.InputHash = inputHash;
+        row.InputJson = string.Empty;
+        row.UpdatedAtUtc = now;
+
+        if (blocks.Count == 0)
+        {
+            Apply(row, ClassificationOutcome.Success([], []));
+        }
+        else
+        {
+            row.AttemptCount += 1;
+            Apply(row, await ScanInBatchesAsync(metricId, blocks, bond, cancellationToken));
+        }
+
+        if (db.Entry(row).State == EntityState.Detached)
+        {
+            db.AiMetricResults.Add(row);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await SaveUsageAsync(userId, metricId, cancellationToken);
+        return ToDto(row);
+    }
+
+    /// <summary>
+    /// The numbered lines the browser sent, checked. A line is a number, a space and the rest; one
+    /// that is not is dropped, a number seen twice is dropped, a long line is cut, and the whole
+    /// part is held to <see cref="GoogleAiOptions.MaxScanLinesPerPart"/> — a client cannot make us
+    /// pay for a novel, and a model cannot be asked about a line it was never shown.
+    /// </summary>
+    private IReadOnlyList<ScanBlock> SanitizeScan(IEnumerable<AiSnippetInput>? chunks)
+    {
+        var blocks = new List<ScanBlock>();
+
+        if (chunks is null)
+        {
+            return blocks;
+        }
+
+        var budget = Math.Max(1, _options.MaxScanLinesPerPart);
+        var chunkLimit = Math.Max(1, _options.MaxScanChunkLines);
+        var lineChars = Math.Max(20, _options.MaxScanLineChars);
+        var seen = new HashSet<int>();
+
+        foreach (var chunk in chunks)
+        {
+            if (budget <= 0)
+            {
+                break;
+            }
+
+            var lines = new List<ScanLine>();
+
+            foreach (var raw in (chunk.Text ?? string.Empty).Split('\n'))
+            {
+                if (lines.Count >= chunkLimit || lines.Count >= budget)
+                {
+                    break;
+                }
+
+                var line = raw.Trim();
+                var space = line.IndexOf(' ');
+
+                if (space <= 0
+                    || !int.TryParse(line.AsSpan(0, space), out var number)
+                    || number <= 0
+                    || !seen.Add(number))
+                {
+                    continue;
+                }
+
+                lines.Add(new ScanLine(number, Clamp(line, lineChars)));
+            }
+
+            budget -= lines.Count;
+
+            if (lines.Count > 0)
+            {
+                blocks.Add(new ScanBlock(lines));
+            }
+        }
+
+        return blocks;
+    }
+
+    private async Task<ClassificationOutcome> ScanInBatchesAsync(
+        string metricId,
+        IReadOnlyList<ScanBlock> blocks,
+        ChatBond bond,
+        CancellationToken cancellationToken)
+    {
+        var instruction = AiMetricPrompts.SystemInstruction(metricId, bond);
+        var perCall = Math.Max(1, _options.ScanLinesPerCall);
+
+        // Whole blocks travel together up to the line limit of one call; a block is never cut
+        // between two calls, so what the model reads as one stretch of conversation stays one.
+        var batches = new List<List<IReadOnlyList<ScanLine>>>();
+        var current = new List<IReadOnlyList<ScanLine>>();
+        var currentLines = 0;
+
+        foreach (var block in blocks)
+        {
+            if (currentLines > 0 && currentLines + block.Lines.Count > perCall)
+            {
+                batches.Add(current);
+                current = [];
+                currentLines = 0;
+            }
+
+            current.Add(block.Lines);
+            currentLines += block.Lines.Count;
+        }
+
+        if (current.Count > 0)
+        {
+            batches.Add(current);
+        }
+
+        // The calls are independent, so a few run at once: a part is several of them, and one
+        // after another they would outlast what a request may take. The bound keeps a part from
+        // bursting past the model's per-minute quota in one go.
+        using var gate = new SemaphoreSlim(Math.Max(1, _options.ScanConcurrency));
+
+        var outcomes = await Task.WhenAll(batches.Select(async batch =>
+        {
+            await gate.WaitAsync(cancellationToken);
+
+            try
+            {
+                return await ScanAsync(instruction, batch, cancellationToken);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
+
+        // What every call cost is recorded first, failed ones included: the tokens were spent.
+        foreach (var outcome in outcomes)
+        {
+            foreach (var call in outcome.Calls)
+            {
+                TrackUsage(metricId, call);
+            }
+        }
+
+        // One bad call fails the whole part on purpose: keeping a partial answer would silently
+        // undercount the chat with no way for the user to tell.
+        var failure = outcomes.FirstOrDefault(outcome => outcome.Failure is not null)?.Failure;
+
+        return failure is not null
+            ? ClassificationOutcome.Failure(failure)
+            : ClassificationOutcome.Success(outcomes.SelectMany(outcome => outcome.Findings).ToList(), []);
+    }
+
+    /// <summary>
+    /// One Gemini call over some lines, splitting and retrying on <see cref="AiErrorCode.Blocked"/>
+    /// the way <see cref="ClassifyBatchAsync"/> does: a stretch dense with hostile or explicit
+    /// messages can trip the safety floor, and halving it finds the lines that are fine. A single
+    /// line the model refuses even alone is left out, which is neutral: not a finding, not an error.
+    /// </summary>
+    private async Task<ScanCallResult> ScanAsync(
+        string instruction,
+        IReadOnlyList<IReadOnlyList<ScanLine>> groups,
+        CancellationToken cancellationToken)
+    {
+        var rendered = string.Join("\n\n", groups.Select(group => string.Join('\n', group.Select(line => line.Text))));
+        var outcome = await client.ClassifyAsync(instruction, rendered, cancellationToken);
+        var calls = new List<AiCallOutcome> { outcome };
+
+        if (outcome.IsSuccess)
+        {
+            var shown = groups.SelectMany(group => group).Select(line => line.Number).ToHashSet();
+            return new ScanCallResult(ValidFindings(outcome.AcceptedIds, shown), null, calls);
+        }
+
+        if (outcome.ErrorCode != AiErrorCode.Blocked)
+        {
+            return new ScanCallResult([], outcome.ErrorCode, calls);
+        }
+
+        var lines = groups.SelectMany(group => group).ToList();
+
+        if (lines.Count <= 1)
+        {
+            logger.LogInformation("Gemini's safety floor would not read a single scanned line even alone; leaving it out.");
+            return new ScanCallResult([], null, calls);
+        }
+
+        var half = lines.Count / 2;
+        var first = await ScanAsync(instruction, [lines.Take(half).ToList()], cancellationToken);
+        var second = await ScanAsync(instruction, [lines.Skip(half).ToList()], cancellationToken);
+        calls.AddRange(first.Calls);
+        calls.AddRange(second.Calls);
+
+        var failure = first.Failure ?? second.Failure;
+
+        return failure is not null
+            ? new ScanCallResult([], failure, calls)
+            : new ScanCallResult([.. first.Findings, .. second.Findings], null, calls);
+    }
+
+    /// <summary>
+    /// What the model answered, kept only if it can be trusted: <c>line:code</c> with a line it was
+    /// actually shown and a code from the list. One finding per line, the first one wins. A
+    /// hallucinated line or a made-up category must not slip into the result.
+    /// </summary>
+    private static List<string> ValidFindings(IEnumerable<string> ids, IReadOnlySet<int> shown)
+    {
+        var seen = new HashSet<int>();
+        var findings = new List<string>();
+
+        foreach (var id in ids)
+        {
+            var parts = id.Split(':');
+
+            if (parts.Length != 2
+                || !int.TryParse(parts[0].Trim(), out var line)
+                || !shown.Contains(line))
+            {
+                continue;
+            }
+
+            var code = parts[1].Trim().ToLowerInvariant();
+
+            if (AiMetricPrompts.ScanCodes.Contains(code) && seen.Add(line))
+            {
+                findings.Add($"{line}:{code}");
+            }
+        }
+
+        return findings;
+    }
+
+    /// <summary>The scan's version of <see cref="ComputeInputHash"/>: the lines AND the prompt they were read against.</summary>
+    private static string ComputeScanInputHash(string metricId, IReadOnlyList<ScanBlock> blocks, ChatBond bond)
+    {
+        var canonical = string.Join(
+            FieldSeparator,
+            blocks.Select(block => string.Join('\n', block.Lines.Select(line => line.Text))));
+        canonical = $"{AiMetricPrompts.SystemInstruction(metricId, bond)}{FieldSeparator}{canonical}";
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
     private void Apply(AiMetricResult row, ClassificationOutcome outcome)
     {
         if (outcome.IsSuccess)
@@ -466,12 +771,12 @@ public sealed class AiMetricService(
     /// its snippets never changed. Either way, the stale verdict gets recomputed
     /// instead of reused — this is the one hash covering both triggers.
     /// </summary>
-    private static string ComputeInputHash(string metricId, IReadOnlyList<AiSnippetInput> snippets)
+    private static string ComputeInputHash(string metricId, IReadOnlyList<AiSnippetInput> snippets, ChatBond bond)
     {
         var canonical = string.Join(
             FieldSeparator,
             snippets.Select(item => $"{item.Id}{FieldSeparator}{item.Keyword}{FieldSeparator}{item.Text}"));
-        canonical = $"{AiMetricPrompts.SystemInstruction(metricId)}{FieldSeparator}{canonical}";
+        canonical = $"{AiMetricPrompts.SystemInstruction(metricId, bond)}{FieldSeparator}{canonical}";
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
@@ -528,6 +833,15 @@ public sealed class AiMetricService(
     private static DateTime? AsUtc(DateTime? value) =>
         value is null ? null : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
 }
+
+/// <summary>One numbered line of a scanned chat, as the browser sent it: "412 B: te dije que no".</summary>
+internal sealed record ScanLine(int Number, string Text);
+
+/// <summary>A run of scanned lines that belong to the same stretch of conversation.</summary>
+internal sealed record ScanBlock(IReadOnlyList<ScanLine> Lines);
+
+/// <summary>What one scan call, and every call it split into, found and cost.</summary>
+internal sealed record ScanCallResult(IReadOnlyList<string> Findings, string? Failure, List<AiCallOutcome> Calls);
 
 /// <summary>The shape `AiMetricResult.ResultJson` is stored as. See `AiMetricService.DeserializeVerdict`
 /// for how an older, pre-`Rejected` row (a bare JSON array) still reads back correctly.</summary>

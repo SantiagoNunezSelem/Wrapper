@@ -531,12 +531,13 @@ describe('métrica redflags', () => {
     expect(card.detail?.groups?.[1].heading).toContain('Beto')
   })
 
-  it('el aviso deja claro que no es un diagnóstico', async () => {
+  it('la descripción dice de qué se arma, sin carteles de descargo', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-10T10:00:00', from: 'Ana', text: 'estas celoso' },
     ])
 
-    expect(card.detail?.intro).toContain('No es un diagnóstico')
+    expect(card.detail?.intro).toBe('Cruza silencios largos, borrados y mensajes agrupados por categoría.')
+    expect(card.detail?.intro).not.toMatch(/diagn[oó]stico|no juzg/i)
   })
 
   it('los silencios largos se limitan a los 5 más largos como ejemplo', async () => {

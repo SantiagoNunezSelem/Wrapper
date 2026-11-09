@@ -158,6 +158,54 @@ describe('analysisWorker', () => {
     expect(reply.type).toBe('cacheMiss')
   })
 
+  it('avisa cacheMiss cuando le piden la lectura de un chat que nunca vio', async () => {
+    const { send } = await bootWorker()
+
+    const [reply] = await send({ requestId: 1, type: 'aiScan', sourceHash: 'desconocido' })
+
+    expect(reply.type).toBe('cacheMiss')
+  })
+
+  it('arma la lectura con el chat del análisis, o con los mensajes que le reenvían', async () => {
+    const { send } = await bootWorker()
+    await send({ requestId: 1, type: 'analyze', chatName: 'Grupo', messages, language: 'es', sourceHash: 'abc' })
+
+    const [cached] = await send({ requestId: 2, type: 'aiScan', sourceHash: 'abc' })
+    const [resent] = await send({ requestId: 3, type: 'aiScan', sourceHash: 'abc', messages })
+
+    // Dos mensajes no alcanzan para leer nada: el plan vuelve vacío, pero vuelve.
+    expect(cached.type === 'aiScan' && cached.plan.parts).toEqual([])
+    expect(resent.type).toBe('aiScan')
+  })
+
+  it('un hallazgo de la lectura cruza el worker y reubica al mensaje en su categoría', async () => {
+    const { send } = await bootWorker()
+    const analyzed = await send({ requestId: 1, type: 'analyze', chatName: 'Grupo', messages, language: 'es', sourceHash: 'abc' })
+    const core = analyzed.at(-1)!
+    if (core.type !== 'analyze') {
+      throw new Error('Se esperaba una respuesta de análisis.')
+    }
+
+    const [reply] = await send({
+      requestId: 2,
+      type: 'applyAi',
+      sourceHash: 'abc',
+      language: 'es',
+      core: core.core,
+      // El "me dejaste en visto" de Beto es un acierto de celos del diccionario; la lectura lo pone en amenazas.
+      verdicts: { redflags: { accepted: [], rejected: [], found: [[messages[1].id, 'threats']] } },
+    })
+
+    if (reply.type !== 'applyAi') {
+      throw new Error('Se esperaba una respuesta de applyAi.')
+    }
+
+    const chart = reply.core.rawVipMetrics.find((card) => card.id === 'redflags')?.basic?.chart
+    const labels = chart?.kind === 'bar' ? chart.items.map((item) => item.label) : []
+    expect(labels).toContain('Amenazas')
+    expect(labels).not.toContain('Celos y control')
+  })
+
   it('cuenta una palabra buscada en todo el chat y por cada participante', async () => {
     const { send } = await bootWorker()
 

@@ -1,11 +1,10 @@
 import type { ChatMessage } from '../types'
 import {
+  aiHitProfile,
   aiMetricIds,
-  matchAiKeywordExplicit,
-  matchAiKeywordGeneral,
-  matchAiKeywordModerate,
-  matchAiKeywordWide,
   normalizeForMatch,
+  redFlagCategoryIndexOfPhrase,
+  type AiHitProfile,
   type AiMetricId,
 } from './metrics'
 
@@ -130,83 +129,144 @@ export function buildAllAiCandidates(messages: ChatMessage[]): AiCandidateSet[] 
   }))
 }
 
+/**
+ * How many of the AI's slots one dictionary phrase may take before the others get a turn.
+ * Without it a chat that says "sos un idiota" four hundred times sends the model four hundred
+ * versions of the same question and never reaches the jealousy, the blackmail or the threats
+ * behind it. The repeats are not thrown away: when nothing else is left to fill the sample,
+ * they fill it.
+ */
+const KEYWORD_REPEAT_LIMIT = 3
+
+/**
+ * In the varied pass, the share of a red-flags sample one category may take. The slots go to
+ * the strongest phrases first, and a chat full of insults would otherwise leave none for the
+ * categories that are harder to see.
+ */
+const CATEGORY_SHARE_LIMIT = 0.4
+
+/** The tiers of a dictionary, strongest first, as `aiHitProfile` reports them. */
+const SPECIFIC_TIERS = ['explicit', 'moderate', 'general'] as const
+
+type Tier = (typeof SPECIFIC_TIERS)[number] | 'wide'
+
+interface Selection {
+  candidates: AiCandidate[]
+  byRendering: Map<string, AiCandidate>
+  usedIndices: Set<number>
+  keywordCounts: Map<string, number>
+  categoryCounts: Map<number, number>
+}
+
+/**
+ * The candidates for one metric. The chat is read from its newest message back to its oldest,
+ * so when the slots run out before the chat does, what is left out is the oldest: what the
+ * people in the chat still remember is what gets judged.
+ *
+ * Two passes, each taking the strongest tier first. The first is varied: a dictionary phrase
+ * stops taking slots once it has `KEYWORD_REPEAT_LIMIT` of them, so the sample has to look for
+ * other phrases. The second only runs if the first left room, and fills it with the repeats.
+ * A chat with few hits loses nothing to the first pass: whatever the first leaves out, the
+ * second takes.
+ */
 export function buildAiCandidates(messages: ChatMessage[], metricId: AiMetricId): AiCandidate[] {
   // Same pool the metrics themselves read: real authored text only, so neighbours are
   // actual replies and not "<Media omitted>" placeholders.
   const pool = messages.filter((message) => !message.isSystem && message.sender && !message.isSystemPlaceholder)
+  const profiles = pool.map((message) => aiHitProfile(metricId, message.contentText))
 
-  const candidates: AiCandidate[] = []
-  const byRendering = new Map<string, AiCandidate>()
-  const usedIndices = new Set<number>()
-
-  // Strongest tier first — the words most tightly tied to the metric (and, for
-  // tonopicante, the crudest ones — a lone "teta" is worth more of the AI budget than a
-  // lone "pecho") are the best use of the limited AI slots. Only widen to the next tier
-  // once the previous one didn't fill the batch on its own, so a chat that's light on
-  // the strongest phrasing still gets a full batch of candidates for the AI to judge
-  // (see metrics.ts's matchAiKeywordExplicit/matchAiKeywordModerate/matchAiKeywordGeneral
-  // for the tiered dictionaries — redflags has no moderate tier, so that pass is a no-op
-  // for it).
+  const selection: Selection = {
+    candidates: [],
+    byRendering: new Map(),
+    usedIndices: new Set(),
+    keywordCounts: new Map(),
+    categoryCounts: new Map(),
+  }
   const cap = maxCandidates(metricId)
-  collectCandidates(pool, metricId, matchAiKeywordExplicit, candidates, byRendering, usedIndices)
-  if (candidates.length < cap) {
-    collectCandidates(pool, metricId, matchAiKeywordModerate, candidates, byRendering, usedIndices)
+
+  // Strongest tier first — the words most tightly tied to the metric (and, for tonopicante,
+  // the crudest ones — a lone "teta" is worth more of the AI budget than a lone "pecho")
+  // are the best use of the limited AI slots. A tier only gets a turn once the previous one
+  // didn't fill the batch on its own (see metrics.ts's aiHitProfile for the tiered
+  // dictionaries — redflags has no moderate tier, so that pass is a no-op for it).
+  for (const varied of [true, false]) {
+    for (const tier of SPECIFIC_TIERS) {
+      if (selection.candidates.length < cap) {
+        collectCandidates(pool, profiles, metricId, tier, selection, varied)
+      }
+    }
   }
-  if (candidates.length < cap) {
-    collectCandidates(pool, metricId, matchAiKeywordGeneral, candidates, byRendering, usedIndices)
-  }
+
   // Último recurso, y sólo si lo específico casi no encontró nada (ver
   // MIN_SPECIFIC_CANDIDATES): recién ahí entran las palabras sueltas.
-  if (candidates.length < MIN_SPECIFIC_CANDIDATES) {
-    collectCandidates(pool, metricId, matchAiKeywordWide, candidates, byRendering, usedIndices)
+  if (selection.candidates.length < MIN_SPECIFIC_CANDIDATES) {
+    for (const varied of [true, false]) {
+      if (selection.candidates.length < cap) {
+        collectCandidates(pool, profiles, metricId, 'wide', selection, varied)
+      }
+    }
   }
 
-  return candidates
+  return selection.candidates
 }
 
 function collectCandidates(
   pool: ChatMessage[],
+  profiles: (AiHitProfile | null)[],
   metricId: AiMetricId,
-  matchKeyword: (metricId: AiMetricId, text: string) => string | null,
-  candidates: AiCandidate[],
-  byRendering: Map<string, AiCandidate>,
-  usedIndices: Set<number>,
+  tier: Tier,
+  selection: Selection,
+  varied: boolean,
 ): void {
   const cap = maxCandidates(metricId)
+  const categoryCap = metricId === 'redflags' ? Math.ceil(cap * CATEGORY_SHARE_LIMIT) : Number.POSITIVE_INFINITY
 
-  for (let index = 0; index < pool.length && candidates.length < cap; index += 1) {
-    if (usedIndices.has(index)) {
-      continue
-    }
-
-    const message = pool[index]
-    const keyword = matchKeyword(metricId, message.contentText)
+  for (let index = pool.length - 1; index >= 0 && selection.candidates.length < cap; index -= 1) {
+    const keyword = selection.usedIndices.has(index) ? null : (profiles[index]?.[tier] ?? null)
 
     if (!keyword) {
       continue
     }
 
-    usedIndices.add(index)
+    const message = pool[index]
     const text = renderSnippet(pool, index, keyword, metricId)
     const dedupeKey = `${keyword}\n${text}`
-    const existing = byRendering.get(dedupeKey)
+    const existing = selection.byRendering.get(dedupeKey)
 
     // A repeated exchange renders identically. One verdict covers every message it
-    // stood for, so the repeat is free instead of being classified again.
+    // stood for, so the repeat is free: it takes no slot, and no variety limit applies.
     if (existing) {
       existing.messageIds.push(message.id)
+      selection.usedIndices.add(index)
       continue
     }
 
+    const category = metricId === 'redflags' ? redFlagCategoryIndexOfPhrase(keyword) : null
+
+    if (
+      varied &&
+      ((selection.keywordCounts.get(keyword) ?? 0) >= KEYWORD_REPEAT_LIMIT ||
+        (category !== null && (selection.categoryCounts.get(category) ?? 0) >= categoryCap))
+    ) {
+      continue
+    }
+
+    selection.usedIndices.add(index)
+    selection.keywordCounts.set(keyword, (selection.keywordCounts.get(keyword) ?? 0) + 1)
+
+    if (category !== null) {
+      selection.categoryCounts.set(category, (selection.categoryCounts.get(category) ?? 0) + 1)
+    }
+
     const candidate: AiCandidate = {
-      id: String(candidates.length + 1),
+      id: String(selection.candidates.length + 1),
       messageIds: [message.id],
       keyword,
       text,
     }
 
-    candidates.push(candidate)
-    byRendering.set(dedupeKey, candidate)
+    selection.candidates.push(candidate)
+    selection.byRendering.set(dedupeKey, candidate)
   }
 }
 

@@ -14,6 +14,7 @@ import {
   type PersonStats,
   type ProfileOverride,
 } from './personality'
+import { buildScrubber, letterFor } from './scrub'
 
 // ---------------------------------------------------------------------------
 // What the AI is given to write the personalities, and what is done with its answer.
@@ -22,7 +23,7 @@ import {
 // tokens are the running cost of the feature, and what leaves the browser is as little as
 // can still be judged well. So per person it is two things — the measured numbers (which cost
 // next to nothing and are what lets "shy" be judged against the group) and a short sample of
-// their messages, picked to be spread over time, scrubbed of names and contact details, and
+// their messages, the most recent ones, scrubbed of names and contact details, and
 // with the sexual vocabulary left out (it adds nothing to a personality, and it is what trips
 // Gemini's safety floor).
 // ---------------------------------------------------------------------------
@@ -72,60 +73,7 @@ export function toProfilePayload(input: ProfileInput): {
   }
 }
 
-function letterFor(index: number): string {
-  return String.fromCharCode(65 + index)
-}
-
-// ---------------------------------------------------------------------------
-// Scrubbing
-// ---------------------------------------------------------------------------
-
-const urlPattern = /https?:\/\/\S+|www\.\S+/giu
-const emailPattern = /[\w.+-]+@[\w-]+\.[\w.-]+/gu
-const phonePattern = /\+?\d[\d\s().-]{6,}\d/gu
 const placeholderPattern = /\[(?:link|mail|número|otro)\]/gu
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** The pieces of a participant's name worth hiding: the whole thing and each word of three letters or more. */
-function nameTokens(name: string): string[] {
-  const words = name
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length >= 3 && /\p{L}/u.test(word))
-
-  return [...new Set([name.trim(), ...words].filter((token) => token.length >= 3 && /\p{L}/u.test(token)))]
-}
-
-/**
- * Hides who is who. Names inside the text are as identifying as the speaker label, so each
- * participant's name becomes the letter the server knows them by (or `[otro]` for someone
- * who is not in the sample), and links, mail addresses and phone numbers are removed.
- */
-function buildScrubber(participants: string[], letters: Map<string, string>): (text: string) => string {
-  const rules = participants
-    .flatMap((name) =>
-      nameTokens(name).map((token) => ({
-        token,
-        replacement: letters.get(name) ?? '[otro]',
-        pattern: new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(token)}(?![\\p{L}\\p{N}_])`, 'giu'),
-      })),
-    )
-    // Longest first, so "Ana María" goes whole before "Ana" gets the chance to leave "María" behind.
-    .sort((left, right) => right.token.length - left.token.length)
-
-  return (text) => {
-    let scrubbed = text.replace(urlPattern, '[link]').replace(emailPattern, '[mail]').replace(phonePattern, '[número]')
-
-    for (const rule of rules) {
-      scrubbed = scrubbed.replace(rule.pattern, rule.replacement)
-    }
-
-    return scrubbed
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sampling
@@ -155,27 +103,22 @@ interface Candidate {
 }
 
 /**
- * `count` items spread evenly over `list`, skipping any that `accept` refuses by moving on
- * to the next unused one. Even spacing, not random: the same chat always yields the same
- * sample, which is what lets a stored profile be recognised on the next upload.
+ * `count` items from the end of `list` backwards — the most recent first — skipping any that
+ * `accept` refuses by moving on to the next older one. When the chat has more messages than the
+ * sample has places, the ones left out are the oldest: a person is the one they are now, not the
+ * one they were in the first month. Deterministic, which is what lets a stored profile be
+ * recognised on the next upload.
  */
-function pickEvenly(list: Candidate[], count: number, accept: (candidate: Candidate) => boolean): Candidate[] {
-  const taken = new Set<number>()
+function pickNewest(list: Candidate[], count: number, accept: (candidate: Candidate) => boolean): Candidate[] {
+  const taken: Candidate[] = []
 
-  for (let slot = 0; slot < count; slot += 1) {
-    const start = Math.floor(((slot + 0.5) * list.length) / count)
-
-    for (let step = 0; step < list.length; step += 1) {
-      const position = (start + step) % list.length
-
-      if (!taken.has(position) && accept(list[position])) {
-        taken.add(position)
-        break
-      }
+  for (let position = list.length - 1; position >= 0 && taken.length < count; position -= 1) {
+    if (accept(list[position])) {
+      taken.push(list[position])
     }
   }
 
-  return [...taken].map((position) => list[position])
+  return taken
 }
 
 /** One person's sample: mostly messages that say something, some short ones, in chat order. */
@@ -193,7 +136,7 @@ function sampleFor(texts: ChatMessage[], scrub: (text: string) => string): strin
   )
   const briefTarget = Math.min(brief.length, PROFILE_SAMPLE_SIZE - informativeTarget)
 
-  return [...pickEvenly(informative, informativeTarget, accept), ...pickEvenly(brief, briefTarget, accept)]
+  return [...pickNewest(informative, informativeTarget, accept), ...pickNewest(brief, briefTarget, accept)]
     .sort((left, right) => left.index - right.index)
     .map(({ message }) => clampWords(scrub(message.contentText.trim()), PROFILE_MESSAGE_WORDS))
     .filter(hasContent)

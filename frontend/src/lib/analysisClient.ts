@@ -1,8 +1,9 @@
 import type { ChatMessage, Language, MetricCard } from '../types'
 import type { AiCandidateSet } from './aiCandidates'
+import type { ScanPlan } from './aiScan'
 import type { AiMetricId, AnalysisCore } from './metrics'
 import type { ProfileInput } from './personalityAi'
-import type { WorkerRequest, WorkerResponse } from './analysisWorker'
+import type { WireVerdict, WorkerRequest, WorkerResponse } from './analysisWorker'
 
 // One worker for the app's whole lifetime — analysis requests are infrequent
 // (upload, language toggle, AI pass) and serialized by the caller, so a pool would
@@ -145,6 +146,23 @@ export async function buildAiCandidatesInWorker(
 }
 
 /**
+ * Builds what the red-flags scan sends — the most recent stretch of the chat in numbered lines,
+ * plus the hot windows of the older part — and the map from line numbers back to messages. Runs
+ * in the worker for the same reason the candidates do: it walks every message.
+ */
+export async function buildAiScanInWorker(sourceHash: string, messages: ChatMessage[]): Promise<ScanPlan> {
+  const response = await withMessageRetry(
+    (withMessages) => send({ type: 'aiScan', sourceHash, messages: withMessages ? messages : undefined }),
+  )
+
+  if (response.type !== 'aiScan') {
+    throw new Error('Unexpected worker response for aiScan.')
+  }
+
+  return response.plan
+}
+
+/**
  * Builds what the AI is given to write the personalities: the measured numbers and a short,
  * scrubbed sample of each person's messages. Runs in the worker for the same reason the
  * candidates do — it walks every message.
@@ -171,7 +189,7 @@ export async function applyAiVerdictsInWorker(
   sourceHash: string,
   language: Language,
   messages: ChatMessage[],
-  verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>>,
+  verdicts: Partial<Record<AiMetricId, WireVerdict>>,
 ): Promise<AnalysisCore> {
   const response = await withMessageRetry((withMessages) =>
     send({

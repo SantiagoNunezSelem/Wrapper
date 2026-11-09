@@ -1,5 +1,6 @@
 import type { ChatMessage, Language, MetricCard } from '../types'
 import { buildAllAiCandidates, type AiCandidateSet } from './aiCandidates'
+import { buildScanPlan, type ScanPlan } from './aiScan'
 import { buildLandingPreviewCards } from './landingPreview'
 import { buildProfileInput, type ProfileInput } from './personalityAi'
 import {
@@ -9,7 +10,16 @@ import {
   type AiMetricId,
   type AiVerdicts,
   type AnalysisCore,
+  type RedFlagCategoryId,
 } from './metrics'
+
+/** One metric's verdict as it crosses the worker boundary: sets and maps become arrays. */
+export interface WireVerdict {
+  accepted: string[]
+  rejected: string[]
+  /** Message id and category of what the AI scan found on its own. Only red flags has any. */
+  found?: [string, RedFlagCategoryId][]
+}
 
 export type WorkerRequest =
   | {
@@ -21,6 +31,8 @@ export type WorkerRequest =
       sourceHash: string
     }
   | { requestId: number; type: 'aiCandidates'; sourceHash: string; messages?: ChatMessage[] }
+  /** What the red-flags scan sends and the map back to the messages — see buildScanPlan. */
+  | { requestId: number; type: 'aiScan'; sourceHash: string; messages?: ChatMessage[] }
   /** The sample and the numbers the AI writes the personalities from — see buildProfileInput. */
   | { requestId: number; type: 'profileInput'; sourceHash: string; messages?: ChatMessage[] }
   | {
@@ -29,7 +41,7 @@ export type WorkerRequest =
       sourceHash: string
       language: Language
       core: AnalysisCore
-      verdicts: Partial<Record<AiMetricId, { accepted: string[]; rejected: string[] }>>
+      verdicts: Partial<Record<AiMetricId, WireVerdict>>
       messages?: ChatMessage[]
     }
   | {
@@ -49,6 +61,7 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { requestId: number; type: 'analyze'; core: AnalysisCore }
   | { requestId: number; type: 'aiCandidates'; candidateSets: AiCandidateSet[] }
+  | { requestId: number; type: 'aiScan'; plan: ScanPlan }
   | { requestId: number; type: 'profileInput'; input: ProfileInput }
   | { requestId: number; type: 'applyAi'; core: AnalysisCore }
   | { requestId: number; type: 'wordSearch'; count: number; countsByParticipant: Record<string, number> }
@@ -141,6 +154,16 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
     return { requestId, type: 'aiCandidates', candidateSets: buildAllAiCandidates(messages) }
   }
 
+  if (request.type === 'aiScan') {
+    const messages = messagesFor(request.sourceHash, request.messages)
+
+    if (!messages) {
+      return { requestId, type: 'cacheMiss' }
+    }
+
+    return { requestId, type: 'aiScan', plan: buildScanPlan(messages) }
+  }
+
   if (request.type === 'profileInput') {
     const messages = messagesFor(request.sourceHash, request.messages)
 
@@ -159,7 +182,11 @@ async function handle(request: WorkerRequest): Promise<WorkerResponse> {
 
   const verdicts: AiVerdicts = {}
   for (const [metricId, verdict] of Object.entries(request.verdicts)) {
-    verdicts[metricId as AiMetricId] = { accepted: new Set(verdict.accepted), rejected: new Set(verdict.rejected) }
+    verdicts[metricId as AiMetricId] = {
+      accepted: new Set(verdict.accepted),
+      rejected: new Set(verdict.rejected),
+      ...(verdict.found ? { found: new Map(verdict.found) } : {}),
+    }
   }
 
   const core = await applyAiVerdicts(request.core, messages, request.language, verdicts)
