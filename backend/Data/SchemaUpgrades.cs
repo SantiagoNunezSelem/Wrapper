@@ -548,6 +548,66 @@ public static class SchemaUpgrades
         }
     }
 
+    /// <summary>
+    /// What a production Postgres database needs that it was not born with.
+    /// <para>
+    /// A Postgres database is created from the current model by <c>EnsureCreatedAsync</c>, but
+    /// only once: it does nothing at all to a database that already has its tables. So a table or
+    /// a column added to the model after the first deploy never shows up on its own — and the first
+    /// query that names it fails, which for a new <c>Users</c> column means every read of
+    /// <c>Users</c>, the seed at startup included: the deploy crashes and Render keeps serving the
+    /// previous version.
+    /// </para>
+    /// <para>
+    /// Every change that reaches the model adds its statements here, in Postgres dialect and
+    /// idempotent, so they can run on each start. The types are exactly what EF generates for
+    /// Npgsql — and note that every date is <c>timestamp without time zone</c>, not
+    /// <c>with</c>: Program.cs turns on Npgsql's legacy timestamp behavior before the database is
+    /// ever created, and under it that is what EF maps a <c>DateTime</c> to. A column created the
+    /// other way would be the odd one out, because Npgsql hands a <c>timestamptz</c> back as local
+    /// time instead of the plain value the code stored. <c>SchemaUpgradesPostgresTests</c>
+    /// compares these statements against EF's own script, with the same switch on, so the two
+    /// cannot drift apart. (The SQLite statements in <see cref="ApplyAsync"/> cover everything,
+    /// because a SQLite file on a developer's machine can be any age.)
+    /// </para>
+    /// </summary>
+    internal static readonly string[] PostgresStatements =
+    [
+        // Personality profiles: the consent stamp, then the table and its unique index.
+        """ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "AiProfileConsentAtUtc" timestamp without time zone;""",
+        """
+        CREATE TABLE IF NOT EXISTS "AiProfileResults" (
+            "Id" uuid NOT NULL,
+            "UserId" uuid NOT NULL,
+            "SourceHash" character varying(64) NOT NULL,
+            "PersonId" character varying(4) NOT NULL,
+            "Language" character varying(10) NOT NULL,
+            "InputHash" character varying(64) NOT NULL,
+            "Status" character varying(20) NOT NULL,
+            "LabelId" character varying(30),
+            "SecondaryLabelId" character varying(30),
+            "Summary" character varying(1200),
+            "ErrorCode" character varying(30),
+            "RetryAvailableAtUtc" timestamp without time zone,
+            "AttemptCount" integer NOT NULL,
+            "CreatedAtUtc" timestamp without time zone NOT NULL,
+            "UpdatedAtUtc" timestamp without time zone NOT NULL,
+            CONSTRAINT "PK_AiProfileResults" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_AiProfileResults_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
+        );
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_AiProfileResults_UserId_SourceHash_Language_PersonId" ON "AiProfileResults" ("UserId", "SourceHash", "Language", "PersonId");""",
+    ];
+
+    /// <summary>Applies <see cref="PostgresStatements"/>. Idempotent: safe on every start.</summary>
+    public static async Task ApplyPostgresAsync(AppDbContext db, CancellationToken cancellationToken = default)
+    {
+        foreach (var statement in PostgresStatements)
+        {
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
+    }
+
     private static async Task AddColumnIfMissingAsync(
         AppDbContext db,
         string table,
