@@ -74,6 +74,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
     activeChat,
     analysis,
     savedAnalyses,
+    isLoadingAnalyses,
     interleavedMetrics,
     landingPreviewCards,
     generatedAt,
@@ -370,6 +371,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               <MobileHome
                 copy={copy}
                 saved={savedAnalyses}
+                isLoadingSaved={isLoadingAnalyses}
                 language={language}
                 busyMessage={busyMessage}
                 demoCards={landingPreviewCards}
@@ -413,6 +415,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
               <MobileHistory
                 copy={copy}
                 saved={savedAnalyses}
+                isLoading={isLoadingAnalyses}
                 language={language}
                 user={user}
                 onOpenSaved={openSavedAnalysis}
@@ -428,6 +431,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
                 copy={copy}
                 language={language}
                 user={user}
+                isRestoring={isRestoringSession}
                 subscription={subscription}
                 onSignIn={() => setIsAuthModalOpen(true)}
                 onManage={goToSubscriptionPage}
@@ -449,6 +453,7 @@ export function MobileShell({ vistazo }: { vistazo: Vistazo }) {
             copy={copy}
             language={language}
             user={user}
+            isRestoring={isRestoringSession}
             activeTab={view}
             hasAnalysis={Boolean(analysis)}
             subscriptionLabel={subscriptionLabel}

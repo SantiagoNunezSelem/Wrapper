@@ -134,6 +134,13 @@ export function useVistazo() {
   // reservado en vez de ofrecer el login.
   const isRestoringSession = Boolean(token) && !user
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([])
+  // La lista de análisis no se guarda como el perfil: cada uno trae sus resultados
+  // completos y eso no entra en localStorage. Entonces, al cargar la página, hasta que
+  // contesta el servidor no se sabe si hay algo. Sin esta marca ese rato la pantalla decía
+  // "todavía no hay análisis guardados" (o, en el celu, mostraba los ejemplos) a quien sí
+  // los tiene, y a los dos segundos aparecía todo: se veía como no estar logueado.
+  const [hasLoadedAnalyses, setHasLoadedAnalyses] = useState(false)
+  const isLoadingAnalyses = Boolean(token) && !hasLoadedAnalyses
   // El análisis para el que hay una confirmación de borrado abierta. Se guarda el id
   // y la fila se busca por él, así una lista que se refresca no deja el diálogo
   // hablando de algo que ya no está.
@@ -614,6 +621,7 @@ export function useVistazo() {
       setUser(await getCurrentUser(authToken))
       setIsProfileFresh(true)
       setSavedAnalyses(await analysesRequest)
+      setHasLoadedAnalyses(true)
     } catch (caught) {
       console.error(caught)
 
@@ -625,6 +633,11 @@ export function useVistazo() {
         localStorage.removeItem(authTokenKey)
         setToken(null)
         setUser(null)
+        // La próxima sesión vuelve a empezar sin saber qué historial tiene.
+        setHasLoadedAnalyses(false)
+      } else {
+        // La lista no va a llegar: la pantalla deja de esperarla y dice lo que hay.
+        setHasLoadedAnalyses(true)
       }
     }
   }
@@ -958,6 +971,7 @@ export function useVistazo() {
       setUser(auth.user)
       setIsProfileFresh(true)
       setSavedAnalyses(await listAnalyses(auth.token))
+      setHasLoadedAnalyses(true)
 
       if (activeChat) {
         // The recompute effect will refresh `analysis` for the new VIP state;
@@ -1016,6 +1030,7 @@ export function useVistazo() {
     setIsProfileFresh(false)
     setTermsError('')
     setSavedAnalyses([])
+    setHasLoadedAnalyses(false)
     setError('')
     setAiStates({})
     setSubscription(null)
@@ -1932,6 +1947,8 @@ export function useVistazo() {
     activeChat,
     analysis,
     savedAnalyses,
+    // Hay sesión pero todavía no llegó la lista: ver hasLoadedAnalyses.
+    isLoadingAnalyses,
     pendingDeleteAnalysis,
     isDeletingAnalysis,
     pendingRenameAnalysis,
