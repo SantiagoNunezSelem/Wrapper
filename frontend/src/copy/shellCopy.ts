@@ -51,6 +51,8 @@ export const shellCopy = {
     vipOff: 'Pro bloqueado',
     savedTitle: 'Historial guardado',
     noSaved: 'Todavía no hay análisis guardados para este usuario.',
+    // Sólo para lectores de pantalla: lo que se ve mientras llega la lista son barras.
+    savedLoading: 'Cargando tus análisis…',
     openSaved: 'Abrir',
     deleteSaved: 'Borrar del historial',
     deleteSavedTitle: '¿Borrar este análisis?',
@@ -740,6 +742,8 @@ export const shellCopy = {
     vipOff: 'Pro locked',
     savedTitle: 'Saved history',
     noSaved: 'There are no saved analyses for this user yet.',
+    // Screen readers only: what is drawn while the list arrives is a set of bars.
+    savedLoading: 'Loading your analyses…',
     openSaved: 'Open',
     deleteSaved: 'Delete from history',
     deleteSavedTitle: 'Delete this analysis?',

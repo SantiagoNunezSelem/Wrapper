@@ -68,6 +68,7 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
     activeChat,
     analysis,
     savedAnalyses,
+    isLoadingAnalyses,
     interleavedMetrics,
     landingPreviewCards,
     selectedMetric,
@@ -422,15 +423,21 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             <aside className="analytics-sidebar">
               <section className="panel history-panel">
                 <h2>{copy.savedTitle}</h2>
-                {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
-                <HistoryList
-                  items={savedAnalyses}
-                  language={language}
-                  copy={copy}
-                  onOpen={openSavedAnalysis}
-                  onDelete={requestDeleteAnalysis}
-                  onRename={requestRenameAnalysis}
-                />
+                {isLoadingAnalyses ? (
+                  <HistorySkeleton label={copy.savedLoading} />
+                ) : (
+                  <>
+                    {savedAnalyses.length === 0 ? <p>{copy.noSaved}</p> : null}
+                    <HistoryList
+                      items={savedAnalyses}
+                      language={language}
+                      copy={copy}
+                      onOpen={openSavedAnalysis}
+                      onDelete={requestDeleteAnalysis}
+                      onRename={requestRenameAnalysis}
+                    />
+                  </>
+                )}
               </section>
             </aside>
           </div>
@@ -477,7 +484,10 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
             onUnlock={() => setIsAuthModalOpen(true)}
           />
         </main>
-      ) : user ? (
+      ) : user || isRestoringSession ? (
+        // También mientras se confirma una sesión sin perfil guardado: hay token, así que lo
+        // más probable es que sea alguien adentro, y la landing de visitante a quien está
+        // logueado es justo la imagen de "no estoy logueado" que este arranque evita.
         <main className="full-wrapped-layout">
           <section className="full-wrapped-hero">
             <div>
@@ -496,7 +506,9 @@ export function DesktopShell({ vistazo }: { vistazo: Vistazo }) {
 
           <section className="panel full-wrapped-content">
             <h2>{copy.savedTitle}</h2>
-            {savedAnalyses.length === 0 ? (
+            {isLoadingAnalyses ? (
+              <HistorySkeleton label={copy.savedLoading} />
+            ) : savedAnalyses.length === 0 ? (
               <p>{copy.noSaved}</p>
             ) : (
               <HistoryList
@@ -850,6 +862,24 @@ function HistoryList({
           >
             <TrashIcon />
           </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Lo que ocupa el lugar del historial mientras llega del servidor: filas con la forma
+ * de las reales, no un "todavía no hay nada" que para quien sí tiene análisis es mentira
+ * durante un par de segundos. Las barras son decorado; el aviso para el lector de
+ * pantalla va en la etiqueta del contenedor. */
+function HistorySkeleton({ label }: { label: string }) {
+  return (
+    <div className="history-list" role="status" aria-busy="true" aria-label={label}>
+      {[46, 62].map((width) => (
+        <div key={width} className="history-row-skeleton" aria-hidden="true">
+          <span className="skeleton-bar" style={{ width: `${width}%` }} />
+          <span className="skeleton-bar" style={{ width: '70%' }} />
+          <span className="skeleton-bar" style={{ width: '38%' }} />
         </div>
       ))}
     </div>

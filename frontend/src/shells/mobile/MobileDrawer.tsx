@@ -18,6 +18,7 @@ export function MobileDrawer({
   copy,
   language,
   user,
+  isRestoring,
   activeTab,
   hasAnalysis,
   subscriptionLabel,
@@ -33,6 +34,8 @@ export function MobileDrawer({
   copy: ShellCopy
   language: Language
   user: UserProfile | null
+  /** Hay token pero todavía no perfil: no se ofrece "Iniciar sesión" a alguien que quizá ya está adentro. */
+  isRestoring: boolean
   activeTab: MobileTab
   hasAnalysis: boolean
   subscriptionLabel: string
@@ -53,6 +56,7 @@ export function MobileDrawer({
       copy={copy}
       language={language}
       user={user}
+      isRestoring={isRestoring}
       activeTab={activeTab}
       hasAnalysis={hasAnalysis}
       subscriptionLabel={subscriptionLabel}
@@ -74,6 +78,7 @@ function DrawerPanel({
   copy,
   language,
   user,
+  isRestoring,
   activeTab,
   hasAnalysis,
   subscriptionLabel,
@@ -88,6 +93,7 @@ function DrawerPanel({
   copy: ShellCopy
   language: Language
   user: UserProfile | null
+  isRestoring: boolean
   activeTab: MobileTab
   hasAnalysis: boolean
   subscriptionLabel: string
@@ -125,6 +131,14 @@ function DrawerPanel({
               <span>{user.email}</span>
             </div>
           </div>
+        ) : isRestoring ? (
+          <div className="m-drawer-head" aria-hidden="true">
+            <span className="m-avatar is-large is-placeholder" />
+            <div className="m-drawer-id m-skeleton-lines">
+              <i className="skeleton-bar" style={{ width: '52%' }} />
+              <i className="skeleton-bar" style={{ width: '78%' }} />
+            </div>
+          </div>
         ) : (
           <div className="m-drawer-head is-anon">
             <div className="m-drawer-id">
@@ -134,7 +148,7 @@ function DrawerPanel({
           </div>
         )}
 
-        {user ? null : (
+        {user || isRestoring ? null : (
           <button type="button" className="primary-button m-drawer-cta" onClick={onSignIn}>
             {copy.login}
           </button>

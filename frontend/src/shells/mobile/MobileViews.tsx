@@ -15,6 +15,7 @@ import { ChatIcon, ChevronIcon, CrownIcon, PencilIcon, TrashIcon, UploadIcon } f
 export function MobileHome({
   copy,
   saved,
+  isLoadingSaved,
   language,
   busyMessage,
   demoCards,
@@ -27,6 +28,9 @@ export function MobileHome({
 }: {
   copy: ShellCopy
   saved: SavedAnalysis[]
+  /** Hay sesión pero la lista todavía no llegó: no se sabe si corresponden los ejemplos
+   * o los chats recientes, así que se dibuja el esqueleto de los segundos. */
+  isLoadingSaved: boolean
   language: Language
   busyMessage: string
   /** Las tarjetas de ejemplo de la landing (ver buildLandingPreviewCards). Vacías
@@ -54,12 +58,16 @@ export function MobileHome({
       <DropZone copy={copy} busyMessage={busyMessage} onUpload={onUpload} />
 
       {/* Quien ya tiene chats guardados ya sabe cómo se ve un resultado: los ejemplos
-          son para el que todavía no subió nada. */}
-      {saved.length === 0 && demoCards.length > 0 ? (
+          son para el que todavía no subió nada. Hasta que llega la lista no se sabe cuál
+          de los dos es, y adelantar los ejemplos es lo que hacía parecer que no había
+          sesión: a los dos segundos se cambiaban por los chats de siempre. */}
+      {isLoadingSaved ? (
+        <SavedSkeleton label={copy.savedLoading} rows={2} withLabel />
+      ) : saved.length === 0 && demoCards.length > 0 ? (
         <DemoCarousel copy={copy} cards={demoCards} onOpen={onOpenDemo} />
       ) : null}
 
-      {saved.length > 0 ? (
+      {!isLoadingSaved && saved.length > 0 ? (
         <>
           <p className="m-section-label m-section-split">
             <span>{m.home.recent}</span>
@@ -104,6 +112,7 @@ export function MobileHome({
 export function MobileHistory({
   copy,
   saved,
+  isLoading,
   language,
   user,
   onOpenSaved,
@@ -114,6 +123,8 @@ export function MobileHistory({
 }: {
   copy: ShellCopy
   saved: SavedAnalysis[]
+  /** La lista todavía no llegó del servidor: ni "iniciá sesión" ni "no hay nada". */
+  isLoading: boolean
   language: Language
   user: UserProfile | null
   onOpenSaved: (item: SavedAnalysis) => void
@@ -123,6 +134,13 @@ export function MobileHistory({
   onUpload: () => void
 }) {
   const m = copy.mobile
+
+  // Primero que nada: con sesión pero sin lista todavía, tampoco se sabe si hay perfil
+  // (un token sin copia guardada) — decir "iniciá sesión" o "no hay análisis" sería
+  // anunciar algo que en un segundo puede resultar falso.
+  if (isLoading) {
+    return <SavedSkeleton label={copy.savedLoading} rows={3} />
+  }
 
   if (!user) {
     return (
@@ -181,6 +199,7 @@ export function MobileAccount({
   copy,
   language,
   user,
+  isRestoring,
   subscription,
   onSignIn,
   onManage,
@@ -189,12 +208,26 @@ export function MobileAccount({
   copy: ShellCopy
   language: Language
   user: UserProfile | null
+  /** Hay token pero todavía no perfil (ni siquiera uno guardado): se confirma la sesión. */
+  isRestoring: boolean
   subscription: SubscriptionOverview | null
   onSignIn: () => void
   onManage: () => void
   onSignOut: () => void
 }) {
   const m = copy.mobile
+
+  if (!user && isRestoring) {
+    return (
+      <div className="m-card m-account-id" aria-hidden="true">
+        <span className="m-avatar is-large is-placeholder" />
+        <div className="m-skeleton-lines">
+          <i className="skeleton-bar" style={{ width: '52%' }} />
+          <i className="skeleton-bar" style={{ width: '78%' }} />
+        </div>
+      </div>
+    )
+  }
 
   if (!user) {
     return (
@@ -309,6 +342,26 @@ function DropZone({ copy, busyMessage, onUpload }: { copy: ShellCopy; busyMessag
       <span>{m.upload.formats}</span>
       {busyMessage ? null : <span className="m-drop-cue">{m.upload.browse}</span>}
     </button>
+  )
+}
+
+/** Lo que ocupa el lugar de los chats guardados mientras llega la lista (ver
+ * `isLoadingAnalyses` en useVistazo): filas con la forma de las reales. Las barras son
+ * decorado; el aviso para el lector de pantalla va en la etiqueta del contenedor. */
+function SavedSkeleton({ label, rows, withLabel = false }: { label: string; rows: number; withLabel?: boolean }) {
+  return (
+    <div className="m-saved-skeleton" role="status" aria-busy="true" aria-label={label}>
+      {withLabel ? <i className="skeleton-bar m-saved-skeleton-label" aria-hidden="true" /> : null}
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="m-saved-row m-saved-row-skeleton" aria-hidden="true">
+          <span className="m-saved-icon" />
+          <span className="m-skeleton-lines">
+            <i className="skeleton-bar" style={{ width: index % 2 === 0 ? '58%' : '46%' }} />
+            <i className="skeleton-bar" style={{ width: '82%' }} />
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
 

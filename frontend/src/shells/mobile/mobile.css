@@ -2932,6 +2932,44 @@
   color: var(--vz-danger-text);
 }
 
+/* Lo que ocupa el lugar de los chats guardados mientras llega la lista (ver
+   SavedSkeleton): filas con la forma de las reales. El hueco es el de `.m-main`, que
+   es el que separa a las filas de verdad. */
+.m-saved-skeleton {
+  display: grid;
+  gap: 16px;
+}
+
+.m-saved-skeleton-label {
+  width: 34%;
+  height: 10px;
+}
+
+.m-saved-row.m-saved-row-skeleton {
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+}
+
+.m-saved-row-skeleton .m-saved-icon {
+  background: var(--vz-surface-4);
+}
+
+/* Las dos líneas de texto de una fila, de la cuenta o del menú mientras se restaura. */
+.m-skeleton-lines {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-saved-skeleton .skeleton-bar,
+  .m-skeleton-lines .skeleton-bar {
+    animation: none;
+  }
+}
+
 /* --- Cuenta y estados vacíos -------------------------------------------------- */
 .m-card {
   gap: 12px;
