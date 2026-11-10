@@ -2339,6 +2339,20 @@
   font-size: 0.72rem;
 }
 
+/* El radar de la personalidad mide 220px y tampoco entraba en los 120px: se veía la
+   mitad de arriba. Acá va más chico y sin los rótulos, que a ese tamaño no se leen; el
+   margen negativo se come el aire que el dibujo deja alrededor del polígono. */
+.m-demo-chart .chart-radar svg {
+  display: block;
+  width: 185px;
+  height: 185px;
+  margin: -34px auto;
+}
+
+.m-demo-chart .chart-radar text {
+  display: none;
+}
+
 .m-demo-foot {
   margin-top: auto;
   padding-top: 10px;
