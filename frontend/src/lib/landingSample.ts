@@ -14,6 +14,14 @@ import type { Language } from '../types'
  * reales que la explican, así que un chat armado con frases al azar se leía como
  * ruido ("hoy en el laburo" tres veces seguidas, sin contexto).
  *
+ * Tiene que cumplir dos cosas para que los ejemplos funcionen:
+ *  - Los cuatro pasan de los 50 mensajes de texto (`MIN_MESSAGES_PER_PERSON`). Con menos,
+ *    "La personalidad de cada integrante" no tiene de dónde leer y la tarjeta ni aparece.
+ *  - Cada escena termina con un mensaje corto y sin pregunta. Si terminara con una pregunta,
+ *    el primer mensaje de la escena siguiente —uno o dos días después— contaría como la
+ *    respuesta, y "Quién tarda más en responder" mostraría "Nico tardó 6 días" sin ninguna
+ *    conversación detrás. Un test lo vigila.
+ *
  * Todo es ficticio — nombres, mensajes, links — y determinístico: la semilla es fija,
  * así que la landing muestra siempre los mismos números y los tests pueden fijarlos.
  */
@@ -21,12 +29,15 @@ import type { Language } from '../types'
 type Person = 'Fran' | 'Vale' | 'Nico' | 'Caro'
 
 /** Minutos que tarda cada uno en contestar cuando le toca: Vale es la velocista, Caro
- * clava el visto. Los mensajes seguidos de una misma persona salen casi pegados. */
+ * clava el visto. Los mensajes seguidos de una misma persona salen casi pegados.
+ * Caro no pasa de las tres horas: pasado ese tiempo su respuesta contaría como que ella
+ * "arrancó una conversación" (ver `OPENING_GAP_MS` en personality.ts), que es lo contrario
+ * de lo que se quiere mostrar de ella. */
 const REPLY_MINUTES: Record<Person, [number, number]> = {
   Fran: [1, 5],
   Vale: [0, 2],
   Nico: [2, 12],
-  Caro: [45, 240],
+  Caro: [50, 170],
 }
 
 /** Horas en que arranca una charla sin hora propia, cargadas hacia la noche. */
@@ -36,8 +47,10 @@ const MEDIA = { es: '<Multimedia omitido>', en: '<Media omitted>' }
 const DELETED = { es: 'Se eliminó este mensaje', en: 'This message was deleted' }
 
 /** Una línea: quién habla y qué dice en cada idioma. `MEDIA`/`DELETED` son los
- * marcadores que WhatsApp escribe en el export. */
-type Line = [Person, string | typeof MEDIA, string?]
+ * marcadores que WhatsApp escribe en el export. El cuarto valor, si está, son los minutos
+ * que pasan desde el mensaje anterior cuando cambia quien habla, en vez de lo que esa
+ * persona tarda de costumbre: para que Caro conteste enseguida cuando está conectada. */
+type Line = [Person, string | typeof MEDIA, string?, number?]
 
 interface Scene {
   lines: Line[]
@@ -58,8 +71,9 @@ const LONG_THANKS_EN =
   "real talk for a sec: thanks for putting up with me this year, I know I was unbearable with the move and all the work stuff, but every time I opened this chat I laughed a little. Love you all, even if Fran never listens to the voice notes"
 
 /** El chat entero, en orden. Fran cuenta historias sin que nadie conteste
- * (Monologuista) y grita en mayúsculas (Dramático), Caro contesta horas después, y
- * Nico y Vale tienen sus momentos de tensión (Red flags). */
+ * (Monologuista) y grita en mayúsculas (Dramático), Vale contesta al toque y reparte
+ * cariño, Nico organiza los planes, Caro contesta horas después, y Nico y Vale tienen
+ * sus momentos de tensión (Red flags). */
 const SCENES: Scene[] = [
   {
     lines: [
@@ -75,6 +89,7 @@ const SCENES: Scene[] = [
       // Termina en otra persona a propósito: la escena que sigue es un monólogo de Fran,
       // y si esta cerrara con ella la racha se comería este mensaje también.
       ['Nico', 'listo, a las 9 en lo de Caro', "done, 9pm at Caro's"],
+      ['Vale', '👌'],
     ],
   },
   {
@@ -98,6 +113,7 @@ const SCENES: Scene[] = [
       ['Fran', 'askjdhaksjd no puedo', "asdfghjkl I can't"],
       ['Caro', 'jajaja tu vieja es la mejor', 'hahaha your mom is the best'],
       ['Vale', 'le enseñé a usar stickers y no para', "I taught her stickers and she won't stop"],
+      ['Nico', '😂'],
     ],
   },
   {
@@ -108,6 +124,7 @@ const SCENES: Scene[] = [
       ['Vale', 'me quedé sin batería', 'my phone died'],
       ['Nico', 'no te creo nada', "you're hiding something"],
       ['Fran', 'chicos, esto es el grupo 😬', 'guys, this is the group chat 😬'],
+      ['Vale', 'perdón 🙈', 'sorry 🙈'],
     ],
   },
   {
@@ -116,7 +133,21 @@ const SCENES: Scene[] = [
       ['Vale', 'cuando puedas', 'whenever you can'],
       ['Caro', MEDIA],
       ['Caro', 'perdón, recién veo', 'sorry, just saw this'],
-      ['Vale', 'sos un amor igual', "you're a sweetheart anyway"],
+      ['Vale', 'genia ❤️', 'legend ❤️'],
+    ],
+  },
+  {
+    // Nico organiza y Caro contesta horas después de que Vale le preguntó.
+    lines: [
+      ['Nico', 'chicos, el domingo es el cumple de mi hermana', "guys, sunday is my sister's birthday"],
+      ['Nico', 'a las 4 en casa, vengan', 'at 4 at my place, come over'],
+      ['Fran', 'yo llevo la torta!!', "I'm bringing the cake!!"],
+      ['Vale', 'yo el helado, ya dije', "I've got the ice cream, calling it"],
+      ['Vale', 'Caro, ¿venís?', 'Caro, are you coming?'],
+      ['Caro', 'sí, voy', "yes, I'll be there"],
+      ['Caro', 'llevo las gaseosas', "I'll bring the sodas"],
+      ['Nico', 'listo, ya está todo', 'great, that is everything'],
+      ['Vale', '🥰'],
     ],
   },
   {
@@ -129,6 +160,9 @@ const SCENES: Scene[] = [
       ['Fran', 'no me juzguen', "don't judge me"],
       ['Nico', 'te juzgamos un poco', "we're judging a little"],
       ['Vale', 'jajaja un poco mucho', 'haha more than a little'],
+      ['Caro', 'qué mal el chico', 'bad date honestly'],
+      ['Fran', 'sos un tarado, Nico 😒', "you're a jerk, Nico 😒"],
+      ['Nico', 'jaja', 'haha'],
     ],
   },
   {
@@ -139,6 +173,7 @@ const SCENES: Scene[] = [
       ['Vale', '¡sumalo a la playlist!', 'add it to the playlist!'],
       ['Nico', 'https://open.spotify.com/playlist/vistazo-demo'],
       ['Fran', 'esa playlist dura 4 horas jaja', 'that playlist is 4 hours long haha'],
+      ['Caro', 'qué temazo', 'total banger'],
     ],
   },
   {
@@ -147,6 +182,7 @@ const SCENES: Scene[] = [
       ['Fran', 'noooo qué horror', "nooo that's awful"],
       ['Nico', 'ya va a salir algo mejor, vas a ver', "something better will come up, you'll see"],
       ['Caro', 'te invito un café el finde ❤️', 'coffee on me this weekend ❤️'],
+      ['Vale', '❤️'],
     ],
   },
   {
@@ -157,6 +193,7 @@ const SCENES: Scene[] = [
       ['Caro', 'uff qué sexy ese look', 'ok that outfit is sexy'],
       ['Fran', 'ay basta jaja', 'stop it haha'],
       ['Nico', 'qué picante está el grupo hoy', 'things are getting hot in here'],
+      ['Fran', 'jajaja', 'hahaha'],
     ],
   },
   {
@@ -168,6 +205,21 @@ const SCENES: Scene[] = [
       ['Fran', 'miren esa cara de culpable', 'look at that guilty face'],
       ['Fran', 'cero culpa, en realidad', 'zero guilt, actually'],
       ['Caro', 'amo a ese gato 😍', 'I love that cat 😍'],
+      ['Fran', 'gracias 😌', 'thanks 😌'],
+    ],
+  },
+  {
+    // Vale rompe el silencio y Caro aparece tres horas después con una excusa.
+    silenceBefore: 3,
+    lines: [
+      ['Vale', 'Caro, ¿estás viva? hace días que no decís nada', "Caro, are you alive? you haven't said a word in days"],
+      ['Fran', 'la perdimos otra vez', 'we lost her again'],
+      ['Nico', 'seguro la secuestró el laburo', 'work must have kidnapped her'],
+      ['Caro', 'estoy viva, perdón', "I'm alive, sorry"],
+      ['Caro', 'el laburo me está comiendo', 'work is eating me alive'],
+      ['Caro', 'reuniones hasta las 9 todos los días', 'meetings until 9pm every single day'],
+      ['Vale', 'te extraño mucho ❤️', 'I miss you so much ❤️'],
+      ['Caro', 'yo también', 'me too', 2],
     ],
   },
   {
@@ -178,6 +230,7 @@ const SCENES: Scene[] = [
       ['Fran', 'no, ahora lo decís', 'no, now you have to say it'],
       ['Vale', 'nada, nada 🙈', 'nothing, nothing 🙈'],
       ['Fran', 'ME MUERO DE LA INTRIGA', 'THE SUSPENSE IS KILLING ME'],
+      ['Vale', '🙊'],
     ],
   },
   {
@@ -187,7 +240,7 @@ const SCENES: Scene[] = [
       ['Fran', '¿Caro viene?', 'is Caro coming?'],
       ['Nico', 'a las 8, llevá hielo', 'at 8, bring ice'],
       ['Fran', '¿cuánto hielo?', 'how much ice?'],
-      ['Nico', 'hielo, Fran. hielo.', 'ice, Fran. just ice.'],
+      ['Nico', 'sos un boludo, Fran. hielo.', "you're a jerk, Fran. just ice."],
       ['Vale', 'jajaja', 'hahaha'],
     ],
   },
@@ -199,6 +252,7 @@ const SCENES: Scene[] = [
       ['Caro', '¡sí!! perdón, estaba en el cine', 'yes!! sorry, I was at the movies'],
       ['Nico', '¿qué viste?', 'what did you see?'],
       ['Caro', 'una de terror, no dormí nada 😭', "a horror movie, didn't sleep at all 😭"],
+      ['Nico', 'jaja', 'haha'],
     ],
   },
   {
@@ -209,6 +263,7 @@ const SCENES: Scene[] = [
       ['Caro', 'queda lejísimos', "that's so far"],
       ['Nico', 'hay combi, no se quejen', "there's a shuttle, stop complaining"],
       ['Vale', 'yo manejo a la vuelta', "I'll drive back"],
+      ['Nico', 'perfecto', 'perfect'],
     ],
   },
   {
@@ -218,16 +273,59 @@ const SCENES: Scene[] = [
       ['Caro', '¡fotos del sábado!', 'saturday pics!'],
       ['Fran', 'borren la mía por favor', 'delete mine please'],
       ['Nico', 'demasiado tarde, ya es mi fondo de pantalla', "too late, it's my wallpaper now"],
+      ['Fran', 'ay no 🙈', 'oh no 🙈'],
+    ],
+  },
+  {
+    // Fran, la dramática, le reclama a Caro por tardar: celos y reproches de entre casa.
+    lines: [
+      ['Fran', 'Caro, me dejaste en visto toda la tarde', 'Caro, where were you? you left me on read all afternoon'],
+      ['Fran', 'no te importa nada lo que te cuento', "you don't care about me, admit it"],
+      ['Vale', 'Fran, estaba trabajando', 'Fran, she was working'],
+      ['Caro', 'perdón, estaba en una reunión', 'sorry, I was in a meeting'],
+      ['Fran', 'te perdono, pero sos lenta', "forgiven, but you're slow"],
+      ['Caro', 'jaja', 'haha', 3],
     ],
   },
   {
     lines: [
       ['Vale', '¿quién te escribió recién?', 'who texted you just now?'],
       ['Nico', 'mi hermana', 'my sister'],
-      ['Vale', '¿a esta hora?', 'at this hour?'],
+      ['Vale', '¿con quién hablabas a esta hora?', 'who were you with at this hour?'],
       ['Nico', '¿estás celosa?', "you're so jealous"],
       ['Vale', 'no, pero siempre lo mismo con vos', 'no, but let me see your phone'],
       ['Caro', 'yo me voy a dormir 😂', "I'm going to sleep 😂"],
+      ['Vale', '🙄'],
+    ],
+  },
+  {
+    // La pelea de la pareja del grupo, con Fran de testigo. Cada mensaje cae en una sola
+    // categoría de Red Flags (celos, reproche, insulto, ruptura), para que cada torta se lea.
+    hour: 22,
+    lines: [
+      ['Nico', 'otra vez me dejaste en visto', "you're hiding something again"],
+      ['Vale', 'estaba trabajando, Nico', 'I was working, Nico'],
+      ['Nico', 'siempre tenés una excusa', 'you always have an excuse'],
+      ['Vale', 'siempre hacés lo mismo', 'you ruin everything'],
+      ['Nico', 'es tu culpa, no me contestás', "it's your fault, you never answer me"],
+      ['Vale', 'sos un pelotudo', "you're a jerk"],
+      ['Fran', 'chicos, por favor, el grupo', 'guys, please, the group chat'],
+      ['Nico', 'no doy más con esto', "I can't do this anymore"],
+      ['Vale', 'necesito un tiempo', 'I need space'],
+      ['Vale', DELETED],
+      ['Nico', 'ok', 'fine'],
+    ],
+  },
+  {
+    hour: 13,
+    lines: [
+      ['Vale', 'perdón por lo de ayer', 'sorry about yesterday'],
+      ['Nico', 'yo también, me pasé', 'me too, I went too far'],
+      ['Fran', 'por fin, tenían al grupo en vilo', 'finally, you had the whole group on edge'],
+      ['Vale', 'jaja perdón Fran', 'haha sorry Fran'],
+      ['Caro', 'me alegro mucho', "I'm so glad"],
+      ['Caro', 'los quiero a los dos', 'love you both'],
+      ['Vale', '❤️'],
     ],
   },
   {
@@ -238,7 +336,8 @@ const SCENES: Scene[] = [
       ['Fran', 'volvió con un alfajor', 'came back with a snack'],
       ['Fran', 'y no nos convidó', "and didn't share"],
       ['Fran', '¡¡ESTO ES UN ESCÁNDALO!!', 'THIS IS OUTRAGEOUS!!'],
-      ['Fran', 'nadie me contesta, genial', "nobody's answering, great"],
+      ['Fran', 'nadie me contesta', "nobody's answering"],
+      ['Fran', 'genial', 'great'],
     ],
   },
   {
@@ -259,6 +358,7 @@ const SCENES: Scene[] = [
       ['Vale', 'graciaaas, los amo 😭', 'thank youuu, love you all 😭'],
       ['Vale', MEDIA],
       ['Fran', 'qué linda esa torta', 'that cake looks amazing'],
+      ['Vale', 'gracias 🥰', 'thanks 🥰'],
     ],
   },
   {
@@ -270,6 +370,7 @@ const SCENES: Scene[] = [
       ['Fran', 'yo tampoco, estoy viendo videos de gatos', 'me neither, watching cat videos'],
       ['Fran', 'https://www.tiktok.com/@vistazo/video/1'],
       ['Nico', 'jajaja ese gato sos vos', "hahaha that cat is you"],
+      ['Fran', 'touché', 'touché'],
     ],
   },
   {
@@ -282,6 +383,7 @@ const SCENES: Scene[] = [
       ['Fran', 'les dejo el link así la empiezan', "here's the link so you can start it"],
       ['Fran', 'https://www.netflix.com/title/vistazo-demo'],
       ['Nico', 'spoileame y te bloqueo', "spoil it and I'll block you"],
+      ['Fran', 'ni loca', 'no way'],
     ],
   },
   {
@@ -291,6 +393,34 @@ const SCENES: Scene[] = [
       ['Caro', 'mood', 'mood'],
       ['Nico', 'ánimo, que el viernes está cerca', "hang in there, friday's close"],
       ['Fran', 'faltan 4 días, Nico', "it's 4 days away, Nico"],
+      ['Nico', 'amargo', 'bitter'],
+    ],
+  },
+  {
+    // Caro pregunta y los demás le contestan al toque: ella es la que tarda en volver.
+    lines: [
+      ['Caro', '¿alguien me recomienda una serie?', 'does anyone have a show recommendation?'],
+      ['Vale', 'la que terminó Fran!!', 'the one Fran just finished!!'],
+      ['Fran', 'SIII ES LA MEJOR', 'YESSS IT IS THE BEST'],
+      ['Nico', 'la de los mellizos también', 'the one with the twins too'],
+      ['Caro', 'gracias, las anoto', 'thanks, noting them down'],
+      ['Caro', 'mañana arranco', 'starting tomorrow'],
+      ['Vale', '🎬'],
+    ],
+  },
+  {
+    // Caro, la tímida, trae una noticia: lo que cuenta es lo que más le cuesta del chat.
+    hour: 20,
+    lines: [
+      ['Nico', '¿alguien sabe algo de Caro? hoy tenía la presentación grande', 'anyone heard from Caro? she had the big presentation today'],
+      ['Vale', 'estoy a mil con los nervios por ella', "I'm so nervous for her"],
+      ['Caro', 'chicos, tengo una noticia', 'guys, I have news'],
+      ['Caro', 'me ascendieron', 'I got promoted'],
+      ['Fran', 'NOOOO!! FELICITACIONES!!!', 'NOOOO!! CONGRATULATIONS!!!'],
+      ['Vale', 'sabía que podías 😭❤️', 'I knew you could do it 😭❤️'],
+      ['Nico', 'esto se festeja, salimos el viernes', "we're celebrating, let's go out on friday"],
+      ['Caro', 'gracias, los quiero', 'thank you, love you guys', 3],
+      ['Fran', '🎉🎉🎉'],
     ],
   },
   {
@@ -300,6 +430,7 @@ const SCENES: Scene[] = [
       ['Vale', 'no pienso decir nada 😏', 'not saying 😏'],
       ['Fran', 'me tenés loca con la intriga', "you're so flirty today"],
       ['Caro', 'sensual el grupo esta semana', 'the group is naughty this week'],
+      ['Vale', 'jajaja', 'hahaha'],
     ],
   },
   {
@@ -314,9 +445,22 @@ const SCENES: Scene[] = [
     lines: [
       ['Fran', '¿a dónde fuiste que no viniste al cumple?', 'where did you go? you missed the birthday'],
       ['Nico', 'me quedé dormido', 'I fell asleep'],
-      ['Fran', 'qué escondés', "you're hiding something"],
+      ['Fran', 'algo me ocultás', "you're up to something"],
       ['Nico', 'nada jajaja, lo juro', 'nothing haha, I swear'],
       ['Vale', 'sospechoso', 'suspicious'],
+    ],
+  },
+  {
+    // Nico y Fran se arrepienten de algo que escribieron: dos borrados más para la torta.
+    lines: [
+      ['Nico', DELETED],
+      ['Fran', 'vi lo que escribiste antes de borrarlo', 'I saw what you wrote before you deleted it'],
+      ['Nico', 'era para otro chat 🙈', 'it was meant for another chat 🙈'],
+      ['Fran', 'a mí no me engañás, boludo', "you're not fooling me, jerk"],
+      ['Fran', DELETED],
+      ['Vale', 'ahora vos, Fran, ¿qué borraste?', 'now you, Fran, what did you delete?'],
+      ['Fran', 'nada que les importe', 'nothing you need to know'],
+      ['Nico', 'jajaja', 'hahaha'],
     ],
   },
   {
@@ -331,12 +475,43 @@ const SCENES: Scene[] = [
     ],
   },
   {
+    // La Caro de la hora del almuerzo: conectada, contesta en minutos.
+    hour: 14,
+    lines: [
+      ['Caro', 'estoy en el almuerzo, ¿hay alguien?', 'on my lunch break, anyone around?'],
+      ['Vale', 'acá!!', 'here!!'],
+      ['Caro', 'qué bueno', 'nice', 2],
+      ['Caro', 'tengo 20 minutos', 'I have 20 minutes'],
+      ['Nico', 'contame todo', 'tell me everything'],
+      ['Caro', 'mi jefa cambió todo otra vez', 'my boss changed everything again', 2],
+      ['Vale', 'uf, qué bajón', 'ugh, so annoying'],
+      ['Caro', 'ya sé, ya sé', 'I know, I know', 2],
+      ['Nico', 'aguantá, el finde nos vemos', 'hang in there, see you this weekend'],
+      ['Caro', 'dale 🙏', 'ok 🙏', 2],
+    ],
+  },
+  {
     lines: [
       ['Vale', '¿pizza o empanadas?', 'pizza or tacos?'],
       ['Nico', 'pizza', 'pizza'],
       ['Fran', 'empanadas', 'tacos'],
       ['Caro', 'las dos', 'both'],
-      ['Vale', 'Caro tiene razón', 'Caro is right'],
+      ['Vale', 'gana Caro', 'Caro wins'],
+    ],
+  },
+  {
+    // Nico arma el plan del finde y Caro vota la película horas después.
+    hour: 18,
+    lines: [
+      ['Nico', '¿qué hacemos el finde? ¿salimos?', 'what are we doing this weekend? wanna go out?'],
+      ['Vale', 'cine y después cenamos', 'movies and then dinner'],
+      ['Fran', 'yo voto la de terror!!', 'I vote for the horror one!!'],
+      ['Nico', 'Caro, ¿vos qué querés ver?', 'Caro, what do you want to watch?'],
+      ['Caro', 'la de comedia', 'the comedy'],
+      ['Caro', 'terror no, por favor', 'no horror, please'],
+      ['Fran', 'cobarde', 'coward'],
+      ['Nico', 'comedia entonces, el sábado', 'comedy then, saturday'],
+      ['Vale', '🍿'],
     ],
   },
   {
@@ -348,6 +523,7 @@ const SCENES: Scene[] = [
       ['Caro', 'tengo que ver si me dan días', 'need to check if I can get days off'],
       ['Nico', 'https://www.airbnb.com/rooms/vistazo-demo'],
       ['Vale', 'esa casa es un sueño', 'that house is a dream'],
+      ['Nico', '🙌'],
     ],
   },
   {
@@ -356,6 +532,20 @@ const SCENES: Scene[] = [
       ['Vale', '¿¿y??', 'and??'],
       ['Fran', 'me dijo que anoche estaba muy sexy 🙈', 'said I looked really hot last night 🙈'],
       ['Caro', 'ese sí sabe', "he's got taste"],
+      ['Fran', 'ay 🙈', 'oh 🙈'],
+    ],
+  },
+  {
+    // Caro, que casi nunca arranca, trae un video: el único cierre de la escena es ella misma.
+    hour: 21,
+    lines: [
+      ['Caro', MEDIA],
+      ['Caro', 'miren lo que me mandaron', 'look what I was sent'],
+      ['Fran', 'JAJAJAJA ES IGUAL A VOS', "HAHAHA IT'S EXACTLY YOU"],
+      ['Nico', 'mandalo de nuevo, no se ve', "send it again, it won't play"],
+      ['Caro', MEDIA, undefined, 6],
+      ['Vale', 'me morí 😂', 'I died 😂'],
+      ['Caro', 'jaja', 'haha', 3],
     ],
   },
   {
@@ -377,14 +567,30 @@ const SCENES: Scene[] = [
       ['Vale', "'hola, cómo andás'", "'hey, how are you'"],
       ['Nico', 'clásico ex a las 11 de la noche', 'classic 11pm ex'],
       ['Vale', 'no le contesté 💪', "didn't answer 💪"],
+      ['Fran', 'orgullosa 🙌', 'proud 🙌'],
+    ],
+  },
+  {
+    // Caro, la que menos habla, abre su casa: la que más cuesta de leer como "tímida".
+    hour: 20,
+    lines: [
+      ['Caro', 'chicos, ¿se vienen a casa el sábado?', 'guys, want to come over on saturday?'],
+      ['Vale', '¡sí!', 'yes!'],
+      ['Fran', 'LLEVO EL FERNET', "I'M BRINGING THE DRINKS"],
+      ['Nico', 'nos vemos a las 9', 'see you at 9'],
+      ['Caro', 'hago pizza', "I'll make pizza"],
+      ['Caro', 'no traigan nada', "don't bring anything"],
+      ['Fran', 'MENTIRA, LLEVO IGUAL', "LIAR, I'M BRINGING IT ANYWAY"],
+      ['Vale', '❤️'],
     ],
   },
   {
     lines: [
       ['Caro', LONG_THANKS_ES, LONG_THANKS_EN],
-      ['Fran', 'BASTA, ME HICISTE LLORAR', 'STOP, YOU MADE ME CRY'],
+      ['Fran', 'BASTA, ME HICISTE LLORAR', "STOP, I'M CRYING"],
       ['Vale', 'los amo 😭❤️', 'love you guys 😭❤️'],
       ['Nico', 'igual Fran escucha los audios a 2x', 'Fran listens to voice notes at 2x though'],
+      ['Fran', 'mentira 😤', 'lies 😤'],
     ],
   },
   {
@@ -445,10 +651,17 @@ export function buildLandingSampleChat(language: Language): string {
 
     let previous: Person | null = null
     for (const line of scene.lines) {
-      const [speaker] = line
+      const [speaker, , , minutesSincePrevious] = line
       if (previous !== null) {
-        // La misma persona escribe de corrido; si cambia, tarda lo que tarda ella.
-        clock.setMinutes(clock.getMinutes() + (speaker === previous ? (random() < 0.7 ? 0 : 1) : between(REPLY_MINUTES[speaker])))
+        // La misma persona escribe de corrido; si cambia, tarda lo que se le indicó o lo
+        // que tarda ella.
+        const wait =
+          speaker === previous
+            ? random() < 0.7
+              ? 0
+              : 1
+            : (minutesSincePrevious ?? between(REPLY_MINUTES[speaker]))
+        clock.setMinutes(clock.getMinutes() + wait)
       }
       lines.push(formatLine(clock, speaker, lineText(line, language)))
       previous = speaker

@@ -2611,8 +2611,6 @@ function metricRedflags(ctx: MetricContext, verdict?: AiMetricVerdict): MetricRe
 
   const top = buckets[0]
 
-  const byKeywordSender = weightedBySender(allEntries)
-
   // Examples worth reading: the hits and findings the AI stands behind (celos, insultos, culpa,
   // chantaje…) and long silences, each rendered with the real conversation around them.
   // Before the verdict has run nothing is filtered out (this pass isn't shown to a real user
@@ -2653,41 +2651,24 @@ function metricRedflags(ctx: MetricContext, verdict?: AiMetricVerdict): MetricRe
   const room = Math.max(0, REDFLAGS_EXAMPLE_LIMIT - silenceMoments.length)
   const moments = spreadEvenly(room > 0 ? keywordMoments.slice(-room) : [], silenceMoments)
 
-  // One mini ranking per category (plus deletions and long silences, same buckets as the
-  // chart above) — the overall "by participant" breakdown mixes every category into one bar per
-  // person, which hides who's actually driving *which* pattern; a person could lead on
-  // jealousy and barely register on insults.
+  // One donut per category (plus deletions and long silences, same buckets as the chart above):
+  // who is behind that pattern, as a share of that pattern alone. There is no overall "by
+  // participant" ranking on purpose. It mixed every category into one number per person, which
+  // hides who's actually driving *which* pattern (a person could lead on jealousy and barely
+  // register on insults), and nothing on the screen said what that number was a share of.
   const categorySeries: MetricSeriesEntry[] = [
     ...withHits.map((entry) => ({
       name: categoryLabel(entry.category, language),
-      chart: {
-        kind: 'bar' as const,
-        items: rankingPercentBars(weightedBySender(entry.entries), weightOf(entry.entries), participants.length),
-      },
+      chart: senderDonut(weightedBySender(entry.entries), participants),
     })),
     ...(deletions.length > 0
-      ? [
-          {
-            name: language === 'es' ? 'Borrados' : 'Deletions',
-            chart: {
-              kind: 'bar' as const,
-              items: rankingPercentBars(countBySender(deletions), deletions.length, participants.length),
-            },
-          },
-        ]
+      ? [{ name: language === 'es' ? 'Borrados' : 'Deletions', chart: senderDonut(countBySender(deletions), participants) }]
       : []),
     ...(longSilences.length > 0
       ? [
           {
             name: language === 'es' ? 'Silencios largos' : 'Long silences',
-            chart: {
-              kind: 'bar' as const,
-              items: rankingPercentBars(
-                countBySender(longSilences.map((gap) => gap.after)),
-                longSilences.length,
-                participants.length,
-              ),
-            },
+            chart: senderDonut(countBySender(longSilences.map((gap) => gap.after)), participants),
           },
         ]
       : []),
@@ -2712,7 +2693,6 @@ function metricRedflags(ctx: MetricContext, verdict?: AiMetricVerdict): MetricRe
         language === 'es'
           ? 'Cruza silencios largos, borrados y mensajes agrupados por categoría.'
           : 'Combines long silences, deletions, and messages grouped by category.',
-      breakdown: totalKeywordHits > 0 ? breakdownPercent(byKeywordSender, weightOf(allEntries)) : undefined,
       series: categorySeries,
       groups: moments.map((moment) => momentGroup(ctx, moment.message, moment.heading)),
       paginatedItemsLabel: language === 'es' ? 'Momentos señalados' : 'Flagged moments',
@@ -3377,6 +3357,19 @@ function rankingPercentBars(map: Map<string, number>, total: number, limit = 8):
     .sort((left, right) => right[1] - left[1])
     .slice(0, limit)
     .map(([label, value]) => ({ label, value, displayValue: percentage(value, total) }))
+}
+
+/** A donut with one slice per person, biggest first, each in that person's fixed color (see
+ * `colorForParticipant`). The donut version of `rankingPercentBars`, for "who is behind this"
+ * where the whole is the point: the legend prints each person's share. */
+function senderDonut(map: Map<string, number>, participants: string[]): ChartData {
+  return {
+    kind: 'donut',
+    items: [...map.entries()]
+      .filter(([, value]) => value > 0)
+      .sort((left, right) => right[1] - left[1])
+      .map(([label, value]) => ({ label, value, color: colorForParticipant(label, participants) })),
+  }
 }
 
 function breakdownCount(map: Map<string, number>, language: Language): ParticipantBreakdownEntry[] {

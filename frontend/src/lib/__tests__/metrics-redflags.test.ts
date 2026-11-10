@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { colorForIndex } from '../../components/charts/palette'
 import { chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
-import type { BarDatum, MetricCard } from '../../types'
+import type { BarDatum, DonutDatum, MetricCard } from '../../types'
 import { applyAiVerdicts, computeAnalysisCore, type AiMetricVerdict } from '../metrics'
 
 beforeEach(resetMessageIds)
@@ -40,6 +41,17 @@ function bucketValues(card: MetricCard): Record<string, number> {
   const chart = card.basic?.chart
   const items: BarDatum[] = chart?.kind === 'bar' ? chart.items : []
   return Object.fromEntries(items.map((item) => [item.label, item.value]))
+}
+
+/** Las porciones de la torta de una categoría (o de Borrados / Silencios largos), en el orden en que se dibujan. */
+function donutItems(card: MetricCard, seriesName: string): DonutDatum[] {
+  const chart = card.detail?.series?.find((entry) => entry.name === seriesName)?.chart
+
+  if (chart?.kind !== 'donut') {
+    throw new Error(`Se esperaba una torta en "${seriesName}", llegó ${chart?.kind ?? 'nada'}.`)
+  }
+
+  return chart.items
 }
 
 describe('Red Flags — lo que no se juzgó vale lo que la IA acepta de lo parecido', () => {
@@ -113,7 +125,7 @@ describe('Red Flags — lo que no se juzgó vale lo que la IA acepta de lo parec
     expect(card?.basic?.value).toBe('12')
   })
 
-  it('el reparto por integrante usa los mismos pesos', async () => {
+  it('la torta de cada categoría usa los mismos pesos', async () => {
     const mixed = chat(
       ...insults(10),
       ...Array.from({ length: 10 }, (_, index) => ({
@@ -124,16 +136,83 @@ describe('Red Flags — lo que no se juzgó vale lo que la IA acepta de lo parec
     )
     const ids = mixed.map((message) => message.id)
 
-    // De los 10 de Ana se aceptan 10; de los 10 de Beto se rechazan 5 y se aceptan 5: pesan lo mismo.
+    // De los 10 de Ana se aceptan 10; de los 10 de Beto se rechazan 5 y se aceptan 5: pesan 10 y 5.
     const card = await redflagsWith(mixed, {
       accepted: new Set([...ids.slice(0, 10), ...ids.slice(10, 15)]),
       rejected: new Set(ids.slice(15, 20)),
     })
 
-    const breakdown = card?.detail?.breakdown ?? []
-    expect(breakdown.map((entry) => entry.name)).toEqual(['Ana', 'Beto'])
-    expect(breakdown[0].displayValue).toBe('66.7%')
-    expect(breakdown[1].displayValue).toBe('33.3%')
+    expect(donutItems(card!, 'Insultos')).toEqual([
+      { label: 'Ana', value: 10, color: colorForIndex(0) },
+      { label: 'Beto', value: 5, color: colorForIndex(1) },
+    ])
+  })
+
+  it('lo que nadie juzgó pesa en la torta lo mismo que en el número', async () => {
+    const messages = chat(...insults(10), ...insults(10, 30).map((spec) => ({ ...spec, from: 'Beto' })))
+    const ids = messages.map((message) => message.id)
+
+    // Se miraron 10 insultos de Ana (8 aceptados, 2 rechazados): la tasa de la categoría es 80%.
+    // Los 10 de Beto no los miró nadie y valen 8 en total, no 10.
+    const card = await redflagsWith(messages, {
+      accepted: new Set(ids.slice(0, 8)),
+      rejected: new Set(ids.slice(8, 10)),
+    })
+
+    expect(card?.basic?.value).toBe('16')
+    // Redondeado: diez veces 0,8 no suma justo 8 en coma flotante.
+    expect(donutItems(card!, 'Insultos').map((item) => [item.label, Math.round(item.value)])).toEqual([
+      ['Ana', 8],
+      ['Beto', 8],
+    ])
+  })
+
+  it('no hay un reparto general "por integrante": cada categoría tiene el suyo', async () => {
+    const messages = chat(
+      ...insults(3),
+      { at: minute(10), from: 'Beto', text: 'estas celoso otra vez' },
+      { at: minute(11), from: 'Ana', text: 'sos posesivo' },
+    )
+
+    const card = await redflagsWith(messages)
+
+    // Un solo ranking mezclaba celos con insultos en un número por persona, y la pantalla no
+    // decía de qué era ese número.
+    expect(card?.detail?.breakdown).toBeUndefined()
+    expect(card?.detail?.series?.map((entry) => [entry.name, entry.chart.kind])).toEqual([
+      ['Celos y control', 'donut'],
+      ['Insultos', 'donut'],
+    ])
+  })
+
+  it('una persona que no dijo nada de una categoría no aparece en su torta', async () => {
+    const card = await redflagsWith(chat(...insults(3), { at: minute(10), from: 'Beto', text: 'estas celoso otra vez' }))
+
+    expect(donutItems(card!, 'Insultos').map((item) => item.label)).toEqual(['Ana'])
+    expect(donutItems(card!, 'Celos y control').map((item) => item.label)).toEqual(['Beto'])
+  })
+
+  it('los borrados y los silencios largos también son una torta, con quien los hizo y quien rompió el silencio', async () => {
+    const card = await redflagsWith(
+      chat(
+        { at: '2025-03-01T10:00:00', from: 'Ana', text: 'hola' },
+        { at: '2025-03-01T10:01:00', from: 'Ana', text: 'Se eliminó este mensaje', isDeleted: true },
+        { at: '2025-03-01T10:02:00', from: 'Beto', text: 'Se eliminó este mensaje', isDeleted: true },
+        { at: '2025-03-01T10:03:00', from: 'Beto', text: 'Se eliminó este mensaje', isDeleted: true },
+        // Cuatro días sin hablar: lo retoma Beto, y de ahí otros tres: lo retoma Ana.
+        { at: '2025-03-05T10:00:00', from: 'Beto', text: 'volví' },
+        { at: '2025-03-08T10:00:00', from: 'Ana', text: 'yo también' },
+      ),
+    )
+
+    expect(donutItems(card!, 'Borrados').map((item) => [item.label, item.value])).toEqual([
+      ['Beto', 2],
+      ['Ana', 1],
+    ])
+    expect(donutItems(card!, 'Silencios largos').map((item) => [item.label, item.value])).toEqual([
+      ['Beto', 1],
+      ['Ana', 1],
+    ])
   })
 })
 

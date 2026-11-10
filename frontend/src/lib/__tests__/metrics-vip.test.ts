@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { colorForIndex } from '../../components/charts/palette'
 import { burst, chat, resetMessageIds, type MessageSpec } from '../../test/fixtures'
 import type { BarDatum, Language, MetricCard } from '../../types'
 import { computeAnalysisCore, countWordOccurrences } from '../metrics'
@@ -462,7 +463,7 @@ describe('métrica redflags', () => {
     expect(bars(card)[0].label).toBe('Insultos')
   })
 
-  it('el desglose por categoría trae un ranking de participantes por cada una', async () => {
+  it('el desglose por categoría trae una torta con los participantes de cada una', async () => {
     const card = await requireVipMetric('redflags', [
       { at: '2025-03-10T10:00:00', from: 'Ana', text: 'estas celoso otra vez' },
       { at: '2025-03-10T10:01:00', from: 'Ana', text: 'sos posesivo' },
@@ -473,13 +474,13 @@ describe('métrica redflags', () => {
     const celos = series.find((entry) => entry.name === 'Celos y control')
     const insultos = series.find((entry) => entry.name === 'Insultos')
 
-    if (celos?.chart?.kind !== 'bar' || insultos?.chart?.kind !== 'bar') {
-      throw new Error('Se esperaba un gráfico de barras por categoría.')
+    if (celos?.chart?.kind !== 'donut' || insultos?.chart?.kind !== 'donut') {
+      throw new Error('Se esperaba una torta por categoría.')
     }
-    // Los dos celos son de Ana: 100% de esa categoría es de ella, no se mezcla con
-    // los insultos de Beto en el mismo número.
-    expect(celos.chart.items).toEqual([{ label: 'Ana', value: 2, displayValue: '100.0%' }])
-    expect(insultos.chart.items).toEqual([{ label: 'Beto', value: 1, displayValue: '100.0%' }])
+    // Los dos celos son de Ana: toda esa torta es de ella, no se mezcla con los insultos
+    // de Beto en el mismo número. Y cada uno con su color de siempre, el de los demás gráficos.
+    expect(celos.chart.items).toEqual([{ label: 'Ana', value: 2, color: colorForIndex(0) }])
+    expect(insultos.chart.items).toEqual([{ label: 'Beto', value: 1, color: colorForIndex(1) }])
   })
 
   it('reconoce las familias de cortar, separar y divorcio como amenaza de ruptura', async () => {
