@@ -10,6 +10,7 @@ import '@fontsource-variable/sora'
 import './index.css'
 import App from './App.tsx'
 import { TooltipProvider } from './components/TooltipProvider.tsx'
+import { captureCampaignFromLocation } from './lib/campaign.ts'
 import { finishCheckoutInWindow } from './lib/checkoutWindow.ts'
 import { loadRecaptchaScript } from './lib/recaptcha.ts'
 
@@ -28,6 +29,10 @@ if ('serviceWorker' in navigator) {
     void navigator.serviceWorker.register('/sw.js')
   })
 }
+
+// Un link de campaña (`/q/{código}`, el de los folletos) se resuelve antes de dibujar nada:
+// así la app arranca ya en `/`, como si se hubiera entrado directo a la página principal.
+captureCampaignFromLocation()
 
 // La ventana de Mercado Pago que vuelve a Vistazo avisa a la pestaña que la abrió y se
 // cierra: no tiene sentido levantar la app entera adentro de ella.

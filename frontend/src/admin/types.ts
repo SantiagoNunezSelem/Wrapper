@@ -1,5 +1,32 @@
 /** Las secciones del panel. El orden es el del menú. */
-export type AdminSection = 'negocio' | 'urgencias' | 'reportes' | 'usuarios' | 'cobros' | 'ia' | 'producto' | 'sistema'
+export type AdminSection = 'negocio' | 'urgencias' | 'reportes' | 'usuarios' | 'cobros' | 'ia' | 'producto' | 'campanas' | 'sistema'
+
+/** Una campaña de QR con su embudo, de punta a punta (sin período: un folleto vive lo que vive). */
+export interface AdminCampaign {
+  id: string
+  /** Lo que va en el link `/q/{code}`. No cambia nunca. */
+  code: string
+  title: string
+  createdAtUtc: string
+  visitsResetAtUtc: string | null
+  visits: number
+  uniqueVisitors: number
+  lastVisitAtUtc: string | null
+  signups: number
+  trials: number
+  paid: number
+  revenue: number
+}
+
+export interface AdminCampaignUser {
+  id: string
+  email: string
+  displayName: string
+  createdAtUtc: string
+  trial: boolean
+  paid: boolean
+  revenue: number
+}
 
 /** Las ventanas que se pueden elegir en las secciones que miran un período. */
 export const ADMIN_PERIODS = [7, 30, 90] as const

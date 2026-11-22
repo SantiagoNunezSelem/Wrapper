@@ -37,6 +37,7 @@ import {
   updatePreferredLanguage,
 } from '../lib/api'
 import type { WireVerdict } from '../lib/analysisWorker'
+import { clearStoredCampaign, readStoredCampaign } from '../lib/campaign'
 import { CHECKOUT_WINDOW_OPENED, isCheckoutReturn, onCheckoutReturn } from '../lib/checkoutWindow'
 import { needsTermsAcceptance, TERMS_VERSION } from '../lib/terms'
 import { phaseOf } from '../lib/subscriptionPhase'
@@ -963,7 +964,8 @@ export function useVistazo() {
     setBusyMessage(copy.loggingIn)
 
     try {
-      const auth = await loginWithGoogle(idToken, recaptcha)
+      const auth = await loginWithGoogle(idToken, recaptcha, readStoredCampaign())
+      clearStoredCampaign()
       pendingGoogleIdToken.current = null
       setNeedsRecaptchaChallenge(false)
       localStorage.setItem(authTokenKey, auth.token)

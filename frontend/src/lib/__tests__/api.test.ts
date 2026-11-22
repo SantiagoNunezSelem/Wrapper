@@ -202,6 +202,14 @@ describe('autenticación', () => {
     })
   })
 
+  it('manda el código de campaña sólo cuando hay uno', async () => {
+    await loginWithGoogle('google-id-token', undefined, 'ab3k9x')
+    expect(JSON.parse(lastCall().init.body as string).campaignCode).toBe('ab3k9x')
+
+    await loginWithGoogle('google-id-token', undefined, null)
+    expect(JSON.parse(lastCall().init.body as string)).not.toHaveProperty('campaignCode')
+  })
+
   it('marca isFallback en false cuando no se aclara', async () => {
     await loginWithGoogle('google-id-token', { token: 'rc' })
 

@@ -4,6 +4,7 @@ import { adminCopy, type AdminCopy } from '../copy/adminCopy'
 import { AdminErrorBoundary } from './AdminErrorBoundary'
 import { AiSection } from './AiSection'
 import { BusinessSection } from './BusinessSection'
+import { CampaignsSection } from './CampaignsSection'
 import { InvoicesSection } from './InvoicesSection'
 import { ProductSection } from './ProductSection'
 import { ReportsSection } from './ReportsSection'
@@ -132,6 +133,7 @@ export function AdminApp({
           {route.section === 'cobros' ? <InvoicesSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
           {route.section === 'ia' ? <AiSection token={token} language={language} copy={copy} /> : null}
           {route.section === 'producto' ? <ProductSection token={token} language={language} copy={copy} /> : null}
+          {route.section === 'campanas' ? <CampaignsSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
           {route.section === 'sistema' ? <SystemSection token={token} language={language} copy={copy} onOpenUser={openUser} /> : null}
         </AdminErrorBoundary>
       </main>

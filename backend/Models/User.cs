@@ -60,6 +60,13 @@ public sealed class User
 
     public DateTime? TermsAcceptedAtUtc { get; set; }
 
+    /// <summary>
+    /// The campaign (QR) that brought this account in, set once when the account is created
+    /// and never afterwards: an existing account scanning a flyer is a visit, not a signup.
+    /// Null for everyone who arrived any other way.
+    /// </summary>
+    public Guid? CampaignId { get; set; }
+
     public List<Subscription> Subscriptions { get; init; } = [];
     public List<SavedAnalysis> Analyses { get; init; } = [];
     public List<AiMetricResult> AiMetricResults { get; init; } = [];

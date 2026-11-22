@@ -1,7 +1,9 @@
-import { request, requestBlob } from '../lib/api'
+import { request, requestBlob, requestNoContent } from '../lib/api'
 import type {
   AdminAiReport,
   AdminBusiness,
+  AdminCampaign,
+  AdminCampaignUser,
   AdminInvoicePage,
   AdminNote,
   AdminProductReport,
@@ -110,6 +112,34 @@ export function revokeAdminVip(token: string, id: string): Promise<AdminUserDeta
 /** Su próxima suscripción arranca con la semana gratis, aunque su red o su dispositivo ya la hayan usado. */
 export function grantAdminTrial(token: string, id: string): Promise<AdminUserDetail> {
   return request<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(id)}/trial`, { method: 'POST' }, token)
+}
+
+export function getAdminCampaigns(token: string): Promise<AdminCampaign[]> {
+  return request<AdminCampaign[]>('/api/admin/campaigns', { method: 'GET' }, token)
+}
+
+export function getAdminCampaignUsers(token: string, id: string): Promise<AdminCampaignUser[]> {
+  return request<AdminCampaignUser[]>(`/api/admin/campaigns/${encodeURIComponent(id)}/users`, { method: 'GET' }, token)
+}
+
+/** Crea la campaña y su link. El código lo elige el servidor y no cambia nunca más. */
+export function createAdminCampaign(token: string, title: string): Promise<Pick<AdminCampaign, 'id' | 'code' | 'title'>> {
+  return request('/api/admin/campaigns', { method: 'POST', body: JSON.stringify({ title }) }, token)
+}
+
+/** Cambia sólo el título: el link impreso sigue siendo el mismo. */
+export function renameAdminCampaign(token: string, id: string, title: string): Promise<Pick<AdminCampaign, 'id' | 'code' | 'title'>> {
+  return request(`/api/admin/campaigns/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ title }) }, token)
+}
+
+/** Borra las visitas (las de prueba, típicamente). Registros y pagos quedan. */
+export function resetAdminCampaignVisits(token: string, id: string): Promise<void> {
+  return requestNoContent(`/api/admin/campaigns/${encodeURIComponent(id)}/reset-visits`, { method: 'POST' }, token)
+}
+
+/** Borra la campaña y sus visitas; las cuentas que trajo quedan sin campaña. */
+export function deleteAdminCampaign(token: string, id: string): Promise<void> {
+  return requestNoContent(`/api/admin/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' }, token)
 }
 
 export type AdminExport = 'users' | 'invoices'

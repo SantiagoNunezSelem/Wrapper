@@ -786,3 +786,67 @@
 a.adm-button {
   text-decoration: none;
 }
+
+/* --- Campañas --------------------------------------------------------------- */
+
+.adm-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--vz-hairline-strong);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--vz-surface-2);
+  color: var(--vz-text-strong);
+  font: inherit;
+}
+
+.adm-input:focus-visible { outline: 2px solid var(--vz-brand-cyan); outline-offset: 1px; }
+
+.adm-campaign-intro { margin: 0; max-width: 720px; }
+
+.adm-campaign-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+
+.adm-campaign-field { display: grid; gap: 6px; flex: 1 1 260px; }
+.adm-campaign-create .adm-error-text { margin: 0; flex-basis: 100%; }
+
+.adm-sort {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.adm-sort.is-on { color: var(--vz-text-strong); }
+.adm-sort:focus-visible { outline: 2px solid var(--vz-brand-cyan); outline-offset: 2px; border-radius: 4px; }
+
+.adm-table tr.is-selected td { background: var(--vz-surface-2); }
+
+.adm-campaign-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.adm-campaign-link .adm-code { overflow-wrap: anywhere; }
+
+.adm-campaign-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 auto;
+  margin-right: 12px;
+}
+
+.adm-campaign-rename .adm-input { flex: 1 1 220px; }
+
+.adm-campaign-users-title { margin-top: 22px; }

@@ -271,7 +271,7 @@ public static class AdminEndpoints
         });
     }
 
-    private static (Guid Id, string Email) Actor(ClaimsPrincipal principal) =>
+    internal static (Guid Id, string Email) Actor(ClaimsPrincipal principal) =>
         (principal.GetRequiredUserId(), principal.FindFirstValue(ClaimTypes.Email) ?? string.Empty);
 
     private static IResult Conflict(SubscriptionConflictException exception) =>
@@ -285,7 +285,7 @@ public static class AdminEndpoints
     /// 404 rather than 403, like the payments diagnostics: an endpoint that describes the
     /// business should not confirm its own existence to an account that cannot read it.
     /// </summary>
-    private static async ValueTask<object?> RequireAdmin(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    internal static async ValueTask<object?> RequireAdmin(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
         var db = http.RequestServices.GetRequiredService<AppDbContext>();
