@@ -27,6 +27,13 @@ export function formatTrialLength(frequency: number, frequencyType: string, loca
   }
 }
 
+/** Si el plan de hoy trae prueba gratis. Con `MercadoPago:Plan:TrialFrequencyDays` en 0 no
+ * la hay, y la pantalla no la nombra en ningún lado: ni "0 días gratis", ni la línea de
+ * fechas, ni "la prueba gratis ya fue usada". */
+export function planOffersTrial(plan: { trialFrequency: number } | null | undefined): boolean {
+  return plan != null && plan.trialFrequency > 0
+}
+
 /** El medio de pago tal como lo guarda Mercado Pago (`account_money`, `visa ···· 6411`),
  * vuelto algo que se lee: "Dinero en cuenta", "Visa ···· 6411". Sólo para mostrar: el
  * backend sigue guardando y mandando el id crudo.

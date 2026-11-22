@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, formatTrialLength, splitLeadingEmoji } from '../format'
+import { formatMoney, formatTrialLength, planOffersTrial, splitLeadingEmoji } from '../format'
 
 describe('formatMoney', () => {
   it('formatea pesos argentinos sin decimales', () => {
@@ -83,5 +83,18 @@ describe('formatTrialLength', () => {
 
   it('cae a un texto plano si el locale no es válido', () => {
     expect(formatTrialLength(7, 'days', 'no-es-un-locale!')).toBe('7 days')
+  })
+})
+
+describe('planOffersTrial', () => {
+  it('hay prueba cuando el plan trae al menos un día', () => {
+    expect(planOffersTrial({ trialFrequency: 7 })).toBe(true)
+    expect(planOffersTrial({ trialFrequency: 1 })).toBe(true)
+  })
+
+  it('con 0 días (o sin plan todavía) no hay prueba', () => {
+    expect(planOffersTrial({ trialFrequency: 0 })).toBe(false)
+    expect(planOffersTrial(null)).toBe(false)
+    expect(planOffersTrial(undefined)).toBe(false)
   })
 })
