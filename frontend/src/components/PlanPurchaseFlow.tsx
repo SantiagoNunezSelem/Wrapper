@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
 import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
-import { formatMoney, formatTrialLength } from '../lib/format'
+import { formatMoney, formatTrialLength, planOffersTrial } from '../lib/format'
 import { isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage } from '../lib/paymentReasons'
 import type { SubscriptionPlan } from '../types'
@@ -91,6 +91,10 @@ export function PlanPurchaseFlow({
   const [isEditingEmail, setIsEditingEmail] = useState(false)
   const [emailError, setEmailError] = useState('')
   const email = typedEmail ?? payerEmail
+  // Sin días de prueba en el plan no se habla de la prueba, aunque el backend la dé por
+  // disponible o diga por qué no.
+  const trialOffered = planOffersTrial(plan)
+  const showTrial = trialAvailable && trialOffered
 
   // Set once the checkout is running in a window of its own: this page stays, so it has
   // to say where the payment went, and offer a way back to that window.
@@ -142,7 +146,7 @@ export function PlanPurchaseFlow({
         </div>
       </dl>
 
-      {trialAvailable && plan ? <TrialTimeline copy={copy} plan={plan} locale={locale} /> : null}
+      {showTrial && plan ? <TrialTimeline copy={copy} plan={plan} locale={locale} /> : null}
 
       <div className="plan-card-benefits">
         <p className="plan-card-benefits-label">{copy.planBenefitsLabel}</p>
@@ -197,7 +201,7 @@ export function PlanPurchaseFlow({
               <button type="button" className="primary-button plan-card-cta" onClick={handleBuy} disabled={isRedirecting}>
                 {isRedirecting
                   ? copy.redirecting
-                  : trialAvailable && plan
+                  : showTrial && plan
                     ? copy.buyTrialCta.replace('{trial}', formatTrialLength(plan.trialFrequency, plan.trialFrequencyType, locale))
                     : copy.buyCta}
               </button>
@@ -209,7 +213,7 @@ export function PlanPurchaseFlow({
         <p className="plan-card-hint">{copy.paymentsDisabled}</p>
       )}
 
-      {!trialAvailable && trialDeniedReason ? (
+      {trialOffered && !trialAvailable && trialDeniedReason ? (
         <p className="plan-card-hint">
           {copy.trialUnavailable} {copy.trialReasons[trialDeniedReason] ?? ''}
         </p>

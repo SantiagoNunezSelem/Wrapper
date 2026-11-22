@@ -798,6 +798,22 @@ describe('SubscriptionPage', () => {
 
       expect(screen.queryByText(copy.trialToday)).not.toBeInTheDocument()
     })
+
+    it('con 0 días de prueba en el plan no la nombra, aunque el backend la dé por disponible', () => {
+      const data = { ...overview(null, { canSubscribe: true }), trialAvailable: true }
+      renderPage({ ...data, plan: { ...data.plan, trialFrequency: 0 } })
+
+      expect(screen.queryByText(copy.trialToday)).not.toBeInTheDocument()
+      expect(screen.queryByText(/gratis/i)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: copy.buyCta })).toBeInTheDocument()
+    })
+
+    it('con 0 días de prueba tampoco dice que la prueba ya fue usada', () => {
+      const data = { ...overview(null, { canSubscribe: true }), trialDeniedReason: 'account_used' }
+      renderPage({ ...data, plan: { ...data.plan, trialFrequency: 0 } })
+
+      expect(screen.queryByText(new RegExp(copy.trialUnavailable))).not.toBeInTheDocument()
+    })
   })
 
   describe('re-chequeo automático', () => {

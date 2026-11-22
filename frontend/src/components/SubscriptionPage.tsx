@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { ApiError, startCheckout } from '../lib/api'
 import { goToCheckout, prefersCheckoutWindow } from '../lib/checkoutWindow'
-import { formatMoney, formatPaymentMethod, formatTrialLength } from '../lib/format'
+import { formatMoney, formatPaymentMethod, formatTrialLength, planOffersTrial } from '../lib/format'
 import { defaultPayerEmail, isPlausibleEmail } from '../lib/payerEmail'
 import { checkoutErrorMessage, describePaymentReason, type PaymentReasonCopy } from '../lib/paymentReasons'
 import { phaseOf } from '../lib/subscriptionPhase'
@@ -1001,7 +1001,7 @@ function trialBadgeText(
     }
   }
 
-  return plan
+  return plan && planOffersTrial(plan)
     ? copy.freeTrialBadge.replace('{trial}', formatTrialLength(plan.trialFrequency, plan.trialFrequencyType, locale))
     : copy.freeTrialBadgeGeneric
 }

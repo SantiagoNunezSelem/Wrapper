@@ -70,8 +70,9 @@ public sealed class MercadoPagoClient(
         };
 
         // Same rule as CreatePlanAsync: added only when it applies, never as a null —
-        // JsonOptions' DefaultIgnoreCondition does not reach dictionary values.
-        if (includeFreeTrial)
+        // JsonOptions' DefaultIgnoreCondition does not reach dictionary values. Nor with
+        // TrialFrequencyDays at 0: a zero-day free_trial is not "no trial" to Mercado Pago.
+        if (includeFreeTrial && _options.Plan.TrialFrequencyDays > 0)
         {
             autoRecurring["free_trial"] = new Dictionary<string, object?>
             {

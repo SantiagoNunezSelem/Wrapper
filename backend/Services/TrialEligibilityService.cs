@@ -22,9 +22,19 @@ public sealed class TrialEligibilityService(
     AppDbContext db,
     ClientFingerprint fingerprint,
     IOptions<TrialGuardOptions> options,
+    IOptions<MercadoPagoOptions> mercadoPago,
     ILogger<TrialEligibilityService> logger)
 {
     private readonly TrialGuardOptions _options = options.Value;
+
+    private readonly MercadoPagoPlanOptions _plan = mercadoPago.Value.Plan;
+
+    /// <summary>
+    /// Whether the plan carries a free trial at all. With
+    /// <c>MercadoPago:Plan:TrialFrequencyDays</c> at 0 there is none: nobody is offered
+    /// one, nothing is claimed, and no <c>free_trial</c> goes to Mercado Pago.
+    /// </summary>
+    public bool IsOffered => _plan.TrialFrequencyDays > 0;
 
     public async Task<TrialEligibility> EvaluateAsync(
         User user,
@@ -33,6 +43,14 @@ public sealed class TrialEligibilityService(
         CancellationToken cancellationToken)
     {
         var identity = fingerprint.Describe(http, deviceId);
+
+        // Before every other rule, admin grants included: with no trial on the plan there
+        // is nothing to hand out. No reason either — nobody "used" anything, so the screen
+        // has nothing to explain and simply offers the paid plan.
+        if (!IsOffered)
+        {
+            return new TrialEligibility(false, null, identity);
+        }
 
         // The account rule is absolute and comes first: it is the only one that is
         // certain, and it also covers "cancelled during the trial, now trying again",
@@ -184,6 +202,7 @@ public sealed class TrialEligibilityService(
 /// <param name="Reason">
 /// Why the trial was refused, as a stable code the UI translates:
 /// <c>account_used</c>, <c>ip_used</c>, <c>network_used</c>, <c>device_used</c>,
-/// <c>country_not_allowed</c>. Null when the trial is available.
+/// <c>country_not_allowed</c>. Null when the trial is available, and also when the plan
+/// has no trial at all (<c>TrialFrequencyDays</c> at 0): there is nothing to explain.
 /// </param>
 public readonly record struct TrialEligibility(bool IsEligible, string? Reason, ClientIdentity Identity);
