@@ -32,6 +32,7 @@ public class AdminAccessServiceTests : IDisposable
             _db.Context,
             new ClientFingerprint(Opt.Of(settings), Opt.Of(new JwtOptions())),
             Opt.Of(settings),
+            Opt.Of(new MercadoPagoOptions()),
             NullLogger<TrialEligibilityService>.Instance);
     }
 

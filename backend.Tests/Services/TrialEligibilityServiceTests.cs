@@ -21,7 +21,7 @@ public class TrialEligibilityServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private TrialEligibilityService Service(TrialGuardOptions? options = null)
+    private TrialEligibilityService Service(TrialGuardOptions? options = null, int trialDays = 7)
     {
         var settings = options ?? new TrialGuardOptions();
         var fingerprint = new ClientFingerprint(Opt.Of(settings), Opt.Of(new JwtOptions()));
@@ -30,6 +30,7 @@ public class TrialEligibilityServiceTests : IDisposable
             _db.Context,
             fingerprint,
             Opt.Of(settings),
+            Opt.Of(new MercadoPagoOptions { Plan = { TrialFrequencyDays = trialDays } }),
             NullLogger<TrialEligibilityService>.Instance);
     }
 
@@ -89,6 +90,32 @@ public class TrialEligibilityServiceTests : IDisposable
         var result = await Service().EvaluateAsync(CreateUser(), Context(), null, default);
 
         Assert.True(result.IsEligible);
+        Assert.Null(result.Reason);
+    }
+
+    [Fact]
+    public async Task Con_0_dias_en_el_plan_nadie_tiene_prueba_y_no_hay_motivo_que_explicar()
+    {
+        var service = Service(trialDays: 0);
+
+        var result = await service.EvaluateAsync(CreateUser(), Context(), null, default);
+
+        Assert.False(service.IsOffered);
+        Assert.False(result.IsEligible);
+        // Sin motivo: nadie "usó" nada, así que la pantalla no dice "ya fue usada".
+        Assert.Null(result.Reason);
+    }
+
+    [Fact]
+    public async Task Con_0_dias_tampoco_vale_la_semana_que_devolvio_un_admin()
+    {
+        var user = CreateUser();
+        user.TrialGrantedAtUtc = DateTime.UtcNow;
+        _db.Context.SaveChanges();
+
+        var result = await Service(trialDays: 0).EvaluateAsync(user, Context(), null, default);
+
+        Assert.False(result.IsEligible);
         Assert.Null(result.Reason);
     }
 

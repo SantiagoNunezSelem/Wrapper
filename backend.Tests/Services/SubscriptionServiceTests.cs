@@ -32,6 +32,7 @@ public class SubscriptionServiceTests : IDisposable
             _db.Context,
             fingerprint,
             Opt.Of(new TrialGuardOptions()),
+            Opt.Of(settings),
             NullLogger<TrialEligibilityService>.Instance);
 
         return new SubscriptionService(_db.Context, client, trials, Opt.Of(settings), NullLogger<SubscriptionService>.Instance);
@@ -1218,6 +1219,28 @@ public class SubscriptionServiceTests : IDisposable
         // Nunca en null: un "free_trial": null se serializaría igual y Mercado Pago lo
         // rechaza. La clave directamente no está.
         Assert.DoesNotContain("free_trial", create.Body);
+    }
+
+    [Fact]
+    public async Task Con_0_dias_de_prueba_el_checkout_cobra_directo_y_no_gasta_la_prueba()
+    {
+        RouteMercadoPago();
+        var settings = new MercadoPagoOptions { AccessToken = "TEST-123", Plan = { TrialFrequencyDays = 0 } };
+        var user = CreateUser();
+
+        var result = await Service(settings).StartCheckoutAsync(user, Context(), null, null, default);
+
+        var create = _http.Requests.Single(request =>
+            request.Method == HttpMethod.Post && request.Uri.AbsolutePath.EndsWith("/preapproval"));
+        Assert.DoesNotContain("free_trial", create.Body);
+        Assert.False(result.TrialApplied);
+        Assert.Null(result.TrialDeniedReason);
+
+        await using var fresh = _db.NewContext();
+        Assert.False((await fresh.Subscriptions.SingleAsync()).TrialWasApplied);
+        // La prueba sigue sin usar: si después se vuelve a ofrecer, esta cuenta la tiene.
+        Assert.False((await fresh.Users.SingleAsync(candidate => candidate.Id == user.Id)).HasUsedTrial);
+        Assert.Empty(fresh.TrialClaims);
     }
 
     [Fact]

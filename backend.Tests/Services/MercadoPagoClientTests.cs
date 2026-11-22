@@ -161,6 +161,20 @@ public class MercadoPagoClientTests
     }
 
     [Fact]
+    public async Task Con_0_dias_de_prueba_nunca_manda_un_free_trial_vacio()
+    {
+        // Segunda red: aunque quien llama pida la prueba, un free_trial de 0 días no es
+        // "sin prueba" para Mercado Pago.
+        var (client, http) = Build(
+            stub => stub.Enqueue(HttpStatusCode.OK, """{"id":"pre-3","init_point":"https://mp/x"}"""),
+            new MercadoPagoOptions { AccessToken = Token, Plan = { TrialFrequencyDays = 0 } });
+
+        await client.CreateSubscriptionAsync("a@test.com", "sub-1", includeFreeTrial: true, default);
+
+        Assert.DoesNotContain("free_trial", http.LastRequest.Body);
+    }
+
+    [Fact]
     public async Task La_suscripcion_lleva_el_precio_y_la_prueba_configurados()
     {
         var options = new MercadoPagoOptions
