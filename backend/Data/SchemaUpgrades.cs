@@ -452,6 +452,44 @@ public static class SchemaUpgrades
         await db.Database.ExecuteSqlRawAsync(
             """CREATE UNIQUE INDEX IF NOT EXISTS "IX_SupportReports_TicketCode" ON "SupportReports" ("TicketCode");""",
             cancellationToken);
+
+        // ---------------------------------------------------------------------
+        // QR campaigns: additive. A null CampaignId is an account that arrived any
+        // other way, which is every account before this.
+        // ---------------------------------------------------------------------
+
+        await AddColumnIfMissingAsync(db, "Users", "CampaignId", "TEXT NULL", cancellationToken);
+
+        foreach (var statement in new[]
+                 {
+                     """CREATE INDEX IF NOT EXISTS "IX_Users_CampaignId" ON "Users" ("CampaignId");""",
+                     """
+                     CREATE TABLE IF NOT EXISTS "Campaigns" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_Campaigns" PRIMARY KEY,
+                         "Code" TEXT NOT NULL,
+                         "Title" TEXT NOT NULL,
+                         "VisitsResetAtUtc" TEXT NULL,
+                         "CreatedAtUtc" TEXT NOT NULL,
+                         "UpdatedAtUtc" TEXT NOT NULL
+                     );
+                     """,
+                     """CREATE UNIQUE INDEX IF NOT EXISTS "IX_Campaigns_Code" ON "Campaigns" ("Code");""",
+                     """
+                     CREATE TABLE IF NOT EXISTS "CampaignVisits" (
+                         "Id" TEXT NOT NULL CONSTRAINT "PK_CampaignVisits" PRIMARY KEY,
+                         "CampaignId" TEXT NOT NULL,
+                         "VisitorHash" TEXT NULL,
+                         "CreatedAtUtc" TEXT NOT NULL
+                     );
+                     """,
+                     """
+                     CREATE INDEX IF NOT EXISTS "IX_CampaignVisits_CampaignId_VisitorHash_CreatedAtUtc"
+                         ON "CampaignVisits" ("CampaignId", "VisitorHash", "CreatedAtUtc");
+                     """,
+                 })
+        {
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -597,6 +635,32 @@ public static class SchemaUpgrades
         );
         """,
         """CREATE UNIQUE INDEX IF NOT EXISTS "IX_AiProfileResults_UserId_SourceHash_Language_PersonId" ON "AiProfileResults" ("UserId", "SourceHash", "Language", "PersonId");""",
+
+        // QR campaigns: which campaign brought an account, the campaigns and their visits.
+        """ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "CampaignId" uuid;""",
+        """CREATE INDEX IF NOT EXISTS "IX_Users_CampaignId" ON "Users" ("CampaignId");""",
+        """
+        CREATE TABLE IF NOT EXISTS "Campaigns" (
+            "Id" uuid NOT NULL,
+            "Code" character varying(16) NOT NULL,
+            "Title" character varying(120) NOT NULL,
+            "VisitsResetAtUtc" timestamp without time zone,
+            "CreatedAtUtc" timestamp without time zone NOT NULL,
+            "UpdatedAtUtc" timestamp without time zone NOT NULL,
+            CONSTRAINT "PK_Campaigns" PRIMARY KEY ("Id")
+        );
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_Campaigns_Code" ON "Campaigns" ("Code");""",
+        """
+        CREATE TABLE IF NOT EXISTS "CampaignVisits" (
+            "Id" uuid NOT NULL,
+            "CampaignId" uuid NOT NULL,
+            "VisitorHash" character varying(64),
+            "CreatedAtUtc" timestamp without time zone NOT NULL,
+            CONSTRAINT "PK_CampaignVisits" PRIMARY KEY ("Id")
+        );
+        """,
+        """CREATE INDEX IF NOT EXISTS "IX_CampaignVisits_CampaignId_VisitorHash_CreatedAtUtc" ON "CampaignVisits" ("CampaignId", "VisitorHash", "CreatedAtUtc");""",
     ];
 
     /// <summary>Applies <see cref="PostgresStatements"/>. Idempotent: safe on every start.</summary>

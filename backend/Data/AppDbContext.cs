@@ -21,6 +21,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AdminNote> AdminNotes => Set<AdminNote>();
     public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
     public DbSet<SupportReport> SupportReports => Set<SupportReport>();
+    public DbSet<Campaign> Campaigns => Set<Campaign>();
+    public DbSet<CampaignVisit> CampaignVisits => Set<CampaignVisit>();
 
     /// <summary>
     /// Every date in this database is UTC, and SQLite keeps no trace of that: it hands
@@ -57,6 +59,26 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.AvatarUrl).HasMaxLength(1000);
             entity.Property(item => item.PreferredLanguage).HasMaxLength(10);
             entity.Property(item => item.TermsVersion).HasMaxLength(20);
+            entity.HasIndex(item => item.CampaignId);
+        });
+
+        modelBuilder.Entity<Campaign>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Code).HasMaxLength(16);
+            entity.Property(item => item.Title).HasMaxLength(120);
+            // The code is what the QR carries: two campaigns answering to one would split
+            // a flyer's visits between them at random.
+            entity.HasIndex(item => item.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<CampaignVisit>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.VisitorHash).HasMaxLength(64);
+            entity.HasIndex(item => new { item.CampaignId, item.VisitorHash, item.CreatedAtUtc });
+            // No relationship on purpose: deleting a campaign removes its visits explicitly
+            // (CampaignService.DeleteAsync), and nothing else should cascade into them.
         });
 
         modelBuilder.Entity<Subscription>(entity =>

@@ -148,4 +148,13 @@ public class SchemaUpgradesPostgresTests
         Assert.Contains(SchemaUpgrades.PostgresStatements, statement => statement.Contains("\"AiProfileConsentAtUtc\"", StringComparison.Ordinal));
         Assert.Contains(SchemaUpgrades.PostgresStatements, statement => statement.Contains("CREATE TABLE IF NOT EXISTS \"AiProfileResults\"", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Las_sentencias_de_campanas_cubren_lo_que_el_modelo_agrego()
+    {
+        Assert.Contains("\"CampaignId\"", EfTableBody("Users"));
+        Assert.Contains(SchemaUpgrades.PostgresStatements, statement => statement.Contains("ADD COLUMN IF NOT EXISTS \"CampaignId\"", StringComparison.Ordinal));
+        Assert.Contains(SchemaUpgrades.PostgresStatements, statement => statement.Contains("CREATE TABLE IF NOT EXISTS \"Campaigns\"", StringComparison.Ordinal));
+        Assert.Contains(SchemaUpgrades.PostgresStatements, statement => statement.Contains("CREATE TABLE IF NOT EXISTS \"CampaignVisits\"", StringComparison.Ordinal));
+    }
 }

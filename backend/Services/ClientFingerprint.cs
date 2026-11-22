@@ -36,6 +36,20 @@ public sealed class ClientFingerprint(
             CountryCode: ResolveCountry(http));
     }
 
+    /// <summary>
+    /// Who opened a campaign link, as a salted hash: the device id when the browser sent one,
+    /// else the address. Its own prefix, so it never matches a trial-ledger hash.
+    /// </summary>
+    public string? CampaignVisitorHash(HttpContext http, string? deviceId)
+    {
+        if (!string.IsNullOrWhiteSpace(deviceId))
+        {
+            return Hash($"campaign-device:{deviceId.Trim()}");
+        }
+
+        return ResolveAddress(http) is { } address ? Hash($"campaign-ip:{address}") : null;
+    }
+
     private IPAddress? ResolveAddress(HttpContext http)
     {
         if (_options.TrustProxyHeaders)

@@ -16,6 +16,10 @@ public static class AdminActions
     public const string GrantTrial = "grant_trial";
     public const string ResolveReport = "report_resolved";
     public const string ReopenReport = "report_reopened";
+    public const string CampaignCreated = "campaign_created";
+    public const string CampaignRenamed = "campaign_renamed";
+    public const string CampaignDeleted = "campaign_deleted";
+    public const string CampaignVisitsReset = "campaign_visits_reset";
 }
 
 /// <summary>

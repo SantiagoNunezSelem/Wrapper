@@ -116,6 +116,7 @@ builder.Services.AddScoped<AdminAccessService>();
 builder.Services.AddScoped<MercadoPagoAccountProbe>();
 builder.Services.AddScoped<FreeTrialProbe>();
 builder.Services.AddScoped<SupportReportService>();
+builder.Services.AddScoped<CampaignService>();
 // The safety net under the webhook: re-reads subscriptions Mercado Pago moved without a
 // notification reaching us. Off by configuration (ReconcileIntervalMinutes: 0) or when
 // there are no credentials.
@@ -230,6 +231,16 @@ builder.Services.AddRateLimiter(options =>
     // either. It is deliberately well above anything a person does: someone refused for a
     // limit who presses "enviar" a few more times must keep hearing about their ticket, not
     // this one's bare "too many requests".
+    // A campaign visit is one anonymous write per page load that came through a QR. Nobody
+    // opens the same flyer link thirty times a minute; a script inflating the numbers would.
+    options.AddPolicy("campaign", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
     options.AddPolicy("support", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(AiRateLimitPartitionKey(httpContext), _ => new FixedWindowRateLimiterOptions
         {
@@ -303,6 +314,7 @@ app.MapPost("/api/auth/google", async (
     TokenService tokenService,
     RecaptchaClient recaptcha,
     IOptions<RecaptchaOptions> recaptchaOptions,
+    CampaignService campaigns,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
@@ -387,6 +399,9 @@ app.MapPost("/api/auth/google", async (
             DisplayName = payload.Name ?? payload.Email,
             AvatarUrl = payload.Picture,
             PreferredLanguage = "es",
+            // Only here, at creation: an account that already existed and scanned a flyer
+            // is a visit for that campaign, never a signup.
+            CampaignId = await campaigns.ResolveIdAsync(request.CampaignCode, cancellationToken),
         };
 
         db.Users.Add(user);
@@ -857,6 +872,7 @@ app.MapFreeUnlockEndpoints();
 app.MapShareEndpoints();
 app.MapSupportEndpoints();
 app.MapAdminEndpoints();
+app.MapCampaignEndpoints();
 app.MapDevEndpoints();
 
 LogPaymentsConfiguration(app);
@@ -1159,7 +1175,9 @@ static async Task<bool> PassesRecaptchaAsync(
     return (verification.Score ?? 0) >= options.ScoreThreshold;
 }
 
-record GoogleLoginRequest(string IdToken, string? RecaptchaToken = null, bool RecaptchaIsFallback = false);
+/// <param name="CampaignCode">The QR campaign link this browser came in through, if any. Optional, so
+/// clients that never send it (the Android app) behave exactly as before.</param>
+record GoogleLoginRequest(string IdToken, string? RecaptchaToken = null, bool RecaptchaIsFallback = false, string? CampaignCode = null);
 
 record AiAnalyzeRequest(string SourceHash, List<AiMetricRequestItem>? Metrics, int? Participants = null);
 
