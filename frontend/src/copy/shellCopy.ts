@@ -10,9 +10,9 @@
 
 export const shellCopy = {
   es: {
-    title: { prefix: 'Tu chat,', highlight: 'analizado' },
+    title: { prefix: 'Tu chat tiene', highlight: 'mucho para contar' },
     landingSubtitle: 'La verdad de tu grupo, en gráficos.',
-    heroCaption: 'El resumen que nadie pidió.',
+    heroCaption: 'Análisis de tu chat de WhatsApp',
     whatItDoesTitle: '¿Para qué sirve?',
     whatItDoesBody:
       'La app procesa el chat en tu navegador, calcula métricas divertidas y guarda solo resultados agregados cuando decidís iniciar sesión. Las dos métricas Pro con IA son la única excepción, y te pedimos permiso antes.',
@@ -33,7 +33,7 @@ export const shellCopy = {
       { title: 'Mirá tu Wrapped', body: 'Recorré tarjetas tipo historia con los datos más divertidos del chat.' },
       { title: 'Desbloqueá lo picante', body: 'Con Pro ves red flags, tono picante, quién clava el visto y mucho más.' },
     ],
-    examplesTitle: 'Así se sienten las analíticas',
+    examplesTitle: 'Ejemplo de las analíticas en tu chat:',
     demoTag: 'Ejemplo',
     heroTrust: 'Se procesa en tu navegador. El chat nunca se sube.',
     howToExport: '¿Cómo exporto mi chat?',
